@@ -3,9 +3,9 @@
 <article class="tarjeta borrador" id="b-{{ b.id }}">
   {% if f and not en_detalle %}
   <header class="tarjeta-cab">
-    <a class="quien" href="/fletes/{{ f.chat_id }}">
+    <a class="quien" href="/fletes/{{ f.job_id }}">
       <span class="ruta">{{ f.ruta }}</span>
-      <span class="sub">{{ f.telefono }} · {{ f.ultimo }}</span>
+      <span class="sub">{{ f.quien }} · {{ f.ultimo }}</span>
     </a>
     {{ chip(f.estado_etiqueta, f.tono) }}
   </header>
@@ -39,7 +39,7 @@
 <article class="tarjeta borrador decidido estado-{{ b.estado }}" id="b-{{ b.id }}">
   <header class="decidido-cab">
     <span class="sello">{% if b.estado == "aprobado" %}{{ icono("check") }} Aprobado{% else %}Descartado{% endif %}</span>
-    {% if f %}<a class="sub" href="/fletes/{{ f.chat_id }}">{{ f.ruta }}</a>{% endif %}
+    {% if f %}<a class="sub" href="/fletes/{{ f.job_id }}">{{ f.ruta }}</a>{% endif %}
   </header>
   {% if b.texto_final %}
   <p class="final">{{ b.texto_final }}</p>

@@ -18,7 +18,9 @@
     <a class="marca" href="/">{{ marca() }}<span>Estiba</span></a>
     <nav class="nav-escritorio" aria-label="Secciones">
       <a href="/" {% if ruta == "/" %}aria-current="page"{% endif %}>Bandeja{% if pendientes %}<span class="cuenta">{{ pendientes }}</span>{% endif %}</a>
+      <a href="/agenda" {% if ruta == "/agenda" %}aria-current="page"{% endif %}>Agenda</a>
       <a href="/fletes" {% if ruta.startswith("/fletes") %}aria-current="page"{% endif %}>Fletes</a>
+      <a href="/numeros" {% if ruta in ("/numeros", "/clientes") %}aria-current="page"{% endif %}>Números</a>
       <a href="/docs">API</a>
     </nav>
     <button class="btn-icono sincronizar" hx-post="/sincronizar" hx-swap="none"
@@ -28,6 +30,9 @@
     </button>
   </header>
 
+  {% if espejo_error %}
+  <div class="banda-error" role="status">No se pudo copiar la agenda al CalDAV: {{ espejo_error }}. Se reintenta en la próxima actualización.</div>
+  {% endif %}
   <main class="contenido">
     {% block contenido %}{% endblock %}
   </main>
@@ -37,9 +42,17 @@
       <span class="tab-ico">{{ icono("bandeja") }}{% if pendientes %}<span class="cuenta">{{ pendientes }}</span>{% endif %}</span>
       Bandeja
     </a>
+    <a href="/agenda" {% if ruta == "/agenda" %}aria-current="page"{% endif %}>
+      <span class="tab-ico">{{ icono("agenda") }}</span>
+      Agenda
+    </a>
     <a href="/fletes" {% if ruta.startswith("/fletes") %}aria-current="page"{% endif %}>
       <span class="tab-ico">{{ icono("camion") }}</span>
       Fletes
+    </a>
+    <a href="/numeros" {% if ruta in ("/numeros", "/clientes") %}aria-current="page"{% endif %}>
+      <span class="tab-ico">{{ icono("numeros") }}</span>
+      Números
     </a>
   </nav>
 </body>

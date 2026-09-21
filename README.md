@@ -8,11 +8,11 @@ llegue entera. Es lo que el sistema hace con conversaciones desordenadas.
 
 ## Estado
 
-**Fase 5 de 7: terminada.** Estiba ingiere conversaciones, transcribe los
+**Fase 6 de 7: terminada.** Estiba ingiere conversaciones, transcribe los
 audios con Whisper local, saca los datos del flete por reglas (cada uno con la
-cita de donde salió), arma el flete (estado, historia, precio sugerido, qué
-falta) y te deja en una bandeja el mensaje que le escribiría al cliente, para
-que lo apruebes desde el celular.
+cita de donde salió), arma el flete, te deja en una bandeja el mensaje que le
+escribiría al cliente, agenda solo lo confirmado (en tu celular por .ics y, si
+querés, en Radicale) y lleva el CRM con el embudo de ventas.
 
 | Fase | Qué trae | Estado |
 | --- | --- | --- |
@@ -21,13 +21,13 @@ que lo apruebes desde el celular.
 | 3 | Intención y extracción de datos por reglas | Listo |
 | 4 | JobEngine, datos faltantes, PricingEngine | Listo |
 | 5 | API y dashboard con bandeja de aprobación | Listo |
-| 6 | Calendario CalDAV, CRM y funnel | Pendiente |
+| 6 | Calendario CalDAV, CRM y funnel | Listo |
 | 7 | WAHA en Docker, ingesta real de WhatsApp | Pendiente |
 
 ## Cómo se usa hoy
 
 ```bash
-uv sync --all-groups --extra audio     # sin --extra audio no se instala Whisper
+uv sync --all-groups --extra audio --extra calendario   # Whisper y CalDAV son opcionales
 uv run estiba ingest                    # carga las conversaciones de fixtures/
 uv run estiba list                      # qué conversaciones hay
 uv run estiba show 5491133334444        # el hilo entero reconstruido
@@ -39,7 +39,8 @@ uv run estiba jobs                      # estado, historia, precio sugerido, qu�
 uv run estiba jobs --ahora 2026-09-21T12:00   # evaluar como si fuera otra fecha
 uv run estiba serve                     # dashboard en http://127.0.0.1:8000, API en /docs
 uv run estiba serve --ahora 2026-09-18T12:00  # demo con las conversaciones de prueba
-uv run pytest                           # 160 tests, no necesitan Whisper
+uv run estiba sync                      # evaluar todo, agendar y dejar la bandeja al día
+uv run pytest                           # 198 tests, no necesitan Whisper ni CalDAV
 ```
 
 ## Cómo está armado
@@ -65,6 +66,9 @@ src/estiba/
   jobs/preguntas.py     Qué preguntarle al cliente. Borrador: no se envía.
   bandeja/redactor.py   El mensaje que Estiba propone, a lo sumo uno por flete.
   bandeja/servicio.py   Sincronizar: evaluar todo y dejar la bandeja al día.
+  jobs/episodios.py     Un cliente, varios fletes: parte la conversación.
+  agenda/               Agenda propia (SQLite), .ics y espejo CalDAV.
+  crm/                  Contactos, leads con su historia de etapas, embudo.
   web/                  FastAPI + htmx: dashboard para el celular y API JSON.
   storage/            SQLite, migraciones versionadas, repositorios.
   conversation/store.py  Reconstruye el hilo con las transcripciones pegadas.
@@ -99,21 +103,28 @@ confianza.
 
 ## El dashboard
 
-Pensado para el celular, con una mano. Tres pantallas:
+Pensado para el celular, con una mano. Cuatro pestañas:
 
 - **Bandeja**: una tarjeta por cada cliente al que le toca tu respuesta, con
   el mensaje ya escrito. Lo corregís si hace falta y tocás *Aprobar y
   enviar*: se abre WhatsApp con el texto listo. Nada sale sin ese toque.
   Si el cliente preguntó algo que Estiba no sabe contestar, la tarjeta viene
   vacía para que escribas vos.
+- **Agenda**: lo que viene, día por día, y lo que ya pasó y falta marcar
+  como realizado. Desde acá te suscribís con el calendario del celular.
 - **Fletes**: los próximos por fecha, los que están en conversación y los
   pasados o perdidos.
 - **Detalle**: ruta, fecha, precio cotizado contra sugerido con su desglose,
   historia de estados y la conversación. Cada dato muestra la cita de donde
-  salió; tocándolo te lleva a ese mensaje.
+  salió; tocándolo te lleva a ese mensaje. Desde acá le ponés nombre al
+  cliente, marcás el flete como realizado o lo das por perdido.
+- **Números**: facturado, lo que tenés en agenda, ticket promedio, cuánto
+  tardás en contestar, cuánto se aparta tu precio del sugerido, y el embudo:
+  de las consultas, cuántas llegan a presupuesto, a confirmar y a hacerse, y
+  por qué se pierden las que se pierden. De ahí, la lista de clientes.
 
 La misma información está en la API JSON (`/api/bandeja`, `/api/fletes`,
-`/api/fletes/{chat_id}`), documentada en `/docs`.
+`/api/agenda`, `/api/embudo`, `/api/clientes`...), documentada en `/docs`.
 
 ### Desde el celular
 
@@ -128,6 +139,33 @@ y entrás a `http://<ip-de-tu-máquina>:8000`. Desde fuera de tu casa, mejor
 por una VPN como Tailscale que abriendo un puerto. En el celular, "Agregar a
 la pantalla de inicio" la deja como una app.
 
+## Agenda
+
+Cada flete confirmado con fecha se agenda solo; si la fecha u hora cambian en
+la conversación, el evento se mueve, y si el flete se pierde, se borra. Con
+hora exacta el evento dura 3 horas; si solo se dijo "a la tarde", se agenda a
+una hora típica de la franja y el título lleva "~"; sin hora, es de todo el día.
+
+- **En el celular**: en *Agenda → Suscribirme* (o copiá el link a Google
+  Calendar, *Otros calendarios → Desde URL*). El link lleva un secreto propio,
+  así que funciona aunque el dashboard tenga clave; no lo compartas.
+- **En Radicale u otro CalDAV** (opcional):
+
+  ```bash
+  export ESTIBA_CALDAV_URL=http://localhost:5232/fletero/fletes/
+  export ESTIBA_CALDAV_USUARIO=fletero ESTIBA_CALDAV_CLAVE=...
+  ```
+
+  Se copia solo lo que cambió. Si el servidor no responde no se pierde nada:
+  el dashboard avisa y se reintenta en la próxima actualización.
+
+## Un cliente, varios fletes
+
+WhatsApp es un solo hilo por persona. Estiba lo parte: si el cliente vuelve a
+consultar después de un flete realizado o perdido, o después de un mes sin
+escribir, es un flete nuevo del mismo contacto. El nuevo no hereda datos del
+anterior, y en Números cuenta como un cliente que volvió.
+
 ## Cómo se mueve un flete
 
 El estado no se edita a mano: se recalcula recorriendo la conversación, y
@@ -138,9 +176,12 @@ cada cambio queda con su causa y el mensaje que lo provocó.
 - **→ confirmado**: el cliente acepta *y* origen, destino, fecha y qué se
   lleva están sin dudas. Si acepta con la fecha ambigua, queda una alerta y
   se confirma recién cuando se aclara.
-- **→ cancelado**: el cliente cancela, o pasan 4 días sin respuesta después
-  de cotizar. Si el último que escribió fue el cliente, no se cancela: la
-  alerta es que está esperando respuesta.
+- **confirmado → agendado**: automático, al entrar en la agenda.
+- **agendado → realizado**: lo marcás vos, desde la agenda o el flete.
+- **→ perdido**: el cliente cancela, lo das por perdido vos (con el motivo,
+  si querés), o pasan 4 días sin respuesta después de tu último mensaje. Si
+  el último que escribió fue el cliente, no se cancela: la alerta es que está
+  esperando respuesta.
 
 ## Tarifa
 

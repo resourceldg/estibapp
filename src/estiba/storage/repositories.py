@@ -314,3 +314,76 @@ class DraftRepository:
                  texto.strip() if aprobado else None, _a_texto(ahora), draft_id),
             )
         return self.get(draft_id)
+
+
+class ActionRepository:
+    """Lo que marco una persona o el calendario sobre cada flete."""
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self.conn = conn
+
+    def add(self, job_id: str, tipo: str, at: datetime, actor: str = "humano", nota: str | None = None) -> None:
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO job_actions (job_id, action, at, actor, note) VALUES (?, ?, ?, ?, ?)",
+                (job_id, tipo, _a_texto(at), actor, nota),
+            )
+
+    def for_job(self, job_id: str) -> list:
+        from estiba.jobs.engine import Accion
+
+        filas = self.conn.execute(
+            "SELECT * FROM job_actions WHERE job_id = ? ORDER BY at, id", (job_id,)
+        )
+        return [Accion(_a_fecha(f["at"]), f["action"], f["actor"], f["note"]) for f in filas]
+
+    def has(self, job_id: str, tipo: str) -> bool:
+        return self.conn.execute(
+            "SELECT 1 FROM job_actions WHERE job_id = ? AND action = ?", (job_id, tipo)
+        ).fetchone() is not None
+
+
+class CRMRepository:
+    """Contactos, leads y su historia de etapas, derivados de los fletes."""
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self.conn = conn
+
+    def save(self, lead) -> None:
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO contacts (id, chat_id, first_seen) VALUES (?, ?, ?) "
+                "ON CONFLICT (id) DO UPDATE SET first_seen = min(first_seen, excluded.first_seen)",
+                (lead.chat_id, lead.chat_id, _a_texto(lead.creado)),
+            )
+            self.conn.execute(
+                "INSERT INTO leads (id, contact_id, conversation_id, stage, lost_reason, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO UPDATE SET stage = excluded.stage, "
+                "lost_reason = excluded.lost_reason, created_at = excluded.created_at",
+                (lead.job_id, lead.chat_id, lead.chat_id, lead.etapa.value, lead.motivo_perdida,
+                 _a_texto(lead.creado)),
+            )
+            self.conn.execute("DELETE FROM lead_stage_history WHERE lead_id = ?", (lead.job_id,))
+            previa = None
+            for paso in lead.historia:
+                self.conn.execute(
+                    "INSERT INTO lead_stage_history (lead_id, from_stage, to_stage, at, reason) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (lead.job_id, previa, paso.etapa.value, _a_texto(paso.at), paso.motivo),
+                )
+                previa = paso.etapa.value
+
+    def name(self, chat_id: str) -> str | None:
+        fila = self.conn.execute("SELECT display_name FROM contacts WHERE id = ?", (chat_id,)).fetchone()
+        return fila["display_name"] if fila else None
+
+    def names(self) -> dict[str, str]:
+        filas = self.conn.execute("SELECT id, display_name FROM contacts WHERE display_name IS NOT NULL")
+        return {f["id"]: f["display_name"] for f in filas}
+
+    def set_name(self, chat_id: str, nombre: str | None) -> None:
+        nombre = (nombre or "").strip() or None
+        with self.conn:
+            cur = self.conn.execute("UPDATE contacts SET display_name = ? WHERE id = ?", (nombre, chat_id))
+        if cur.rowcount == 0:
+            raise KeyError(f"no existe el contacto {chat_id}")

@@ -12,6 +12,7 @@ dependencies = [
 
 [project.optional-dependencies]
 audio = ["faster-whisper>=1.1"]
+calendario = ["caldav>=1.4"]
 
 [project.scripts]
 estiba = "estiba.cli:main"

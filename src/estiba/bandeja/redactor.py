@@ -14,6 +14,7 @@ from datetime import datetime
 
 from estiba.core.models import Conversation, JobState
 from estiba.extraction.fechas import hora_legible, nombre_dia
+from estiba.formato import pesos
 from estiba.jobs.engine import Evaluacion
 
 RESPUESTA = "respuesta"
@@ -29,10 +30,6 @@ class Propuesta:
     reason: str
     text: str
     basis_message_id: str
-
-
-def pesos(monto) -> str:
-    return f"${int(monto):,}".replace(",", ".")
 
 
 def _cosas(items: list[str]) -> str:

@@ -99,8 +99,8 @@ class TestBandeja:
         conn = connect(db)
         sincronizar(conn, JobEngine(), JUEVES_18)
         sincronizar(conn, JobEngine(), JUEVES_18)
-        assert len(DraftRepository(conn).pending()) == 3
-        assert conn.execute("SELECT COUNT(*) FROM drafts").fetchone()[0] == 3
+        assert len(DraftRepository(conn).pending()) == 4
+        assert conn.execute("SELECT COUNT(*) FROM drafts").fetchone()[0] == 4
 
     def test_lo_que_ya_no_hace_falta_queda_reemplazado(self, db):
         conn = connect(db)
@@ -158,8 +158,8 @@ def cliente(db):
 class TestPaginas:
     def test_bandeja_muestra_una_tarjeta_por_conversacion(self, cliente):
         html = cliente.get("/").text
-        assert "3 conversaciones esperan tu respuesta" in html
-        assert html.count('class="tarjeta borrador"') == 3
+        assert "4 conversaciones esperan tu respuesta" in html
+        assert html.count('class="tarjeta borrador"') == 4
         # Lo mas urgente primero: las confirmaciones antes que el seguimiento.
         assert html.index("Almagro → Barracas") < html.index("Flores → Morón")
 
@@ -169,7 +169,7 @@ class TestPaginas:
         assert html.index("En conversación") < html.index("Flores → Morón")
 
     def test_detalle_liga_cada_dato_a_su_mensaje(self, cliente):
-        html = cliente.get("/fletes/5491177778888").text
+        html = cliente.get("/fletes/5491177778888:job").text
         assert 'href="#m-5491177778888-005"' in html      # destino: "es a Barracas"
         assert 'id="m-5491177778888-005"' in html
         assert "“es a Barracas”" in html
@@ -186,7 +186,7 @@ class TestPaginas:
         assert "Aprobado" in r.text
         chat = primero["chat_id"]
         assert f"https://wa.me/{chat}?text=%C2%A1Listo%21%20Nos%20vemos%20el%20jueves." in r.text
-        assert len(cliente.get("/api/bandeja").json()) == 2
+        assert len(cliente.get("/api/bandeja").json()) == 3
 
     def test_sin_javascript_el_formulario_igual_anda(self, cliente):
         draft_id = cliente.get("/api/bandeja").json()[0]["borrador"]["id"]
@@ -203,13 +203,13 @@ class TestApi:
     def test_fletes_y_detalle(self, cliente):
         secciones = cliente.get("/api/fletes").json()
         assert [f["ruta"] for f in secciones["proximos"]] == ["Villa Crespo → Caballito", "Almagro → Barracas"]
-        d = cliente.get("/api/fletes/5491177778888").json()
+        d = cliente.get("/api/fletes/5491177778888:job").json()
         destino = next(x for x in d["datos"] if x["campo"] == "destination")
         assert destino["valor"] == "Barracas" and destino["message_id"] == "5491177778888:005"
-        assert d["flete"]["estado"] == "confirmado"
+        assert d["flete"]["estado"] == "agendado"  # confirmado + fecha: se agenda solo
 
     def test_sincronizar(self, cliente):
-        assert cliente.post("/api/sincronizar").json()["fletes"] == 3
+        assert cliente.post("/api/sincronizar").json()["fletes"] == 5  # 4 conversaciones, una con 2 fletes
 
     def test_documentacion(self, cliente):
         assert cliente.get("/docs").status_code == 200

@@ -1,0 +1,15 @@
+{
+  "chat_id": "5491122223333",
+  "descripcion": "El cliente que vuelve. En agosto pide un flete y lo confirma; mas de un mes despues escribe por otro. Son dos fletes distintos del mismo contacto: el segundo no puede heredar la direccion ni la carga del primero.",
+  "mensajes": [
+    {"de": "cliente", "hora": "2026-08-03T09:10:00", "texto": "hola, necesito llevar un sillon y una cama de Palermo a Belgrano"},
+    {"de": "vos", "hora": "2026-08-03T09:25:00", "texto": "Buenas! Hay ascensor en los dos lados?"},
+    {"de": "cliente", "hora": "2026-08-03T09:31:00", "texto": "si, hay ascensor"},
+    {"de": "vos", "hora": "2026-08-03T09:40:00", "texto": "Te sale 48 mil. Para cuando lo necesitas?"},
+    {"de": "cliente", "hora": "2026-08-03T09:52:00", "texto": "dale, el sabado a la tarde"},
+    {"de": "vos", "hora": "2026-08-03T09:55:00", "texto": "Listo, sabado 8 a la tarde"},
+    {"de": "cliente", "hora": "2026-09-17T16:05:00", "texto": "hola! te escribo de nuevo, ahora necesito llevar un lavarropas de Belgrano a Nuñez"},
+    {"de": "vos", "hora": "2026-09-17T16:20:00", "texto": "Hola! Claro. Hay ascensor?"},
+    {"de": "cliente", "hora": "2026-09-17T16:26:00", "texto": "no, es un segundo piso sin ascensor"}
+  ]
+}

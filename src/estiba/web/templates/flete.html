@@ -7,6 +7,12 @@
 <section class="portada">
   <div class="portada-cab">
     {{ chip(f.estado_etiqueta, f.tono) }}
+    <form class="nombre" method="post" action="/clientes/{{ f.chat_id }}/nombre"
+          hx-post="/clientes/{{ f.chat_id }}/nombre" hx-trigger="change" hx-swap="none">
+      {{ icono("lapiz") }}
+      <input name="nombre" value="{{ f.nombre or '' }}" placeholder="Nombre del cliente"
+             aria-label="Nombre del cliente" autocomplete="off" enterkeyhint="done">
+    </form>
     <a class="tel" href="https://wa.me/{{ f.chat_id }}" target="_blank" rel="noopener">{{ f.telefono }}</a>
   </div>
   <h1 class="ruta-grande">
@@ -26,6 +32,13 @@
   {{ icono("aviso") }}
   <ul>{% for a in f.alertas %}<li>{{ a[0]|upper }}{{ a[1:] }}</li>{% endfor %}</ul>
 </div>
+{% endif %}
+
+{% if d.puede_realizar %}
+<form class="cerrar" method="post" action="/fletes/{{ f.job_id }}/realizado"
+      hx-post="/fletes/{{ f.job_id }}/realizado" hx-confirm="¿Marcar el flete como realizado?">
+  <button class="btn primario" type="submit">{{ icono("hecho") }}<span>Marcar realizado</span></button>
+</form>
 {% endif %}
 
 {% set en_detalle = true %}
@@ -76,6 +89,17 @@
       {% endif %}
     </section>
 
+    {% if d.otros %}
+    <section class="panel">
+      <h2>Otros fletes de {{ f.nombre or "este cliente" }}</h2>
+      <ul class="otros">
+        {% for o in d.otros %}
+        <li><a href="/fletes/{{ o.job_id }}"><span>{{ o.ruta }}</span><span class="sub">{{ o.fecha or o.ultimo }}</span>{{ chip(o.estado_etiqueta, o.tono) }}</a></li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+
     {% if d.historia %}
     <section class="panel">
       <h2>Historia</h2>
@@ -92,6 +116,17 @@
         {% endfor %}
       </ol>
     </section>
+    {% endif %}
+
+    {% if d.puede_perder %}
+    <details class="panel perder">
+      <summary>{{ icono("cruz") }}Dar por perdido</summary>
+      <form method="post" action="/fletes/{{ f.job_id }}/perdido" hx-post="/fletes/{{ f.job_id }}/perdido">
+        <label for="nota-perdido">¿Por qué? <span class="opcional">Opcional, para los números</span></label>
+        <input id="nota-perdido" name="nota" placeholder="Consiguió más barato, se arrepintió…" autocomplete="off">
+        <button class="btn fantasma peligro" type="submit">Dar por perdido</button>
+      </form>
+    </details>
     {% endif %}
   </div>
 

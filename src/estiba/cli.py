@@ -12,7 +12,6 @@ import argparse
 import os
 import sys
 from datetime import date, datetime, time
-from decimal import Decimal
 from pathlib import Path
 
 from estiba.adapters.fixtures import FIXTURES_DIR, FixtureMessageSource
@@ -22,6 +21,7 @@ from estiba.audio.wer import comparar, wer_total
 from estiba.conversation.store import ConversationStore
 from estiba.extraction.extractor import SlotExtractor
 from estiba.extraction.fechas import nombre_dia
+from estiba.formato import pesos
 from estiba.jobs.engine import JobEngine
 from estiba.jobs.preguntas import ETIQUETAS
 from estiba.jobs.pricing import TARIFA_DEFAULT, PricingEngine, Tarifa
@@ -177,10 +177,6 @@ def cmd_extract(args: argparse.Namespace) -> int:
     return 0
 
 
-def _pesos(monto: Decimal | int) -> str:
-    return f"${int(monto):,}".replace(",", ".")
-
-
 def cmd_jobs(args: argparse.Namespace) -> int:
     conn = connect(args.db)
     store = ConversationStore(conn)
@@ -207,14 +203,14 @@ def cmd_jobs(args: argparse.Namespace) -> int:
 
         cotizado = ev.job.quoted_price
         p = ev.presupuesto
-        linea = f"cotizado {_pesos(cotizado.value)}" if cotizado else "sin cotizar"
+        linea = f"cotizado {pesos(cotizado.value)}" if cotizado else "sin cotizar"
         if p is not None:
-            linea += f" | sugerido {_pesos(p.total)}"
+            linea += f" | sugerido {pesos(p.total)}"
             if not p.completo:
                 linea += " o mas"
         print(f"  precio: {linea}")
         if p is not None:
-            print("    " + " + ".join(f"{c} {_pesos(m)}" for c, m in p.desglose))
+            print("    " + " + ".join(f"{c} {pesos(m)}" for c, m in p.desglose))
             for falta in p.sin_contar:
                 print(f"    sin contar: {falta}")
         for alerta in ev.alertas:
@@ -238,11 +234,19 @@ def cmd_sync(args: argparse.Namespace) -> int:
     from estiba.bandeja.servicio import sincronizar
     from estiba.storage.repositories import DraftRepository
 
+    from estiba.agenda.caldav import ConfigCalDAV, EspejoCalDAV
+
     conn = connect(args.db)
     engine = JobEngine(pricing=PricingEngine(Tarifa.desde_toml(args.tarifa)))
-    evaluaciones = sincronizar(conn, engine, _ahora(args)())
+    config = ConfigCalDAV.desde_entorno()
+    r = sincronizar(conn, engine, _ahora(args)(), EspejoCalDAV(config) if config else None)
     pendientes = DraftRepository(conn).pending()
-    print(f"{len(evaluaciones)} fletes evaluados, {len(pendientes)} borradores esperan aprobacion")
+    print(f"{len(r.fletes)} fletes evaluados, {len(pendientes)} borradores esperan aprobacion")
+    for job_id, cambio in r.agenda:
+        print(f"  agenda: {job_id} {cambio}")
+    if r.espejo_error:
+        print(f"  no se pudo copiar la agenda al CalDAV: {r.espejo_error}", file=sys.stderr)
+        return 1
     return 0
 
 

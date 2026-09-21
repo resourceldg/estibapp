@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icono, chip %}
+{% block contenido %}
+<a class="volver" href="/numeros">{{ icono("volver") }}Números</a>
+<div class="encabezado">
+  <h1>Clientes</h1>
+  <p class="bajada">Una persona, todos sus fletes. El nombre lo ponés vos desde el detalle de un flete.</p>
+</div>
+
+{% if clientes %}
+<ul class="lista">
+  {% for c in clientes %}
+  <li>
+    <a class="fila cliente" href="/fletes/{{ c.ultimo_job_id }}">
+      <span class="inicial" aria-hidden="true">{% if c.nombre %}{{ c.nombre[0]|upper }}{% else %}{{ icono("clientes") }}{% endif %}</span>
+      <div class="fila-cuerpo">
+        <div class="fila-ruta">{{ c.nombre or c.telefono }}</div>
+        <div class="fila-sub">{% if c.nombre %}{{ c.telefono }} · {% endif %}{{ c.ultimo_ruta }} · {{ c.ultimo }}</div>
+        <div class="fila-meta">
+          {{ chip(c.ultimo_estado, c.tono) }}
+          {% if c.fletes > 1 %}<span class="insignia">{{ c.fletes }} fletes</span>{% endif %}
+        </div>
+      </div>
+      <div class="fila-precio">
+        <span class="monto">{{ c.facturado }}</span>
+        <span class="monto-nota">{{ c.realizados }} {{ "hecho" if c.realizados == 1 else "hechos" }}</span>
+      </div>
+    </a>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="nada">Todavía no hay clientes.</p>
+{% endif %}
+{% endblock %}

@@ -12,7 +12,7 @@
   <ul class="lista">
     {% for f in fletes %}
     <li>
-      <a class="fila{% if f.alertas %} con-alerta{% endif %}" href="/fletes/{{ f.chat_id }}">
+      <a class="fila{% if f.alertas %} con-alerta{% endif %}" href="/fletes/{{ f.job_id }}">
         <div class="calendario{% if not f.dia %} sin-fecha{% endif %}{% if f.pasado %} pasado{% endif %}">
           {% if f.dia %}
           <span class="cal-dsem">{{ f.dia_semana }}</span>
@@ -24,7 +24,7 @@
         <div class="fila-cuerpo">
           <div class="fila-ruta">{{ f.ruta }}</div>
           <div class="fila-sub">
-            {% if f.hora %}{{ f.hora }} · {% endif %}{{ f.cosas or "sin detalle de la carga" }}
+            {% if f.nombre %}{{ f.nombre }} · {% endif %}{% if f.hora %}{{ f.hora }} · {% endif %}{{ f.cosas or "sin detalle de la carga" }}
           </div>
           <div class="fila-meta">
             {{ chip(f.estado_etiqueta, f.tono) }}

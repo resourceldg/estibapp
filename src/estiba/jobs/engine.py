@@ -11,6 +11,7 @@ Es el unico lugar que aplica transiciones, y solo las de ALLOWED_TRANSITIONS.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
@@ -49,6 +50,21 @@ class Evento:
     message_id: str | None
 
 
+AGENDADO = "agendado"
+REALIZADO = "realizado"
+PERDIDO = "perdido"
+
+
+@dataclass(frozen=True)
+class Accion:
+    """Algo que paso con el flete fuera de la conversacion."""
+
+    at: datetime
+    tipo: str  # agendado | realizado | perdido
+    actor: str = "humano"  # humano | calendario
+    nota: str | None = None
+
+
 @dataclass
 class Evaluacion:
     job: FreightJob
@@ -74,8 +90,11 @@ class JobEngine:
         self.pricing = pricing or PricingEngine()
         self.politica = politica or Politica()
 
-    def evaluar(self, conv: Conversation, ahora: datetime) -> Evaluacion:
+    def evaluar(
+        self, conv: Conversation, ahora: datetime, acciones: Iterable[Accion] = ()
+    ) -> Evaluacion:
         mensajes = [m for m in conv.messages if m.sent_at <= ahora]
+        pendientes = sorted((a for a in acciones if a.at <= ahora), key=lambda a: a.at)
         if not mensajes:
             raise ValueError(f"la conversacion {conv.chat_id} no tiene mensajes hasta {ahora}")
 
@@ -92,7 +111,18 @@ class JobEngine:
             eventos.append(Evento(estado, hacia, at, causa, message_id))
             estado = hacia
 
+        def aplicar(a: Accion) -> None:
+            if a.tipo == AGENDADO and estado is JobState.CONFIRMED:
+                mover(JobState.SCHEDULED, a.at, "agendado en el calendario", None)
+            elif a.tipo == REALIZADO and estado is JobState.SCHEDULED:
+                mover(JobState.DONE, a.at, "marcado como realizado", None)
+            elif a.tipo == PERDIDO and estado not in _CERRADOS:
+                causa = "dado por perdido" + (f": {a.nota}" if a.nota else "")
+                mover(JobState.CANCELLED, a.at, causa, None)
+
         for i, m in enumerate(mensajes):
+            while pendientes and pendientes[0].at < m.sent_at:
+                aplicar(pendientes.pop(0))
             ex = self.extractor.extract(Conversation(conv.chat_id, mensajes[: i + 1], conv.transcripts))
             if estado in _CERRADOS:
                 continue
@@ -121,29 +151,31 @@ class JobEngine:
             elif intencion is Intencion.CORRIGE and estado not in (JobState.DRAFT, *_CERRADOS):
                 alertas.append("corrigió datos después de cotizar: revisar el precio")
 
-        if aceptacion_trabada:
+        for a in pendientes:
+            aplicar(a)
+        if aceptacion_trabada and estado in _ABIERTOS:
             alertas.append(aceptacion_trabada)
 
         ultimo = mensajes[-1]
         silencio = ahora - ultimo.sent_at
         dias = silencio.days
-        if estado in _ABIERTOS or estado is JobState.DRAFT:
+        if estado in (*_ABIERTOS, JobState.DRAFT):
             if ultimo.from_customer and estado is not JobState.WAITING_CUSTOMER:
                 alertas.append(f"te escribió hace {_hace(silencio)} y espera respuesta")
-            elif estado in _ABIERTOS and silencio >= self.politica.abandono:
+            elif silencio >= self.politica.abandono:
                 mover(
                     JobState.CANCELLED,
                     ultimo.sent_at + self.politica.abandono,
                     f"{_plural(dias, 'día')} sin respuesta del cliente",
                     ultimo.id,
                 )
-            elif estado in _ABIERTOS and silencio >= self.politica.seguimiento:
+            elif silencio >= self.politica.seguimiento:
                 alertas.append(f"hace {_hace(silencio)} que no responde: conviene hacer seguimiento")
                 seguimiento = True
 
         final = self.extractor.extract(Conversation(conv.chat_id, mensajes, conv.transcripts))
         job = final.job
-        if estado is JobState.CONFIRMED and job.when and job.when.value < ahora.date():
+        if estado in (JobState.CONFIRMED, JobState.SCHEDULED) and job.when and job.when.value < ahora.date():
             alertas.append(f"la fecha ({job.when.value:%d/%m}) ya pasó: ¿se hizo el flete?")
         job.state = estado
         job.created_at = mensajes[0].sent_at

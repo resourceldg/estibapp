@@ -1,0 +1,349 @@
+"""Fase 6: acciones, un cliente con varios fletes, agenda, CRM y embudo."""
+
+from __future__ import annotations
+
+from datetime import date, datetime, time, timedelta
+from decimal import Decimal
+
+import pytest
+from fastapi.testclient import TestClient
+
+from estiba.adapters.fixtures import FixtureMessageSource
+from estiba.agenda.evento import calendario, evento_de
+from estiba.agenda.local import LocalCalendar
+from estiba.bandeja.servicio import sincronizar
+from estiba.conversation.store import ConversationStore
+from estiba.core.models import (
+    Conversation,
+    Evidence,
+    ExtractionMethod,
+    FreightJob,
+    JobState,
+    Message,
+    MessageKind,
+    Slot,
+    Stage,
+)
+from estiba.crm import embudo
+from estiba.jobs.engine import AGENDADO, PERDIDO, REALIZADO, Accion, JobEngine
+from estiba.jobs.episodios import episodios
+from estiba.storage.db import connect
+from estiba.storage.repositories import ActionRepository, CRMRepository
+from estiba.web.app import create_app
+
+JUEVES_18 = datetime(2026, 9, 18, 12)
+VUELVE = "5491122223333"
+
+
+def _slot(v) -> Slot:
+    return Slot(v, 0.9, Evidence("m", "cita", ExtractionMethod.REGEX))
+
+
+def _chat(*lineas: tuple[str, str, datetime]) -> Conversation:
+    return Conversation("x", [
+        Message(f"x:{i:03d}", "x", quien == "c", cuando, MessageKind.TEXT, text=t)
+        for i, (quien, t, cuando) in enumerate(lineas)
+    ])
+
+
+@pytest.fixture
+def conn():
+    c = connect(":memory:")
+    ConversationStore(c).ingest(list(FixtureMessageSource().poll()))
+    return c
+
+
+# --------------------------------------------------------------------------
+# Acciones en el JobEngine
+# --------------------------------------------------------------------------
+
+
+class TestAcciones:
+    def _conv(self, conn):
+        return ConversationStore(conn).get("5491177778888")
+
+    def test_agendado_y_realizado(self, conn):
+        conv = self._conv(conn)
+        acciones = [Accion(datetime(2026, 9, 17, 12), AGENDADO, "calendario"),
+                    Accion(datetime(2026, 9, 24, 18), REALIZADO)]
+        ev = JobEngine().evaluar(conv, datetime(2026, 9, 25), acciones)
+        assert [e.hacia for e in ev.eventos][-2:] == [JobState.SCHEDULED, JobState.DONE]
+        assert ev.eventos[-1].causa == "marcado como realizado"
+
+    def test_realizado_sin_agendar_no_hace_nada(self, conn):
+        ev = JobEngine().evaluar(self._conv(conn), datetime(2026, 9, 25),
+                                 [Accion(datetime(2026, 9, 24, 18), REALIZADO)])
+        assert ev.job.state is JobState.CONFIRMED
+
+    def test_perdido_con_motivo(self, conn):
+        conv = ConversationStore(conn).get("5491155556666")
+        ev = JobEngine().evaluar(conv, JUEVES_18, [Accion(datetime(2026, 9, 17), PERDIDO, nota="consiguio mas barato")])
+        assert ev.job.state is JobState.CANCELLED
+        assert ev.eventos[-1].causa == "dado por perdido: consiguio mas barato"
+
+    def test_una_accion_futura_no_cuenta_todavia(self, conn):
+        ev = JobEngine().evaluar(self._conv(conn), JUEVES_18, [Accion(datetime(2026, 9, 30), PERDIDO)])
+        assert ev.job.state is JobState.CONFIRMED
+
+    def test_borrador_sin_respuesta_tambien_se_pierde(self):
+        inicio = datetime(2026, 9, 1, 10)
+        conv = _chat(("c", "hola, haces fletes?", inicio), ("v", "si, de donde a donde?", inicio + timedelta(minutes=5)))
+        assert JobEngine().evaluar(conv, inicio + timedelta(days=6)).job.state is JobState.CANCELLED
+
+
+# --------------------------------------------------------------------------
+# Un cliente, varios fletes
+# --------------------------------------------------------------------------
+
+
+class TestEpisodios:
+    def test_el_cliente_que_vuelve_son_dos_fletes(self, conn):
+        conv = ConversationStore(conn).get(VUELVE)
+        eps = episodios(conv, JobEngine(), lambda _: [])
+        assert [e.job_id for e in eps] == [f"{VUELVE}:job", f"{VUELVE}:job2"]
+        assert [len(e.conversacion.messages) for e in eps] == [6, 3]
+
+    def test_el_segundo_no_hereda_datos_del_primero(self, conn):
+        conv = ConversationStore(conn).get(VUELVE)
+        segundo = episodios(conv, JobEngine(), lambda _: [])[1]
+        job = JobEngine().evaluar(segundo.conversacion, JUEVES_18).job
+        assert (job.origin.value, job.destination.value) == ("Belgrano", "Núñez")
+        assert job.items.value == ["lavarropas"]
+        assert job.floors_no_lift.value == 2
+        assert job.when is None  # el sabado de agosto no es de este flete
+
+    def test_retomar_un_flete_abierto_no_abre_otro(self):
+        inicio = datetime(2026, 9, 1, 10)
+        conv = _chat(
+            ("c", "necesito llevar una heladera de Almagro a Boedo", inicio),
+            ("v", "te sale 40 mil", inicio + timedelta(minutes=5)),
+            ("c", "tengo que ver", inicio + timedelta(minutes=10)),
+            ("c", "hola! necesito llevar la heladera que te dije", inicio + timedelta(days=2)),
+        )
+        assert len(episodios(conv, JobEngine(), lambda _: [])) == 1
+
+    def test_despues_de_uno_perdido_una_consulta_nueva_es_otro_flete(self):
+        inicio = datetime(2026, 9, 1, 10)
+        conv = _chat(
+            ("c", "necesito llevar una heladera de Almagro a Boedo", inicio),
+            ("v", "te sale 40 mil", inicio + timedelta(minutes=5)),
+            ("c", "necesito llevar un sillon de Flores a Once", inicio + timedelta(days=10)),
+        )
+        assert len(episodios(conv, JobEngine(), lambda _: [])) == 2
+
+
+# --------------------------------------------------------------------------
+# Agenda
+# --------------------------------------------------------------------------
+
+
+def _job(**slots) -> FreightJob:
+    base = {"origin": "Almagro", "destination": "Barracas", "when": date(2026, 9, 24), "items": ["placard"]}
+    base.update(slots)
+    return FreightJob("549:job", "549", **{k: _slot(v) for k, v in base.items() if v is not None})
+
+
+class TestEvento:
+    def test_con_hora(self):
+        e = evento_de(_job(hour=time(9), quoted_price=Decimal(70000)))
+        assert e.inicio == datetime(2026, 9, 24, 9) and not e.aproximado
+        assert e.fin == datetime(2026, 9, 24, 12)
+        assert e.titulo == "Flete Almagro → Barracas"
+        assert "Precio: $70.000" in e.descripcion and "wa.me/549" in e.descripcion
+
+    def test_solo_franja_es_aproximado(self):
+        e = evento_de(_job(daypart="tarde"))
+        assert e.inicio == datetime(2026, 9, 24, 14) and e.aproximado
+        assert e.titulo.startswith("~")
+
+    def test_sin_hora_es_de_todo_el_dia(self):
+        e = evento_de(_job())
+        assert e.todo_el_dia and e.fin == date(2026, 9, 25)
+
+    def test_sin_fecha_no_se_agenda(self):
+        with pytest.raises(ValueError, match="fecha"):
+            evento_de(_job(when=None))
+
+    def test_ics_valido(self):
+        ics = calendario([(evento_de(_job(items=["cajas; frágiles, 20"] * 4)), False)], JUEVES_18)
+        assert ics.startswith("BEGIN:VCALENDAR\r\n") and ics.endswith("END:VCALENDAR\r\n")
+        assert "DTSTART;VALUE=DATE:20260924" in ics
+        assert "cajas\\; frágiles\\, 20" in ics.replace("\r\n ", "")
+        assert all(len(linea.encode()) <= 75 for linea in ics.split("\r\n"))
+
+
+class TestAgendaEnSincronizar:
+    def test_los_confirmados_se_agendan_solos(self, conn):
+        r = sincronizar(conn, JobEngine(), JUEVES_18)
+        creados = {j for j, cambio in r.agenda if cambio == "creado"}
+        assert creados == {f"{VUELVE}:job", "5491133334444:job", "5491177778888:job"}
+        assert r.fletes["5491177778888:job"][0].job.state is JobState.SCHEDULED
+        assert sincronizar(conn, JobEngine(), JUEVES_18).agenda == []  # idempotente
+
+    def test_si_cambia_la_hora_el_evento_se_mueve(self, conn):
+        sincronizar(conn, JobEngine(), JUEVES_18)
+        ConversationStore(conn).ingest([
+            Message("5491177778888:100", "5491177778888", False, datetime(2026, 9, 18, 12, 30),
+                    MessageKind.TEXT, text="Te queda bien a las 10?"),
+            Message("5491177778888:101", "5491177778888", True, datetime(2026, 9, 18, 12, 40),
+                    MessageKind.TEXT, text="dale, perfecto"),
+        ])
+        r = sincronizar(conn, JobEngine(), datetime(2026, 9, 18, 13))
+        assert ("5491177778888:job", "movido") in r.agenda
+        [(e, _)] = [x for x in LocalCalendar(conn).eventos() if x[0].job_id == "5491177778888:job"]
+        assert e.inicio == datetime(2026, 9, 24, 10)
+
+    def test_si_se_pierde_el_evento_se_cancela(self, conn):
+        sincronizar(conn, JobEngine(), JUEVES_18)
+        ActionRepository(conn).add("5491177778888:job", PERDIDO, datetime(2026, 9, 18, 12, 30))
+        r = sincronizar(conn, JobEngine(), datetime(2026, 9, 18, 13))
+        assert ("5491177778888:job", "cancelado") in r.agenda
+        assert "5491177778888:job" not in {e.job_id for e, _ in LocalCalendar(conn).eventos(incluir_cancelados=False)}
+
+    def test_el_token_del_ics_no_cambia(self, conn):
+        cal = LocalCalendar(conn)
+        assert cal.token() == cal.token()
+
+
+class EspejoFalso:
+    def __init__(self, falla: bool = False) -> None:
+        self.falla = falla
+        self.reflejados: list[tuple[str, bool]] = []
+
+    def reflejar(self, evento, cancelado, estampa) -> None:
+        if self.falla:
+            raise ConnectionError("radicale no responde")
+        self.reflejados.append((evento.uid, cancelado))
+
+
+class TestEspejo:
+    def test_copia_solo_lo_que_cambio(self, conn):
+        espejo = EspejoFalso()
+        sincronizar(conn, JobEngine(), JUEVES_18, espejo)
+        assert len(espejo.reflejados) == 3
+        sincronizar(conn, JobEngine(), JUEVES_18, espejo)
+        assert len(espejo.reflejados) == 3
+
+    def test_si_el_servidor_falla_se_reintenta_despues(self, conn):
+        r = sincronizar(conn, JobEngine(), JUEVES_18, EspejoFalso(falla=True))
+        assert r.espejo_error == "radicale no responde"
+        espejo = EspejoFalso()
+        sincronizar(conn, JobEngine(), JUEVES_18, espejo)
+        assert len(espejo.reflejados) == 3
+
+
+# --------------------------------------------------------------------------
+# CRM y embudo
+# --------------------------------------------------------------------------
+
+
+class TestCRM:
+    def test_historia_de_etapas(self, conn):
+        r = sincronizar(conn, JobEngine(), JUEVES_18)
+        lead = next(l for l in r.leads if l.job_id == "5491133334444:job")
+        assert [p.etapa for p in lead.historia] == [Stage.NEW, Stage.QUALIFIED, Stage.QUOTED, Stage.CONFIRMED]
+        assert lead.primera_respuesta == timedelta(minutes=9)
+
+    def test_se_guarda_en_la_base(self, conn):
+        sincronizar(conn, JobEngine(), JUEVES_18)
+        leads = conn.execute("SELECT id, contact_id, stage FROM leads WHERE contact_id = ?", (VUELVE,)).fetchall()
+        assert {tuple(f) for f in leads} == {
+            (f"{VUELVE}:job", VUELVE, "confirmado"), (f"{VUELVE}:job2", VUELVE, "calificado")
+        }
+        assert conn.execute("SELECT COUNT(*) FROM contacts").fetchone()[0] == 4
+
+    def test_el_nombre_lo_pone_una_persona_y_sobrevive_a_sincronizar(self, conn):
+        sincronizar(conn, JobEngine(), JUEVES_18)
+        CRMRepository(conn).set_name(VUELVE, "  Marta  ")
+        sincronizar(conn, JobEngine(), JUEVES_18)
+        assert CRMRepository(conn).name(VUELVE) == "Marta"
+
+
+class TestEmbudo:
+    def test_sobre_las_conversaciones_de_prueba(self, conn):
+        ActionRepository(conn).add("5491155556666:job", PERDIDO, datetime(2026, 9, 17), nota="se arrepintio")
+        r = sincronizar(conn, JobEngine(), JUEVES_18)
+        e = embudo.calcular(r.leads, hasta=JUEVES_18)
+        assert [(p.etiqueta, p.cantidad) for p in e.pasos] == [
+            ("Consultas", 5), ("Con datos", 5), ("Presupuestados", 4), ("Confirmados", 3), ("Realizados", 0),
+        ]
+        assert e.perdidos == 1 and e.motivos == [("Lo diste por perdido", 1)]
+        assert e.comprometido == Decimal(48000 + 45000 + 70000)
+        assert (e.clientes, e.recurrentes) == (4, 1)
+
+    def test_el_periodo_filtra_por_fecha_de_la_consulta(self, conn):
+        r = sincronizar(conn, JobEngine(), JUEVES_18)
+        e = embudo.calcular(r.leads, hasta=JUEVES_18, desde=datetime(2026, 9, 1))
+        assert e.pasos[0].cantidad == 4  # el flete de agosto queda afuera
+
+
+# --------------------------------------------------------------------------
+# Dashboard
+# --------------------------------------------------------------------------
+
+
+@pytest.fixture
+def cliente(tmp_path):
+    db = tmp_path / "f6.db"
+    c = connect(db)
+    ConversationStore(c).ingest(list(FixtureMessageSource().poll()))
+    c.close()
+    with TestClient(create_app(db, ahora=lambda: JUEVES_18)) as tc:
+        yield tc
+
+
+class TestPantallas:
+    def test_agenda(self, cliente):
+        html = cliente.get("/agenda").text
+        assert "Para cerrar" in html and "Palermo → Belgrano" in html
+        assert html.index("Mañana") < html.index("Villa Crespo → Caballito") < html.index("Jueves")
+        assert "webcal://" in html
+
+    def test_marcar_realizado_cierra_y_factura(self, cliente):
+        r = cliente.post(f"/fletes/{VUELVE}:job/realizado", headers={"HX-Request": "true"})
+        assert r.headers["HX-Refresh"] == "true"
+        assert cliente.get(f"/api/fletes/{VUELVE}:job").json()["flete"]["estado"] == "realizado"
+        assert "Para cerrar" not in cliente.get("/agenda").text
+        assert cliente.get("/api/embudo?periodo=todo").json()["kpis"][0]["valor"] == "$48.000"
+
+    def test_no_se_marca_realizado_algo_sin_agendar(self, cliente):
+        assert cliente.post("/fletes/5491155556666:job/realizado").status_code == 409
+
+    def test_dar_por_perdido(self, cliente):
+        cliente.post("/api/fletes/5491155556666:job/acciones", json={"tipo": "perdido", "nota": "muy caro"})
+        d = cliente.get("/api/fletes/5491155556666:job").json()
+        assert d["flete"]["estado"] == "cancelado"
+        assert d["historia"][-1]["causa"] == "dado por perdido: muy caro"
+
+    def test_nombre_del_cliente(self, cliente):
+        cliente.post(f"/clientes/{VUELVE}/nombre", data={"nombre": "Marta"})
+        assert "Marta" in cliente.get("/clientes").text
+        assert cliente.get(f"/api/fletes/{VUELVE}:job2").json()["flete"]["nombre"] == "Marta"
+
+    def test_detalle_muestra_los_otros_fletes_del_cliente(self, cliente):
+        html = cliente.get(f"/fletes/{VUELVE}:job2").text
+        assert "Otros fletes de este cliente" in html and f"/fletes/{VUELVE}:job" in html
+
+    def test_numeros(self, cliente):
+        html = cliente.get("/numeros?periodo=todo").text
+        assert "De 5 consultas" in html and "1 volvió a pedir" in html
+        assert cliente.get("/numeros?periodo=siempre").status_code == 422
+
+    def test_ics(self, cliente):
+        url = cliente.get("/api/agenda").json()["url_ics"]
+        ruta = url.split("testserver", 1)[1]
+        r = cliente.get(ruta)
+        assert r.status_code == 200 and r.headers["content-type"].startswith("text/calendar")
+        assert r.text.count("BEGIN:VEVENT") == 3
+        assert cliente.get("/calendario/cualquiera.ics").status_code == 404
+
+
+def test_el_ics_no_pide_la_clave_pero_si_su_secreto(tmp_path):
+    db = tmp_path / "c.db"
+    c = connect(db)
+    ConversationStore(c).ingest(list(FixtureMessageSource().poll()))
+    token = LocalCalendar(c).token()
+    c.close()
+    with TestClient(create_app(db, ahora=lambda: JUEVES_18, clave="x")) as tc:
+        assert tc.get(f"/calendario/{token}.ics").status_code == 200
+        assert tc.get("/agenda", follow_redirects=False).status_code == 303

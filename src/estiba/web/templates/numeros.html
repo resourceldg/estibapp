@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icono %}
+{% block contenido %}
+<div class="encabezado">
+  <h1>Números</h1>
+  <nav class="periodos" aria-label="Período">
+    {% for clave, etiqueta in periodos.items() %}
+    <a href="?periodo={{ clave }}" {% if clave == periodo %}aria-current="true"{% endif %}>{{ etiqueta }}</a>
+    {% endfor %}
+  </nav>
+</div>
+
+{% if n.consultas == 0 %}
+<div class="vacio">
+  <div class="vacio-ico neutro">{{ icono("numeros") }}</div>
+  <h2>Sin consultas en este período</h2>
+  <p>Probá con un período más largo.</p>
+</div>
+{% else %}
+
+<section class="kpis" aria-label="Resumen">
+  {% for k in n.kpis %}
+  <div class="kpi">
+    <span class="kpi-etq">{{ k.etiqueta }}</span>
+    <span class="kpi-val">{{ k.valor }}</span>
+    <span class="kpi-nota">{{ k.nota }}</span>
+  </div>
+  {% endfor %}
+</section>
+
+<section class="panel">
+  <h2>De la consulta al flete hecho</h2>
+  <p class="ayuda">De {{ n.consultas }} {{ "consulta" if n.consultas == 1 else "consultas" }}, cuántas llegaron a cada paso. Un flete perdido cuenta hasta donde llegó.</p>
+  <ol class="grafico" role="list">
+    {% for b in n.embudo %}
+    <li class="grafico-fila" tabindex="0">
+      <span class="grafico-etq">{{ b.etiqueta }}</span>
+      <span class="grafico-pista"><span class="grafico-marca" style="width: {{ '%.1f'|format(b.ancho) }}%"></span></span>
+      <span class="grafico-val num">{{ b.cantidad }} <small>{{ b.porcentaje }}</small></span>
+      <span class="tip" role="tooltip">
+        <strong>{{ b.etiqueta }}: {{ b.cantidad }}</strong>
+        {{ b.porcentaje }} de las consultas{% if b.paso %} · {{ b.paso }}{% endif %}
+      </span>
+    </li>
+    {% endfor %}
+  </ol>
+</section>
+
+{% if n.perdidos %}
+<section class="panel">
+  <h2>Por qué se perdieron</h2>
+  <p class="ayuda">{{ n.perdidos }} {{ "flete perdido" if n.perdidos == 1 else "fletes perdidos" }} en el período.</p>
+  <ol class="grafico tenues" role="list">
+    {% for m in n.motivos %}
+    <li class="grafico-fila" tabindex="0">
+      <span class="grafico-etq">{{ m.motivo }}</span>
+      <span class="grafico-pista"><span class="grafico-marca" style="width: {{ '%.1f'|format(m.ancho) }}%"></span></span>
+      <span class="grafico-val num">{{ m.cantidad }}</span>
+      <span class="tip" role="tooltip"><strong>{{ m.motivo }}</strong>{{ m.cantidad }} de {{ n.perdidos }}</span>
+    </li>
+    {% endfor %}
+  </ol>
+</section>
+{% endif %}
+
+<a class="panel enlace-clientes" href="/clientes">
+  <span class="enlace-ico">{{ icono("clientes") }}</span>
+  <span>
+    <strong>{{ n.clientes }} {{ "cliente" if n.clientes == 1 else "clientes" }}</strong>
+    <span class="sub">{% if n.recurrentes == 1 %}1 volvió a pedir{% elif n.recurrentes %}{{ n.recurrentes }} volvieron a pedir{% else %}todavía ninguno volvió a pedir{% endif %}</span>
+  </span>
+  {{ icono("flecha") }}
+</a>
+
+<p class="nota pie">El gasto en publicidad no está conectado todavía, así que no hay costo por cliente: no se estima.</p>
+{% endif %}
+{% endblock %}

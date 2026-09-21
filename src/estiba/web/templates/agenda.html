@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icono, chip %}
+{% macro item(i) -%}
+<li>
+  <a class="evento" href="/fletes/{{ i.job_id }}">
+    <span class="evento-hora{% if i.aproximado %} aproximada{% endif %}">{{ i.hora }}</span>
+    <span class="evento-cuerpo">
+      <span class="evento-ruta">{{ i.ruta }}</span>
+      <span class="evento-sub">{{ i.quien }}{% if i.cosas %} · {{ i.cosas }}{% endif %}</span>
+    </span>
+    {% if i.precio %}<span class="evento-precio num">{{ i.precio }}</span>{% endif %}
+  </a>
+</li>
+{%- endmacro %}
+{% block contenido %}
+<div class="encabezado">
+  <h1>Agenda</h1>
+  <p class="bajada">Cada flete confirmado se agenda solo. Si cambia la fecha, se mueve; si se cae, se borra.</p>
+</div>
+
+{% if a.para_cerrar %}
+<section class="seccion">
+  <h2 class="seccion-titulo">Para cerrar <span class="seccion-cuenta">{{ a.para_cerrar|length }}</span></h2>
+  <p class="ayuda-seccion">Ya pasó la fecha. Marcalos como realizados para que cuenten en los números.</p>
+  <ul class="lista">
+    {% for i in a.para_cerrar %}
+    <li class="para-cerrar">
+      <a class="evento" href="/fletes/{{ i.job_id }}">
+        <span class="evento-cuerpo">
+          <span class="evento-ruta">{{ i.ruta }}</span>
+          <span class="evento-sub">{{ i.quien }}{% if i.precio %} · {{ i.precio }}{% endif %}</span>
+        </span>
+      </a>
+      <form method="post" action="/fletes/{{ i.job_id }}/realizado" hx-post="/fletes/{{ i.job_id }}/realizado">
+        <button class="btn secundario chico" type="submit">{{ icono("hecho") }}<span>Realizado</span></button>
+      </form>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{% for dia in a.dias %}
+<section class="seccion dia">
+  <h2 class="seccion-titulo">{{ dia.etiqueta }} <span class="seccion-cuenta">{{ dia.fecha }}</span></h2>
+  <ul class="lista">{% for i in dia.items %}{{ item(i) }}{% endfor %}</ul>
+</section>
+{% else %}
+{% if not a.para_cerrar %}
+<div class="vacio">
+  <div class="vacio-ico neutro">{{ icono("agenda") }}</div>
+  <h2>Nada agendado</h2>
+  <p>Cuando un cliente confirme, el flete aparece acá y en el calendario de tu celular.</p>
+</div>
+{% endif %}
+{% endfor %}
+
+<section class="panel suscribir">
+  <h2>En el calendario del celular</h2>
+  <p class="ayuda">Suscribite una vez y los fletes aparecen solos en tu calendario, con barrios, carga, precio y teléfono. Se actualiza cada vez que cambia algo.</p>
+  <div class="suscribir-acciones">
+    <a class="btn secundario" href="{{ a.url_webcal }}">{{ icono("agenda") }}<span>Suscribirme</span></a>
+    <button type="button" class="btn fantasma" data-copiar="{{ a.url_ics }}">{{ icono("copiar") }}<span>Copiar link</span></button>
+  </div>
+  <p class="nota">El link es privado: quien lo tenga ve tu agenda. En Google Calendar: <em>Otros calendarios → Desde URL</em>.</p>
+</section>
+{% endblock %}

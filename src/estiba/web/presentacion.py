@@ -9,12 +9,12 @@ from __future__ import annotations
 import re
 import sqlite3
 from dataclasses import asdict, dataclass, field
-from datetime import date, datetime, time
-from decimal import Decimal
+from datetime import date, datetime, time, timedelta
 from urllib.parse import quote
 
 from estiba.core.models import Conversation, JobState
 from estiba.extraction.fechas import hora_legible, nombre_dia
+from estiba.formato import pesos, telefono
 from estiba.jobs.engine import Evaluacion
 from estiba.jobs.preguntas import ETIQUETAS
 
@@ -38,20 +38,6 @@ TIPOS_BORRADOR = {
 
 _ORDEN_DATOS = ("origin", "destination", "when", "hour", "daypart", "items",
                 "floors_no_lift", "helpers", "quoted_price")
-
-
-def pesos(monto: Decimal | int | None) -> str | None:
-    if monto is None:
-        return None
-    return f"${int(monto):,}".replace(",", ".")
-
-
-def telefono(chat_id: str) -> str:
-    """5491133334444 -> +54 9 11 3333-4444. Si no lo reconoce, lo deja como esta."""
-    m = re.fullmatch(r"549(11)(\d{4})(\d{4})", chat_id)
-    if m:
-        return f"+54 9 {m.group(1)} {m.group(2)}-{m.group(3)}"
-    return f"+{chat_id}" if chat_id.isdigit() else chat_id
 
 
 def fecha_corta(d: date) -> str:
@@ -130,6 +116,7 @@ class Mensaje:
 @dataclass
 class Borrador:
     id: int
+    job_id: str
     chat_id: str
     tipo: str
     tipo_etiqueta: str
@@ -142,7 +129,9 @@ class Borrador:
 
 @dataclass
 class Flete:
+    job_id: str
     chat_id: str
+    nombre: str | None
     telefono: str
     estado: str
     estado_etiqueta: str
@@ -169,6 +158,10 @@ class Flete:
     def ruta(self) -> str:
         return f"{self.origen or '¿?'} → {self.destino or '¿?'}"
 
+    @property
+    def quien(self) -> str:
+        return self.nombre or self.telefono
+
 
 @dataclass
 class DetalleFlete:
@@ -182,9 +175,12 @@ class DetalleFlete:
     historia: list[Evento]
     mensajes: list[Mensaje]
     borradores: list[Borrador]
+    otros: list[Flete]
+    puede_realizar: bool
+    puede_perder: bool
 
 
-def flete(ev: Evaluacion, conv: Conversation, ahora: datetime) -> Flete:
+def flete(job_id: str, ev: Evaluacion, conv: Conversation, ahora: datetime, nombre: str | None = None) -> Flete:
     job = ev.job
     etiqueta, tono = ESTADOS[job.state]
     mensajes = [m for m in conv.messages if m.sent_at <= ahora]
@@ -196,7 +192,9 @@ def flete(ev: Evaluacion, conv: Conversation, ahora: datetime) -> Flete:
     elif job.daypart:
         hora = _mostrar("daypart", job.daypart.value)
     return Flete(
+        job_id=job_id,
         chat_id=conv.chat_id,
+        nombre=nombre,
         telefono=telefono(conv.chat_id),
         estado=job.state.value,
         estado_etiqueta=etiqueta,
@@ -225,6 +223,7 @@ def borrador(fila: sqlite3.Row) -> Borrador:
     texto_final = fila["final_text"]
     return Borrador(
         id=fila["id"],
+        job_id=fila["job_id"],
         chat_id=fila["chat_id"],
         tipo=fila["kind"],
         tipo_etiqueta=TIPOS_BORRADOR.get(fila["kind"], fila["kind"]),
@@ -236,7 +235,15 @@ def borrador(fila: sqlite3.Row) -> Borrador:
     )
 
 
-def detalle(ev: Evaluacion, conv: Conversation, ahora: datetime, borradores: list[sqlite3.Row]) -> DetalleFlete:
+def detalle(
+    job_id: str,
+    ev: Evaluacion,
+    conv: Conversation,
+    ahora: datetime,
+    borradores: list[sqlite3.Row],
+    nombre: str | None = None,
+    otros: list[Flete] | None = None,
+) -> DetalleFlete:
     ex = ev.extraccion
     datos = []
     por_mensaje: dict[str, list[str]] = {}
@@ -284,7 +291,7 @@ def detalle(ev: Evaluacion, conv: Conversation, ahora: datetime, borradores: lis
 
     p = ev.presupuesto
     return DetalleFlete(
-        flete=flete(ev, conv, ahora),
+        flete=flete(job_id, ev, conv, ahora, nombre),
         datos=datos,
         faltan=[ETIQUETAS[f] for f in ev.job.missing],
         dudas=ex.dudas,
@@ -294,7 +301,205 @@ def detalle(ev: Evaluacion, conv: Conversation, ahora: datetime, borradores: lis
         historia=historia,
         mensajes=mensajes,
         borradores=[borrador(b) for b in borradores],
+        otros=otros or [],
+        puede_realizar=ev.job.state is JobState.SCHEDULED,
+        puede_perder=ev.job.state not in (JobState.DONE, JobState.CANCELLED),
     )
+
+
+# --------------------------------------------------------------------------
+# Agenda
+# --------------------------------------------------------------------------
+
+
+@dataclass
+class ItemAgenda:
+    job_id: str
+    hora: str
+    aproximado: bool
+    ruta: str
+    cosas: str | None
+    precio: str | None
+    quien: str
+    estado_etiqueta: str
+    tono: str
+
+
+@dataclass
+class DiaAgenda:
+    etiqueta: str
+    fecha: str
+    items: list[ItemAgenda]
+
+
+@dataclass
+class Agenda:
+    para_cerrar: list[ItemAgenda]
+    dias: list[DiaAgenda]
+    url_ics: str
+    url_webcal: str
+
+
+def agenda(eventos, fletes: dict[str, Flete], ahora: datetime, url_ics: str) -> Agenda:
+    hoy = ahora.date()
+    para_cerrar: list[ItemAgenda] = []
+    por_dia: dict[date, list[ItemAgenda]] = {}
+    for e, _cancelado in eventos:
+        f = fletes.get(e.job_id)
+        if f is None:
+            continue
+        dia = e.inicio if not isinstance(e.inicio, datetime) else e.inicio.date()
+        if e.todo_el_dia:
+            hora = "Sin hora"
+        else:
+            hora = f"{'~' if e.aproximado else ''}{hora_legible(e.inicio.time())} h"
+        item = ItemAgenda(
+            job_id=e.job_id, hora=hora, aproximado=e.aproximado, ruta=f.ruta, cosas=f.cosas,
+            precio=f.cotizado, quien=f.quien, estado_etiqueta=f.estado_etiqueta, tono=f.tono,
+        )
+        if dia < hoy:
+            if f.estado == JobState.SCHEDULED.value:
+                para_cerrar.append(item)
+            continue
+        por_dia.setdefault(dia, []).append(item)
+
+    dias = []
+    for dia in sorted(por_dia):
+        if dia == hoy:
+            etiqueta = "Hoy"
+        elif dia == hoy + timedelta(days=1):
+            etiqueta = "Mañana"
+        else:
+            etiqueta = nombre_dia(dia).capitalize()
+        dias.append(DiaAgenda(etiqueta, f"{dia:%d/%m}", sorted(por_dia[dia], key=lambda i: i.hora)))
+    webcal = "webcal://" + url_ics.split("://", 1)[1]
+    return Agenda(para_cerrar, dias, url_ics, webcal)
+
+
+# --------------------------------------------------------------------------
+# Numeros
+# --------------------------------------------------------------------------
+
+
+@dataclass
+class Kpi:
+    etiqueta: str
+    valor: str
+    nota: str
+
+
+@dataclass
+class BarraEmbudo:
+    etiqueta: str
+    cantidad: int
+    ancho: float  # 0..100, relativo a las consultas
+    porcentaje: str  # del total
+    paso: str | None  # conversion desde la etapa anterior
+
+
+@dataclass
+class BarraMotivo:
+    motivo: str
+    cantidad: int
+    ancho: float
+
+
+@dataclass
+class Numeros:
+    consultas: int
+    kpis: list[Kpi]
+    embudo: list[BarraEmbudo]
+    perdidos: int
+    motivos: list[BarraMotivo]
+    clientes: int
+    recurrentes: int
+
+
+def _duracion(d: timedelta | None) -> str:
+    if d is None:
+        return "—"
+    minutos = int(d.total_seconds() // 60)
+    if minutos < 60:
+        return f"{minutos} min"
+    horas, resto = divmod(minutos, 60)
+    return f"{horas} h {resto:02d}" if horas < 24 else f"{horas // 24} días"
+
+
+def numeros(e) -> Numeros:
+    consultas = e.pasos[0].cantidad if e.pasos else 0
+    kpis = [
+        Kpi("Facturado", pesos(e.facturado), "fletes realizados"),
+        Kpi("En agenda", pesos(e.comprometido), "confirmados por hacer"),
+        Kpi("Ticket promedio", pesos(e.ticket_promedio) or "—", "por flete vendido"),
+        Kpi("Primera respuesta", _duracion(e.respuesta_mediana), "mediana"),
+    ]
+    if e.desvio_precio is not None:
+        signo = "+" if e.desvio_precio >= 0 else "−"
+        kpis.append(Kpi("Tu precio vs. sugerido", f"{signo}{abs(e.desvio_precio):.0%}",
+                        "cotizaste más caro" if e.desvio_precio > 0.02
+                        else "cotizaste más barato" if e.desvio_precio < -0.02 else "casi igual"))
+    embudo = [
+        BarraEmbudo(
+            etiqueta=p.etiqueta,
+            cantidad=p.cantidad,
+            ancho=100 * p.cantidad / consultas if consultas else 0,
+            porcentaje=f"{p.del_total:.0%}",
+            paso=f"{p.del_anterior:.0%} de la etapa anterior" if p.del_anterior is not None else None,
+        )
+        for p in e.pasos
+    ]
+    mayor = max((n for _, n in e.motivos), default=0)
+    motivos = [BarraMotivo(m, n, 100 * n / mayor if mayor else 0) for m, n in e.motivos]
+    return Numeros(consultas, kpis, embudo, e.perdidos, motivos, e.clientes, e.recurrentes)
+
+
+# --------------------------------------------------------------------------
+# Clientes
+# --------------------------------------------------------------------------
+
+
+@dataclass
+class Cliente:
+    chat_id: str
+    nombre: str | None
+    telefono: str
+    fletes: int
+    realizados: int
+    facturado: str
+    ultimo: str
+    ultimo_job_id: str
+    ultimo_ruta: str
+    ultimo_estado: str
+    tono: str
+
+
+def clientes(leads, fletes: dict[str, Flete], nombres: dict[str, str], ahora: datetime) -> list[Cliente]:
+    from estiba.core.models import Stage
+
+    por_chat: dict[str, list] = {}
+    for l in leads:
+        por_chat.setdefault(l.chat_id, []).append(l)
+    salida = []
+    for chat_id, suyos in por_chat.items():
+        suyos.sort(key=lambda l: l.creado)
+        ultimo = suyos[-1]
+        f = fletes.get(ultimo.job_id)
+        hechos = [l for l in suyos if l.etapa is Stage.DONE]
+        salida.append(Cliente(
+            chat_id=chat_id,
+            nombre=nombres.get(chat_id),
+            telefono=telefono(chat_id),
+            fletes=len(suyos),
+            realizados=len(hechos),
+            facturado=pesos(sum((l.cotizado or 0 for l in hechos), 0)),
+            ultimo=hace(f.ultimo_at and datetime.fromisoformat(f.ultimo_at), ahora) if f else "",
+            ultimo_job_id=ultimo.job_id,
+            ultimo_ruta=f.ruta if f else "",
+            ultimo_estado=f.estado_etiqueta if f else "",
+            tono=f.tono if f else "neutro",
+        ))
+    return sorted(salida, key=lambda c: fletes[c.ultimo_job_id].ultimo_at if c.ultimo_job_id in fletes else "",
+                  reverse=True)
 
 
 def a_json(obj) -> dict:

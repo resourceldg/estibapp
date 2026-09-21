@@ -1,4 +1,9 @@
-"""Sincronizar: evaluar cada conversacion, guardar su flete y su borrador.
+"""Sincronizar: poner todo al dia a partir de las conversaciones.
+
+Para cada conversacion: partirla en fletes (un cliente puede pedir varios),
+evaluar cada uno con lo que se marco a mano, agendarlo si se confirmo,
+guardarlo, dejar su borrador en la bandeja y actualizar el CRM. Al final,
+copiar la agenda al CalDAV si hay uno.
 
 Es lo que corre al abrir el dashboard o al tocar "actualizar". Idempotente:
 correrlo dos veces seguidas no cambia nada.
@@ -7,28 +12,81 @@ correrlo dos veces seguidas no cambia nada.
 from __future__ import annotations
 
 import sqlite3
+from dataclasses import dataclass, field
 from datetime import datetime
 
+from estiba.agenda.local import LocalCalendar
 from estiba.bandeja.redactor import proponer
 from estiba.conversation.store import ConversationStore
-from estiba.core.models import Conversation
-from estiba.jobs.engine import Evaluacion, JobEngine
-from estiba.storage.repositories import DraftRepository, JobRepository
+from estiba.core.models import Conversation, JobState
+from estiba.crm.leads import LeadInfo, lead_de
+from estiba.jobs.engine import AGENDADO, Evaluacion, JobEngine
+from estiba.jobs.episodios import episodios
+from estiba.storage.repositories import (
+    ActionRepository,
+    CRMRepository,
+    DraftRepository,
+    JobRepository,
+)
 
 
-def sincronizar(
-    conn: sqlite3.Connection, engine: JobEngine, ahora: datetime
-) -> dict[str, tuple[Evaluacion, Conversation]]:
+@dataclass
+class Resultado:
+    #: job_id -> (evaluacion, conversacion del episodio)
+    fletes: dict[str, tuple[Evaluacion, Conversation]] = field(default_factory=dict)
+    leads: list[LeadInfo] = field(default_factory=list)
+    #: Que paso con la agenda: (job_id, "creado" | "movido" | "cancelado" | ...)
+    agenda: list[tuple[str, str]] = field(default_factory=list)
+    espejo_error: str | None = None
+
+
+def sincronizar(conn: sqlite3.Connection, engine: JobEngine, ahora: datetime, espejo=None) -> Resultado:
     store = ConversationStore(conn)
     jobs = JobRepository(conn)
     borradores = DraftRepository(conn)
-    evaluaciones = {}
+    acciones = ActionRepository(conn)
+    crm = CRMRepository(conn)
+    agenda = LocalCalendar(conn, reloj=lambda: ahora)
+    r = Resultado()
+
     for chat_id in store.chat_ids():
         conv = store.get(chat_id)
         if not any(m.sent_at <= ahora for m in conv.messages):
             continue
-        ev = engine.evaluar(conv, ahora)
-        jobs.save(ev.job, ev.eventos)
-        borradores.sync(ev.job.id, chat_id, proponer(ev, conv, ahora), ahora)
-        evaluaciones[chat_id] = (ev, conv)
-    return evaluaciones
+        todos = episodios(conv, engine, acciones.for_job)
+        for n, ep in enumerate(todos, start=1):
+            if not any(m.sent_at <= ahora for m in ep.conversacion.messages):
+                continue
+            ev = engine.evaluar(ep.conversacion, ahora, acciones.for_job(ep.job_id))
+            ev.job.id = ep.job_id
+
+            # Confirmado y con fecha: va a la agenda, y eso lo pasa a agendado.
+            if ev.job.state is JobState.CONFIRMED and not acciones.has(ep.job_id, AGENDADO):
+                acciones.add(ep.job_id, AGENDADO, ahora, actor="calendario")
+                ev = engine.evaluar(ep.conversacion, ahora, acciones.for_job(ep.job_id))
+                ev.job.id = ep.job_id
+            if ev.job.state in (JobState.CONFIRMED, JobState.SCHEDULED, JobState.DONE):
+                evento, cambio = agenda.programar(ev.job)
+                ev.job.calendar_event_id = evento.uid
+                if cambio != "igual":
+                    r.agenda.append((ep.job_id, cambio))
+            elif ev.job.state is JobState.CANCELLED and agenda.cancelar_de(ep.job_id):
+                r.agenda.append((ep.job_id, "cancelado"))
+
+            jobs.save(ev.job, ev.eventos)
+            # Solo el ultimo flete de la conversacion puede necesitar respuesta.
+            propuesta = proponer(ev, ep.conversacion, ahora) if n == len(todos) else None
+            borradores.sync(ep.job_id, chat_id, propuesta, ahora)
+            lead = lead_de(ep.job_id, ev, ep.conversacion)
+            crm.save(lead)
+            r.fletes[ep.job_id] = (ev, ep.conversacion)
+            r.leads.append(lead)
+
+    if espejo is not None:
+        try:
+            for evento, cancelado in agenda.sin_reflejar():
+                espejo.reflejar(evento, cancelado, ahora)
+                agenda.marcar_reflejado(evento.uid)
+        except Exception as e:  # el CalDAV caido no frena nada: se reintenta la proxima vez
+            r.espejo_error = str(e) or type(e).__name__
+    return r

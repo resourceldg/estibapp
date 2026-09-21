@@ -34,7 +34,7 @@ class TestCicloCompleto:
     def test_ingest_despues_list_despues_show(self, db, capsys):
         assert main(["--db", db, "ingest"]) == 0
         salida = capsys.readouterr().out
-        assert "29 mensajes leidos, 29 nuevos" in salida
+        assert "38 mensajes leidos, 38 nuevos" in salida
 
         assert main(["--db", db, "list"]) == 0
         assert "5491133334444" in capsys.readouterr().out
