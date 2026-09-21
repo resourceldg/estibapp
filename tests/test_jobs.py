@@ -73,7 +73,9 @@ class TestFixtures:
         assert _estados(ev) == [JobState.QUOTED, JobState.CONFIRMED]
         assert ev.eventos[0].message_id == "5491133334444:007"  # "Te sale 45 mil"
         assert ev.eventos[1].message_id == "5491133334444:008"  # "dale, cerramos"
-        assert ev.alertas == []
+        # El flete era el sabado 19: al lunes 21 ya paso.
+        assert ev.alertas == ["la fecha (19/09) ya pasó: ¿se hizo el flete?"]
+        assert JobEngine().evaluar(_fixture("01-datos-fuera-de-orden.json"), JUEVES_18).alertas == []
 
     def test_manana_te_confirmo_espera_y_despues_se_pierde(self):
         conv = _fixture("02-manana-te-confirmo.json")
@@ -122,7 +124,7 @@ class TestTransiciones:
             datetime(2026, 9, 15, 11),
         )
         assert ev.job.state is JobState.QUOTED
-        assert any("acepto, pero falta fecha" in a for a in ev.alertas)
+        assert any("aceptó, pero falta fecha" in a for a in ev.alertas)
         assert "¿Para qué día lo necesitás?" in ev.preguntas
 
     def test_el_cliente_cancela(self):
@@ -131,7 +133,7 @@ class TestTransiciones:
             LUNES_21,
         )
         assert ev.job.state is JobState.CANCELLED
-        assert ev.eventos[-1].causa == "el cliente cancelo"
+        assert ev.eventos[-1].causa == "el cliente canceló"
 
     def test_nueva_cotizacion_despues_de_posponer_vuelve_a_presupuestado(self):
         ev = JobEngine().evaluar(
@@ -151,7 +153,7 @@ class TestTransiciones:
             datetime(2026, 9, 15, 11),
         )
         assert ev.job.destination.value == "Merlo"
-        assert any("revisar precio" in a for a in ev.alertas)
+        assert any("revisar el precio" in a for a in ev.alertas)
 
     def test_si_el_cliente_escribio_ultimo_no_se_cancela_por_silencio(self):
         """El que no respondio es el fletero: eso no es un cliente perdido."""

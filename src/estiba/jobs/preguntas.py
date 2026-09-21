@@ -9,11 +9,11 @@ from __future__ import annotations
 
 from estiba.core.models import JobState
 from estiba.extraction.extractor import Extraccion
-from estiba.extraction.fechas import NOMBRE_DIA
+from estiba.extraction.fechas import nombre_dia
 from estiba.extraction.reglas import leer_item
 
 ETIQUETAS = {
-    "origin": "origen", "destination": "destino", "items": "que lleva",
+    "origin": "origen", "destination": "destino", "items": "qué lleva",
     "when": "fecha", "hour": "hora", "daypart": "franja",
     "floors_no_lift": "pisos x escalera", "helpers": "ayudantes",
     "quoted_price": "precio cotizado",
@@ -57,7 +57,7 @@ def preguntas(ex: Extraccion, estado: JobState) -> list[str]:
         if ganador.duda:
             if campo == "when":
                 d = ganador.slot.value
-                salida.append(f"¿Sería el {NOMBRE_DIA[d.weekday()]} {d:%d/%m}?")
+                salida.append(f"¿Sería el {nombre_dia(d)} {d:%d/%m}?")
             elif campo in _SI_HAY_DUDA:
                 salida.append(_SI_HAY_DUDA[campo])
         if campo == "items":

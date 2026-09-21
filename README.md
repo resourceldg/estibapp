@@ -8,10 +8,11 @@ llegue entera. Es lo que el sistema hace con conversaciones desordenadas.
 
 ## Estado
 
-**Fase 4 de 7: terminada.** Estiba ingiere conversaciones, transcribe los
+**Fase 5 de 7: terminada.** Estiba ingiere conversaciones, transcribe los
 audios con Whisper local, saca los datos del flete por reglas (cada uno con la
-cita de donde salió) y arma el flete: en qué estado está y por qué, qué
-precio sugiere la tarifa y qué falta preguntarle al cliente.
+cita de donde salió), arma el flete (estado, historia, precio sugerido, qué
+falta) y te deja en una bandeja el mensaje que le escribiría al cliente, para
+que lo apruebes desde el celular.
 
 | Fase | Qué trae | Estado |
 | --- | --- | --- |
@@ -19,7 +20,7 @@ precio sugiere la tarifa y qué falta preguntarle al cliente.
 | 2 | AudioPipeline con Whisper local | Listo |
 | 3 | Intención y extracción de datos por reglas | Listo |
 | 4 | JobEngine, datos faltantes, PricingEngine | Listo |
-| 5 | API y dashboard con bandeja de aprobación | Pendiente |
+| 5 | API y dashboard con bandeja de aprobación | Listo |
 | 6 | Calendario CalDAV, CRM y funnel | Pendiente |
 | 7 | WAHA en Docker, ingesta real de WhatsApp | Pendiente |
 
@@ -36,7 +37,9 @@ uv run estiba wer                       # error contra transcripcion_esperada
 uv run estiba extract                   # datos del flete con su evidencia, dudas y faltantes
 uv run estiba jobs                      # estado, historia, precio sugerido, qué preguntar
 uv run estiba jobs --ahora 2026-09-21T12:00   # evaluar como si fuera otra fecha
-uv run pytest                           # 135 tests, no necesitan Whisper
+uv run estiba serve                     # dashboard en http://127.0.0.1:8000, API en /docs
+uv run estiba serve --ahora 2026-09-18T12:00  # demo con las conversaciones de prueba
+uv run pytest                           # 160 tests, no necesitan Whisper
 ```
 
 ## Cómo está armado
@@ -60,6 +63,9 @@ src/estiba/
   jobs/engine.py        Estado del flete, recalculado mensaje a mensaje.
   jobs/pricing.py       Precio sugerido con desglose. Montos en tarifa.toml.
   jobs/preguntas.py     Qué preguntarle al cliente. Borrador: no se envía.
+  bandeja/redactor.py   El mensaje que Estiba propone, a lo sumo uno por flete.
+  bandeja/servicio.py   Sincronizar: evaluar todo y dejar la bandeja al día.
+  web/                  FastAPI + htmx: dashboard para el celular y API JSON.
   storage/            SQLite, migraciones versionadas, repositorios.
   conversation/store.py  Reconstruye el hilo con las transcripciones pegadas.
   cli.py
@@ -90,6 +96,37 @@ modelo, poné ahí tus audios, cargá su `transcripcion_esperada` en el fixture 
 corré `estiba transcribe --modelo small`, después
 `estiba transcribe --modelo medium --comparar`, y mirá `estiba wer`. Cada modelo guarda su propia transcripción y gana la de mayor
 confianza.
+
+## El dashboard
+
+Pensado para el celular, con una mano. Tres pantallas:
+
+- **Bandeja**: una tarjeta por cada cliente al que le toca tu respuesta, con
+  el mensaje ya escrito. Lo corregís si hace falta y tocás *Aprobar y
+  enviar*: se abre WhatsApp con el texto listo. Nada sale sin ese toque.
+  Si el cliente preguntó algo que Estiba no sabe contestar, la tarjeta viene
+  vacía para que escribas vos.
+- **Fletes**: los próximos por fecha, los que están en conversación y los
+  pasados o perdidos.
+- **Detalle**: ruta, fecha, precio cotizado contra sugerido con su desglose,
+  historia de estados y la conversación. Cada dato muestra la cita de donde
+  salió; tocándolo te lleva a ese mensaje.
+
+La misma información está en la API JSON (`/api/bandeja`, `/api/fletes`,
+`/api/fletes/{chat_id}`), documentada en `/docs`.
+
+### Desde el celular
+
+Por defecto escucha solo en tu máquina. Para abrirlo desde el teléfono en la
+misma red hay que ponerle clave (sin clave, se niega a arrancar):
+
+```bash
+ESTIBA_CLAVE='una-clave-larga' uv run estiba serve --host 0.0.0.0
+```
+
+y entrás a `http://<ip-de-tu-máquina>:8000`. Desde fuera de tu casa, mejor
+por una VPN como Tailscale que abriendo un puerto. En el celular, "Agregar a
+la pantalla de inicio" la deja como una app.
 
 ## Cómo se mueve un flete
 

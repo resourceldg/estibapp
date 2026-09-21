@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icono %}
+{% block contenido %}
+<div class="encabezado">
+  <h1>Bandeja</h1>
+  {% if items %}
+  <p class="bajada">
+    {% if items|length == 1 %}Una conversación espera tu respuesta.
+    {% else %}{{ items|length }} conversaciones esperan tu respuesta.{% endif %}
+    Revisá, corregí si hace falta y aprobá.
+  </p>
+  {% endif %}
+</div>
+
+{% if items %}
+<div class="pila">
+  {% for b, f in items %}
+    {% include "_borrador.html" %}
+  {% endfor %}
+</div>
+{% else %}
+<div class="vacio">
+  <div class="vacio-ico">{{ icono("check") }}</div>
+  <h2>Todo al día</h2>
+  <p>Cuando a alguien le toque tu respuesta, Estiba te deja el mensaje escrito acá para que lo apruebes.</p>
+  <a class="btn secundario" href="/fletes">Ver fletes</a>
+</div>
+{% endif %}
+{% endblock %}

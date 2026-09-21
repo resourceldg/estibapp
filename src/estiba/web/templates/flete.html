@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icono, chip %}
+{% set f = d.flete %}
+{% block contenido %}
+<a class="volver" href="/fletes">{{ icono("volver") }}Fletes</a>
+
+<section class="portada">
+  <div class="portada-cab">
+    {{ chip(f.estado_etiqueta, f.tono) }}
+    <a class="tel" href="https://wa.me/{{ f.chat_id }}" target="_blank" rel="noopener">{{ f.telefono }}</a>
+  </div>
+  <h1 class="ruta-grande">
+    <span>{{ f.origen or "¿Desde dónde?" }}</span>
+    {{ icono("flecha", "ruta-flecha") }}
+    <span>{{ f.destino or "¿Hasta dónde?" }}</span>
+  </h1>
+  <dl class="hechos">
+    <div><dt>Fecha</dt><dd>{{ f.fecha or "—" }}</dd></div>
+    <div><dt>Hora</dt><dd>{{ f.hora or "—" }}</dd></div>
+    <div><dt>Precio</dt><dd class="num">{{ f.cotizado or "—" }}</dd></div>
+  </dl>
+</section>
+
+{% if f.alertas %}
+<div class="aviso" role="status">
+  {{ icono("aviso") }}
+  <ul>{% for a in f.alertas %}<li>{{ a[0]|upper }}{{ a[1:] }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+{% set en_detalle = true %}
+{% for b in d.borradores if b.estado == "pendiente" %}
+  {% include "_borrador.html" %}
+{% endfor %}
+
+<div class="columnas">
+  <div class="col-datos">
+    <section class="panel">
+      <h2>Datos</h2>
+      <p class="ayuda">Cada dato dice de qué mensaje salió. Tocalo para verlo en la conversación.</p>
+      <ul class="datos">
+        {% for x in d.datos %}
+        <li>
+          <a class="dato{% if x.duda or x.confianza < 0.7 %} dudoso{% endif %}" href="#{{ x.ancla }}" data-ir="{{ x.ancla }}">
+            <span class="dato-etq">{{ x.etiqueta }}</span>
+            <span class="dato-val">{{ x.valor }}</span>
+            <span class="dato-cita">“{{ x.cita }}”</span>
+            {% if x.duda %}<span class="dato-duda">{{ icono("aviso") }}{{ x.duda }}</span>{% endif %}
+            <span class="confianza" style="--c: {{ x.confianza }}" title="confianza {{ (x.confianza * 100)|round|int }}%"></span>
+          </a>
+        </li>
+        {% endfor %}
+        {% for falta in d.faltan %}
+        <li><div class="dato falta"><span class="dato-etq">{{ falta|capitalize }}</span><span class="dato-val">Falta</span></div></li>
+        {% endfor %}
+      </ul>
+    </section>
+
+    <section class="panel">
+      <h2>Precio</h2>
+      <div class="precios">
+        <div><span class="precio-etq">Cotizado</span><span class="precio-val num">{{ f.cotizado or "—" }}</span></div>
+        <div><span class="precio-etq">Sugerido</span><span class="precio-val num sugerido">{{ f.sugerido or "—" }}{% if f.sugerido and not f.sugerido_completo %}<small> o más</small>{% endif %}</span></div>
+      </div>
+      {% if d.desglose %}
+      <details class="desglose">
+        <summary>Cómo se calcula el sugerido</summary>
+        <table>
+          {% for concepto, monto in d.desglose %}<tr><td>{{ concepto }}</td><td class="num">{{ monto }}</td></tr>{% endfor %}
+        </table>
+        {% if d.sin_contar %}
+        <p class="sin-contar">Sin contar:</p>
+        <ul class="sin-contar">{% for s in d.sin_contar %}<li>{{ s }}</li>{% endfor %}</ul>
+        {% endif %}
+      </details>
+      {% endif %}
+    </section>
+
+    {% if d.historia %}
+    <section class="panel">
+      <h2>Historia</h2>
+      <ol class="historia">
+        {% for e in d.historia %}
+        <li class="tono-{{ e.tono }}">
+          <span class="hito"></span>
+          <div>
+            <strong>{{ e.hacia }}</strong>
+            <span class="historia-causa">{{ e.causa }}</span>
+            <span class="historia-cuando">{% if e.ancla %}<a href="#{{ e.ancla }}" data-ir="{{ e.ancla }}">{{ e.cuando }}</a>{% else %}{{ e.cuando }}{% endif %}</span>
+          </div>
+        </li>
+        {% endfor %}
+      </ol>
+    </section>
+    {% endif %}
+  </div>
+
+  <div class="col-chat">
+    <section class="panel chat">
+      <h2>Conversación</h2>
+      <ol class="mensajes">
+        {% for m in d.mensajes %}
+        <li class="msj {{ 'cliente' if m.del_cliente else 'vos' }}" id="{{ m.ancla }}">
+          <div class="burbuja">
+            {% if m.es_audio %}
+              <span class="audio">{{ icono("mic") }}{% if m.texto %}Audio transcripto{% else %}Audio sin transcribir{% endif %}</span>
+            {% endif %}
+            {% if m.texto %}<p>{{ m.texto }}</p>{% endif %}
+            <span class="msj-hora">{{ m.hora }}</span>
+          </div>
+          {% if m.datos %}<div class="msj-datos">{% for x in m.datos %}<span>{{ x }}</span>{% endfor %}</div>{% endif %}
+        </li>
+        {% endfor %}
+      </ol>
+    </section>
+  </div>
+</div>
+{% endblock %}

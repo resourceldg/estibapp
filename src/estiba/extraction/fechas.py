@@ -23,6 +23,18 @@ DIAS = {
     "viernes": 4, "sabado": 5, "domingo": 6,
 }
 NOMBRE_DIA = {v: k for k, v in DIAS.items()}
+_CON_TILDE = {"miercoles": "miércoles", "sabado": "sábado"}
+
+
+def nombre_dia(d: date) -> str:
+    """El dia de la semana como se escribe, con tilde: para mostrar, no para buscar."""
+    nombre = NOMBRE_DIA[d.weekday()]
+    return _CON_TILDE.get(nombre, nombre)
+
+
+def hora_legible(t: time) -> str:
+    """9:00 -> "9", 14:30 -> "14:30"."""
+    return f"{t.hour}" if t.minute == 0 else f"{t.hour}:{t.minute:02d}"
 MESES = {
     "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5, "junio": 6,
     "julio": 7, "agosto": 8, "septiembre": 9, "setiembre": 9, "octubre": 10,

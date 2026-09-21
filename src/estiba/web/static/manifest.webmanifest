@@ -1,0 +1,10 @@
+{
+  "name": "Estiba",
+  "short_name": "Estiba",
+  "description": "Conversaciones de WhatsApp convertidas en fletes.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f2ed",
+  "theme_color": "#f4f2ed",
+  "icons": [{ "src": "/static/icono.svg", "sizes": "any", "type": "image/svg+xml" }]
+}

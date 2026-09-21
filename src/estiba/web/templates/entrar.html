@@ -1,0 +1,19 @@
+{% from "_macros.html" import marca %}<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Entrar · Estiba</title>
+  <link rel="icon" href="/static/icono.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/estiba.css">
+</head>
+<body class="pantalla-entrar">
+  <form class="entrar" method="post" action="/entrar">
+    <div class="marca grande">{{ marca() }}<span>Estiba</span></div>
+    <label for="clave">Clave</label>
+    <input id="clave" name="clave" type="password" autocomplete="current-password" autofocus required>
+    {% if error %}<p class="error">Esa no es la clave.</p>{% endif %}
+    <button class="btn primario" type="submit">Entrar</button>
+  </form>
+</body>
+</html>

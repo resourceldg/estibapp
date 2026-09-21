@@ -1,0 +1,46 @@
+{% from "_macros.html" import icono, marca %}<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f4f2ed" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#151412" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>{{ titulo }} · Estiba</title>
+  <link rel="icon" href="/static/icono.svg" type="image/svg+xml">
+  <link rel="manifest" href="/static/manifest.webmanifest">
+  <link rel="stylesheet" href="/static/estiba.css">
+  <script src="/static/htmx.min.js" defer></script>
+  <script src="/static/estiba.js" defer></script>
+</head>
+<body>
+  <header class="barra">
+    <a class="marca" href="/">{{ marca() }}<span>Estiba</span></a>
+    <nav class="nav-escritorio" aria-label="Secciones">
+      <a href="/" {% if ruta == "/" %}aria-current="page"{% endif %}>Bandeja{% if pendientes %}<span class="cuenta">{{ pendientes }}</span>{% endif %}</a>
+      <a href="/fletes" {% if ruta.startswith("/fletes") %}aria-current="page"{% endif %}>Fletes</a>
+      <a href="/docs">API</a>
+    </nav>
+    <button class="btn-icono sincronizar" hx-post="/sincronizar" hx-swap="none"
+            title="Volver a leer las conversaciones" aria-label="Actualizar">
+      {{ icono("actualizar") }}
+      {% if sincronizado %}<span class="sincronizado">{{ sincronizado }}</span>{% endif %}
+    </button>
+  </header>
+
+  <main class="contenido">
+    {% block contenido %}{% endblock %}
+  </main>
+
+  <nav class="tabbar" aria-label="Secciones">
+    <a href="/" {% if ruta == "/" %}aria-current="page"{% endif %}>
+      <span class="tab-ico">{{ icono("bandeja") }}{% if pendientes %}<span class="cuenta">{{ pendientes }}</span>{% endif %}</span>
+      Bandeja
+    </a>
+    <a href="/fletes" {% if ruta.startswith("/fletes") %}aria-current="page"{% endif %}>
+      <span class="tab-ico">{{ icono("camion") }}</span>
+      Fletes
+    </a>
+  </nav>
+</body>
+</html>

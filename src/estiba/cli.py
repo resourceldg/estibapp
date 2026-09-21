@@ -9,6 +9,7 @@ el flete: estado, historia, precio sugerido y que preguntarle al cliente.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from datetime import date, datetime, time
 from decimal import Decimal
@@ -20,7 +21,7 @@ from estiba.audio.pipeline import AudioPipeline
 from estiba.audio.wer import comparar, wer_total
 from estiba.conversation.store import ConversationStore
 from estiba.extraction.extractor import SlotExtractor
-from estiba.extraction.fechas import NOMBRE_DIA
+from estiba.extraction.fechas import nombre_dia
 from estiba.jobs.engine import JobEngine
 from estiba.jobs.preguntas import ETIQUETAS
 from estiba.jobs.pricing import TARIFA_DEFAULT, PricingEngine, Tarifa
@@ -136,7 +137,7 @@ def _valor(v: object) -> str:
     if isinstance(v, list):
         return ", ".join(map(str, v))
     if isinstance(v, date):
-        return f"{NOMBRE_DIA[v.weekday()]} {v:%d/%m/%Y}"
+        return f"{nombre_dia(v)} {v:%d/%m/%Y}"
     if isinstance(v, time):
         return f"{v:%H:%M}"
     return str(v)
@@ -225,6 +226,49 @@ def cmd_jobs(args: argparse.Namespace) -> int:
     return 0
 
 
+def _ahora(args: argparse.Namespace):
+    """Un reloj: el real, o uno fijo si se paso --ahora (demos y pruebas)."""
+    if getattr(args, "ahora", None):
+        fijo = datetime.fromisoformat(args.ahora)
+        return lambda: fijo
+    return datetime.now
+
+
+def cmd_sync(args: argparse.Namespace) -> int:
+    from estiba.bandeja.servicio import sincronizar
+    from estiba.storage.repositories import DraftRepository
+
+    conn = connect(args.db)
+    engine = JobEngine(pricing=PricingEngine(Tarifa.desde_toml(args.tarifa)))
+    evaluaciones = sincronizar(conn, engine, _ahora(args)())
+    pendientes = DraftRepository(conn).pending()
+    print(f"{len(evaluaciones)} fletes evaluados, {len(pendientes)} borradores esperan aprobacion")
+    return 0
+
+
+_LOCALES = ("127.0.0.1", "localhost", "::1")
+
+
+def cmd_serve(args: argparse.Namespace) -> int:
+    import uvicorn
+
+    from estiba.web.app import create_app
+
+    clave = args.clave or os.environ.get("ESTIBA_CLAVE")
+    if args.host not in _LOCALES and not clave:
+        print(
+            f"Abrir el dashboard en {args.host} lo expone a la red con los datos de tus "
+            "clientes. Pone una clave con --clave o ESTIBA_CLAVE.",
+            file=sys.stderr,
+        )
+        return 2
+    engine = JobEngine(pricing=PricingEngine(Tarifa.desde_toml(args.tarifa)))
+    app = create_app(args.db, engine=engine, ahora=_ahora(args), clave=clave)
+    print(f"Estiba en http://{args.host}:{args.port}  (API en /docs)")
+    uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="estiba", description=__doc__)
     p.add_argument("--db", default=str(DEFAULT_DB), help="ruta de la base SQLite")
@@ -264,6 +308,19 @@ def build_parser() -> argparse.ArgumentParser:
     j.add_argument("--ahora", help="evaluar como si fuera esta fecha (ISO), para el silencio")
     j.add_argument("--tarifa", default=str(TARIFA_DEFAULT), help="TOML con los montos")
     j.set_defaults(func=cmd_jobs)
+
+    y = sub.add_parser("sync", help="evaluar todo y dejar los borradores en la bandeja")
+    y.add_argument("--ahora", help="evaluar como si fuera esta fecha (ISO)")
+    y.add_argument("--tarifa", default=str(TARIFA_DEFAULT))
+    y.set_defaults(func=cmd_sync)
+
+    v = sub.add_parser("serve", help="levantar el dashboard y la API")
+    v.add_argument("--host", default="127.0.0.1", help="0.0.0.0 para abrirlo desde el celular (pide clave)")
+    v.add_argument("--port", type=int, default=8000)
+    v.add_argument("--clave", help="clave para entrar; tambien por ESTIBA_CLAVE")
+    v.add_argument("--ahora", help="congelar el reloj en esta fecha (ISO), para demos")
+    v.add_argument("--tarifa", default=str(TARIFA_DEFAULT))
+    v.set_defaults(func=cmd_serve)
 
     w = sub.add_parser("wer", help="tasa de error contra la transcripcion esperada")
     w.add_argument("--fixtures", default=str(FIXTURES_DIR))

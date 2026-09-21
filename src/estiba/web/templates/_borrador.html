@@ -1,0 +1,52 @@
+{% from "_macros.html" import icono, chip %}
+{% if b.estado == "pendiente" %}
+<article class="tarjeta borrador" id="b-{{ b.id }}">
+  {% if f and not en_detalle %}
+  <header class="tarjeta-cab">
+    <a class="quien" href="/fletes/{{ f.chat_id }}">
+      <span class="ruta">{{ f.ruta }}</span>
+      <span class="sub">{{ f.telefono }} · {{ f.ultimo }}</span>
+    </a>
+    {{ chip(f.estado_etiqueta, f.tono) }}
+  </header>
+  {% endif %}
+
+  <p class="razon tipo-{{ b.tipo }}"><strong>{{ b.tipo_etiqueta }}</strong> · {{ b.razon }}</p>
+
+  {% if f and f.ultimo_del_cliente and f.ultimo_texto %}
+  <blockquote class="dijo">
+    <span class="dijo-quien">Cliente</span>
+    {{ f.ultimo_texto }}
+  </blockquote>
+  {% endif %}
+
+  <form class="redactar" method="post" action="/borradores/{{ b.id }}/aprobar"
+        hx-post="/borradores/{{ b.id }}/aprobar" hx-target="#b-{{ b.id }}" hx-swap="outerHTML">
+    <label class="sr" for="t-{{ b.id }}">Mensaje para el cliente</label>
+    <textarea id="t-{{ b.id }}" name="texto" rows="3" data-chat="{{ b.chat_id }}"
+              placeholder="Escribí tu respuesta…">{{ b.texto }}</textarea>
+    <div class="acciones">
+      <button type="submit" class="btn fantasma" formaction="/borradores/{{ b.id }}/descartar"
+              hx-post="/borradores/{{ b.id }}/descartar">Descartar</button>
+      <button type="submit" class="btn primario" data-abre-whatsapp>
+        {{ icono("enviar") }}<span>Aprobar y enviar</span>
+      </button>
+    </div>
+    <p class="nota">Se abre WhatsApp con el mensaje listo.<span class="atajo"> <kbd>Ctrl</kbd>+<kbd>Enter</kbd> para aprobar.</span></p>
+  </form>
+</article>
+{% else %}
+<article class="tarjeta borrador decidido estado-{{ b.estado }}" id="b-{{ b.id }}">
+  <header class="decidido-cab">
+    <span class="sello">{% if b.estado == "aprobado" %}{{ icono("check") }} Aprobado{% else %}Descartado{% endif %}</span>
+    {% if f %}<a class="sub" href="/fletes/{{ f.chat_id }}">{{ f.ruta }}</a>{% endif %}
+  </header>
+  {% if b.texto_final %}
+  <p class="final">{{ b.texto_final }}</p>
+  <div class="acciones">
+    <button type="button" class="btn fantasma" data-copiar="{{ b.texto_final }}">{{ icono("copiar") }}<span>Copiar</span></button>
+    <a class="btn secundario" href="{{ b.whatsapp }}" target="_blank" rel="noopener">{{ icono("chat") }}<span>Abrir WhatsApp</span></a>
+  </div>
+  {% endif %}
+</article>
+{% endif %}

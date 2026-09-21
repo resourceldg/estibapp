@@ -242,3 +242,75 @@ class JobRepository:
     def by_state(self) -> dict[JobState, int]:
         filas = self.conn.execute("SELECT state, COUNT(*) AS n FROM jobs GROUP BY state")
         return {JobState(f["state"]): f["n"] for f in filas}
+
+
+class DraftRepository:
+    """La bandeja. Un borrador por flete y por ultimo mensaje, a lo sumo."""
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self.conn = conn
+
+    def sync(self, job_id: str, chat_id: str, propuesta, ahora: datetime) -> None:
+        """Deja la bandeja de este flete al dia con lo que propone el redactor.
+
+        - Si la propuesta ya existe (mismo tipo y mismo ultimo mensaje), se
+          respeta lo que se haya decidido sobre ella.
+        - Todo borrador pendiente que no sea esa propuesta queda reemplazado:
+          llego un mensaje nuevo o ya no hace falta decir nada.
+        """
+        with self.conn:
+            vigente = None
+            if propuesta is not None:
+                vigente = self.conn.execute(
+                    "SELECT id, status FROM drafts WHERE job_id = ? AND kind = ? AND basis_message_id = ?",
+                    (job_id, propuesta.kind, propuesta.basis_message_id),
+                ).fetchone()
+            self.conn.execute(
+                "UPDATE drafts SET status = 'reemplazado', decided_at = ? "
+                "WHERE job_id = ? AND status = 'pendiente' AND id IS NOT ?",
+                (_a_texto(ahora), job_id, vigente["id"] if vigente else None),
+            )
+            if propuesta is None:
+                return
+            if vigente is None:
+                self.conn.execute(
+                    "INSERT INTO drafts (job_id, chat_id, kind, reason, text, basis_message_id, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (job_id, chat_id, propuesta.kind, propuesta.reason, propuesta.text,
+                     propuesta.basis_message_id, _a_texto(ahora)),
+                )
+            elif vigente["status"] == "pendiente":
+                self.conn.execute(
+                    "UPDATE drafts SET reason = ?, text = ? WHERE id = ?",
+                    (propuesta.reason, propuesta.text, vigente["id"]),
+                )
+
+    def pending(self) -> list[sqlite3.Row]:
+        return list(
+            self.conn.execute("SELECT * FROM drafts WHERE status = 'pendiente' ORDER BY created_at, id")
+        )
+
+    def get(self, draft_id: int) -> sqlite3.Row | None:
+        return self.conn.execute("SELECT * FROM drafts WHERE id = ?", (draft_id,)).fetchone()
+
+    def for_job(self, job_id: str) -> list[sqlite3.Row]:
+        return list(
+            self.conn.execute("SELECT * FROM drafts WHERE job_id = ? ORDER BY id DESC", (job_id,))
+        )
+
+    def decide(self, draft_id: int, aprobado: bool, texto: str | None, ahora: datetime) -> sqlite3.Row:
+        """Aprobar o descartar. Solo un borrador pendiente se puede decidir."""
+        borrador = self.get(draft_id)
+        if borrador is None:
+            raise KeyError(f"no existe el borrador {draft_id}")
+        if borrador["status"] != "pendiente":
+            raise ValueError(f"el borrador {draft_id} ya esta {borrador['status']}")
+        if aprobado and not (texto or "").strip():
+            raise ValueError("no se puede aprobar un mensaje vacio")
+        with self.conn:
+            self.conn.execute(
+                "UPDATE drafts SET status = ?, final_text = ?, decided_at = ? WHERE id = ?",
+                ("aprobado" if aprobado else "descartado",
+                 texto.strip() if aprobado else None, _a_texto(ahora), draft_id),
+            )
+        return self.get(draft_id)

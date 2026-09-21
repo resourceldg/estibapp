@@ -59,6 +59,8 @@ class Evaluacion:
     #: Borrador de lo que habria que preguntarle al cliente.
     preguntas: list[str] = field(default_factory=list)
     presupuesto: Presupuesto | None = None
+    #: El cliente dejo de responder y todavia no es para darlo por perdido.
+    requiere_seguimiento: bool = False
 
 
 class JobEngine:
@@ -81,6 +83,7 @@ class JobEngine:
         eventos: list[Evento] = []
         alertas: list[str] = []
         aceptacion_trabada: str | None = None
+        seguimiento = False
 
         def mover(hacia: JobState, at: datetime, causa: str, message_id: str | None) -> None:
             nonlocal estado
@@ -98,25 +101,25 @@ class JobEngine:
                 precio = ex.job.quoted_price
                 if precio is not None and precio.evidence.message_id == m.id:
                     if estado in (JobState.DRAFT, JobState.WAITING_CUSTOMER):
-                        mover(JobState.QUOTED, m.sent_at, f"cotizo ${precio.value:,}".replace(",", "."), m.id)
+                        mover(JobState.QUOTED, m.sent_at, f"cotizó ${precio.value:,}".replace(",", "."), m.id)
                     elif estado is JobState.CONFIRMED:
-                        alertas.append(f"{m.id}: nueva cotizacion con el flete ya confirmado")
+                        alertas.append("cotización nueva con el flete ya confirmado")
                 continue
 
             intencion = next((x.intencion for x in ex.intenciones if x.message_id == m.id), None)
             if intencion is Intencion.CANCELA:
-                mover(JobState.CANCELLED, m.sent_at, "el cliente cancelo", m.id)
+                mover(JobState.CANCELLED, m.sent_at, "el cliente canceló", m.id)
             elif intencion is Intencion.POSPONE and estado is JobState.QUOTED:
-                mover(JobState.WAITING_CUSTOMER, m.sent_at, "el cliente pospuso la decision", m.id)
+                mover(JobState.WAITING_CUSTOMER, m.sent_at, "el cliente pospuso la decisión", m.id)
             elif intencion is Intencion.ACEPTA and estado in _ABIERTOS:
                 impide = self._impide_confirmar(ex)
                 if impide:
-                    aceptacion_trabada = f"{m.id}: acepto, pero {', '.join(impide)}"
+                    aceptacion_trabada = f"aceptó, pero {', '.join(impide)}"
                 else:
-                    mover(JobState.CONFIRMED, m.sent_at, "el cliente acepto", m.id)
+                    mover(JobState.CONFIRMED, m.sent_at, "el cliente aceptó", m.id)
                     aceptacion_trabada = None
             elif intencion is Intencion.CORRIGE and estado not in (JobState.DRAFT, *_CERRADOS):
-                alertas.append(f"{m.id}: el cliente corrigio datos despues de cotizar, revisar precio")
+                alertas.append("corrigió datos después de cotizar: revisar el precio")
 
         if aceptacion_trabada:
             alertas.append(aceptacion_trabada)
@@ -126,19 +129,22 @@ class JobEngine:
         dias = silencio.days
         if estado in _ABIERTOS or estado is JobState.DRAFT:
             if ultimo.from_customer and estado is not JobState.WAITING_CUSTOMER:
-                alertas.append(f"el cliente escribio hace {_hace(silencio)} y espera respuesta")
+                alertas.append(f"te escribió hace {_hace(silencio)} y espera respuesta")
             elif estado in _ABIERTOS and silencio >= self.politica.abandono:
                 mover(
                     JobState.CANCELLED,
                     ultimo.sent_at + self.politica.abandono,
-                    f"{_plural(dias, 'dia')} sin respuesta del cliente",
+                    f"{_plural(dias, 'día')} sin respuesta del cliente",
                     ultimo.id,
                 )
             elif estado in _ABIERTOS and silencio >= self.politica.seguimiento:
-                alertas.append(f"hace {_hace(silencio)} que el cliente no responde: hacer seguimiento")
+                alertas.append(f"hace {_hace(silencio)} que no responde: conviene hacer seguimiento")
+                seguimiento = True
 
         final = self.extractor.extract(Conversation(conv.chat_id, mensajes, conv.transcripts))
         job = final.job
+        if estado is JobState.CONFIRMED and job.when and job.when.value < ahora.date():
+            alertas.append(f"la fecha ({job.when.value:%d/%m}) ya pasó: ¿se hizo el flete?")
         job.state = estado
         job.created_at = mensajes[0].sent_at
         return Evaluacion(
@@ -148,6 +154,7 @@ class JobEngine:
             alertas=alertas,
             preguntas=preguntas(final, estado),
             presupuesto=self.pricing.estimate(job),
+            requiere_seguimiento=seguimiento,
         )
 
     def _impide_confirmar(self, ex: Extraccion) -> list[str]:
@@ -164,7 +171,7 @@ class JobEngine:
 
 def _hace(delta: timedelta) -> str:
     if delta.days >= 1:
-        return _plural(delta.days, "dia")
+        return _plural(delta.days, "día")
     horas = delta.seconds // 3600
     return _plural(horas, "hora") if horas else _plural(delta.seconds // 60, "minuto")
 
