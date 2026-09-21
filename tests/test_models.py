@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 import pytest
 
@@ -83,7 +83,7 @@ class TestDatosFaltantes:
             conversation_id="c1",
             origin=_slot("Villa Crespo"),
             destination=_slot("Caballito"),
-            when=_slot(datetime(2026, 9, 20, 9)),
+            when=_slot(date(2026, 9, 20)),
             items=_slot(["heladera"]),
         )
         assert job.missing == []

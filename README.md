@@ -8,15 +8,16 @@ llegue entera. Es lo que el sistema hace con conversaciones desordenadas.
 
 ## Estado
 
-**Fase 2 de 7: terminada.** A lo de la Fase 1 (SQLite, ingesta de fixtures,
-reconstrucción de conversaciones) se suma la transcripción local de audios con
-faster-whisper y la medición del error contra lo que el audio de verdad dice.
+**Fase 3 de 7: terminada.** Sobre la base de las Fases 1 y 2 (SQLite, ingesta,
+conversaciones reconstruidas, audios transcriptos con Whisper local), Estiba ya
+lee cada conversación y saca los datos del flete por reglas, cada uno con la
+cita del mensaje de donde salió, y la intención del cliente en cada mensaje.
 
 | Fase | Qué trae | Estado |
 | --- | --- | --- |
 | 1 | Esqueleto, SQLite, ingesta de fixtures, ConversationStore | Listo |
 | 2 | AudioPipeline con Whisper local | Listo |
-| 3 | Intención y extracción de datos por reglas | Pendiente |
+| 3 | Intención y extracción de datos por reglas | Listo |
 | 4 | JobEngine, datos faltantes, PricingEngine | Pendiente |
 | 5 | API y dashboard con bandeja de aprobación | Pendiente |
 | 6 | Calendario CalDAV, CRM y funnel | Pendiente |
@@ -32,7 +33,8 @@ uv run estiba show 5491133334444        # el hilo entero reconstruido
 uv run estiba pending-audio             # audios sin transcribir
 uv run estiba transcribe                # los pasa por Whisper (--modelo small por defecto)
 uv run estiba wer                       # error contra transcripcion_esperada
-uv run pytest                           # 63 tests, no necesitan Whisper
+uv run estiba extract                   # datos del flete con su evidencia, dudas y faltantes
+uv run pytest                           # 106 tests, no necesitan Whisper
 ```
 
 ## Cómo está armado
@@ -49,6 +51,10 @@ src/estiba/
   adapters/whisper.py   Transcriber con faster-whisper. Carga el modelo al primer audio.
   audio/pipeline.py     Vacía la cola de audios. Si uno falla, queda pendiente.
   audio/wer.py          Tasa de error por palabra, sin contar tildes ni puntuación.
+  extraction/fechas.py  "el sábado", "el jueves que viene", "9 de la mañana"…
+  extraction/reglas.py  Barrios, muebles, pisos, ayudantes, precio.
+  extraction/intencion.py  Consulta, acepta, pospone, corrige, cancela.
+  extraction/extractor.py  Junta todo: gana la última mención, las otras quedan.
   storage/            SQLite, migraciones versionadas, repositorios.
   conversation/store.py  Reconstruye el hilo con las transcripciones pegadas.
   cli.py
@@ -86,5 +92,12 @@ confianza.
 - Puente de WhatsApp: WAHA, que desde la versión 2026.6.1 es gratis y
   Apache-2.0. Plan B: wppconnect.
 - Audio: faster-whisper para arrancar, whisper.cpp como plan B.
-- Fechas: dateparser más reglas propias para giros rioplatenses.
+- Fechas: reglas propias. Se pensó en dateparser, pero los casos reales
+  ("a la mañana" vs "mañana", "mañana te confirmo", "el jueves que viene"
+  dicho un jueves) necesitaban reglas a mano igual. Se suma si aparece un
+  formato que las reglas no cubran.
+- Fecha, hora y franja van en campos separados: llegan en mensajes distintos
+  y juntarlas obligaría a inventar la hora.
+- Los datos del flete salen del cliente. Del fletero solo el precio, y las
+  fechas u horas que propone con una pregunta y el cliente acepta.
 - Calendario: Radicale por CalDAV, para no depender de Google.

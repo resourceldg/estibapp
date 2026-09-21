@@ -1,13 +1,15 @@
 """Interfaz de linea de comandos.
 
 Carga fixtures, lista conversaciones, muestra una reconstruida desde la base
-y transcribe los audios pendientes con Whisper local.
+transcribe los audios pendientes con Whisper local y extrae los datos del
+flete de cada conversacion, con la evidencia de donde salio cada uno.
 """
 
 from __future__ import annotations
 
 import argparse
 import sys
+from datetime import date, time
 from pathlib import Path
 
 from estiba.adapters.fixtures import FIXTURES_DIR, FixtureMessageSource
@@ -15,6 +17,8 @@ from estiba.adapters.whisper import FasterWhisperTranscriber
 from estiba.audio.pipeline import AudioPipeline
 from estiba.audio.wer import comparar, wer_total
 from estiba.conversation.store import ConversationStore
+from estiba.extraction.extractor import SlotExtractor
+from estiba.extraction.fechas import NOMBRE_DIA
 from estiba.storage.db import DEFAULT_DB, connect
 
 
@@ -122,6 +126,58 @@ def cmd_wer(args: argparse.Namespace) -> int:
     return 0
 
 
+_ETIQUETAS = {
+    "origin": "origen", "destination": "destino", "items": "que lleva",
+    "when": "fecha", "hour": "hora", "daypart": "franja",
+    "floors_no_lift": "pisos x escalera", "helpers": "ayudantes",
+    "quoted_price": "precio cotizado",
+}
+
+
+def _valor(v: object) -> str:
+    if isinstance(v, list):
+        return ", ".join(map(str, v))
+    if isinstance(v, date):
+        return f"{NOMBRE_DIA[v.weekday()]} {v:%d/%m/%Y}"
+    if isinstance(v, time):
+        return f"{v:%H:%M}"
+    return str(v)
+
+
+def cmd_extract(args: argparse.Namespace) -> int:
+    conn = connect(args.db)
+    store = ConversationStore(conn)
+    ids = [args.chat_id] if args.chat_id else store.chat_ids()
+    if not ids:
+        print("No hay conversaciones. Corre primero: estiba ingest")
+        return 1
+    extractor = SlotExtractor()
+    for chat_id in ids:
+        conv = store.get(chat_id)
+        if not conv.messages:
+            print(f"No hay mensajes para {chat_id}", file=sys.stderr)
+            return 1
+        ex = extractor.extract(conv)
+        print(f"--- {chat_id} ---")
+        for campo, etiqueta in _ETIQUETAS.items():
+            c = ex.ganadores.get(campo)
+            if c is None:
+                continue
+            ev = c.slot.evidence
+            print(f"  {etiqueta:17} {_valor(c.slot.value):32} [{c.slot.confidence:.2f}]  "
+                  f"{ev.message_id}  \"{ev.quote}\"")
+        if ex.job.missing:
+            faltan = ", ".join(_ETIQUETAS[f] for f in ex.job.missing)
+            print(f"  FALTA: {faltan}")
+        for duda in ex.dudas:
+            print(f"  DUDA: {duda}")
+        if ex.sin_texto:
+            print(f"  AUDIOS SIN TRANSCRIBIR: {', '.join(ex.sin_texto)}")
+        for i in ex.intenciones:
+            print(f"  {i.intencion.value:9} {i.message_id}  \"{i.cita}\"")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="estiba", description=__doc__)
     p.add_argument("--db", default=str(DEFAULT_DB), help="ruta de la base SQLite")
@@ -151,6 +207,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="re-transcribir con este modelo los audios que ya tienen otra transcripcion",
     )
     t.set_defaults(func=cmd_transcribe)
+
+    e = sub.add_parser("extract", help="datos del flete con su evidencia")
+    e.add_argument("chat_id", nargs="?", help="sin chat_id, todas las conversaciones")
+    e.set_defaults(func=cmd_extract)
 
     w = sub.add_parser("wer", help="tasa de error contra la transcripcion esperada")
     w.add_argument("--fixtures", default=str(FIXTURES_DIR))

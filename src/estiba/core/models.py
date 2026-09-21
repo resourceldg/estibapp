@@ -10,7 +10,7 @@ sin saber de que mensaje salio y quien lo puso.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, time
 from decimal import Decimal
 from enum import Enum
 
@@ -138,7 +138,11 @@ class FreightJob:
     origin: Slot[str] | None = None
     destination: Slot[str] | None = None
     items: Slot[list[str]] | None = None
-    when: Slot[datetime] | None = None
+    # Fecha, hora y franja van separadas: suelen llegar en mensajes distintos,
+    # y juntarlas obligaria a inventar la hora cuando solo se sabe el dia.
+    when: Slot[date] | None = None
+    hour: Slot[time] | None = None
+    daypart: Slot[str] | None = None  # "manana" | "tarde" | "noche"
     floors_no_lift: Slot[int] | None = None
     helpers: Slot[int] | None = None
     quoted_price: Slot[Decimal] | None = None
