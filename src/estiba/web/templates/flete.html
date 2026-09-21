@@ -42,7 +42,7 @@
 {% endif %}
 
 {% set en_detalle = true %}
-{% for b in d.borradores if b.estado == "pendiente" %}
+{% for b in d.borradores if b.estado == "pendiente" or (b.estado == "aprobado" and b.error_envio and not b.enviado) %}
   {% include "_borrador.html" %}
 {% endfor %}
 

@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icono %}
+{% block contenido %}
+<div class="encabezado">
+  <h1>WhatsApp</h1>
+  <p class="bajada">Estiba lee tus conversaciones por WAHA, que corre en tu máquina. Tus mensajes no pasan por ningún servicio externo.</p>
+</div>
+
+{% if not w.configurado %}
+<section class="panel">
+  <h2>Todavía no está configurado</h2>
+  <p class="ayuda">Mientras tanto, aprobar un mensaje abre WhatsApp en tu celular con el texto listo. Para que Estiba lea y mande solo:</p>
+  <ol class="pasos">
+    <li>Copiá la configuración y cambiá las claves:<pre><code>cp .env.example .env</code></pre></li>
+    <li>Levantá WAHA (necesita Docker):<pre><code>docker compose up -d</code></pre></li>
+    <li>Reiniciá Estiba:<pre><code>uv run estiba serve</code></pre></li>
+    <li>Volvé a esta pantalla y tocá <strong>Conectar WhatsApp</strong>.</li>
+  </ol>
+</section>
+{% else %}
+{% include "_whatsapp_estado.html" %}
+
+{% if w.sesion.estado == "WORKING" %}
+<section class="panel">
+  <h2>Traer conversaciones anteriores</h2>
+  <p class="ayuda">Los mensajes nuevos entran solos. Para arrancar con lo que ya venías hablando, importá el historial. Se puede repetir: no duplica nada.</p>
+  <form class="importar" method="post" action="/whatsapp/importar" hx-post="/whatsapp/importar">
+    <label for="dias">Desde hace</label>
+    <select id="dias" name="dias">
+      <option value="7">7 días</option>
+      <option value="30" selected>30 días</option>
+      <option value="90">90 días</option>
+    </select>
+    <button class="btn secundario" type="submit">{{ icono("bandeja") }}<span>Importar</span></button>
+  </form>
+</section>
+
+<details class="panel perder">
+  <summary>{{ icono("cruz") }}Desvincular este WhatsApp</summary>
+  <p class="ayuda">Estiba deja de recibir y mandar mensajes. Las conversaciones y los fletes quedan.</p>
+  <form method="post" action="/whatsapp/desconectar" hx-post="/whatsapp/desconectar"
+        hx-confirm="¿Desvincular WhatsApp de Estiba?">
+    <button class="btn fantasma peligro" type="submit">Desvincular</button>
+  </form>
+</details>
+{% endif %}
+{% endif %}
+{% endblock %}

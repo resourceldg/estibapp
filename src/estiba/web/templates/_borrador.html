@@ -28,25 +28,39 @@
     <div class="acciones">
       <button type="submit" class="btn fantasma" formaction="/borradores/{{ b.id }}/descartar"
               hx-post="/borradores/{{ b.id }}/descartar">Descartar</button>
-      <button type="submit" class="btn primario" data-abre-whatsapp>
+      <button type="submit" class="btn primario" data-aprobar{% if not envio_directo %} data-abre-whatsapp{% endif %}>
         {{ icono("enviar") }}<span>Aprobar y enviar</span>
       </button>
     </div>
-    <p class="nota">Se abre WhatsApp con el mensaje listo.<span class="atajo"> <kbd>Ctrl</kbd>+<kbd>Enter</kbd> para aprobar.</span></p>
+    <p class="nota">{% if envio_directo %}Sale por WhatsApp apenas lo aprobás.{% else %}Se abre WhatsApp con el mensaje listo.{% endif %}<span class="atajo"> <kbd>Ctrl</kbd>+<kbd>Enter</kbd> para aprobar.</span></p>
   </form>
 </article>
 {% else %}
 <article class="tarjeta borrador decidido estado-{{ b.estado }}" id="b-{{ b.id }}">
   <header class="decidido-cab">
-    <span class="sello">{% if b.estado == "aprobado" %}{{ icono("check") }} Aprobado{% else %}Descartado{% endif %}</span>
+    <span class="sello{% if b.error_envio and not b.enviado %} fallo{% endif %}">
+      {%- if b.estado != "aprobado" %}Descartado
+      {%- elif b.enviado %}{{ icono("check") }} Enviado por WhatsApp
+      {%- elif b.error_envio %}{{ icono("aviso") }} Aprobado, pero no salió
+      {%- else %}{{ icono("check") }} Aprobado{% endif -%}
+    </span>
     {% if f %}<a class="sub" href="/fletes/{{ f.job_id }}">{{ f.ruta }}</a>{% endif %}
   </header>
   {% if b.texto_final %}
   <p class="final">{{ b.texto_final }}</p>
+  {% if b.error_envio and not b.enviado %}
+  <p class="error-envio">{{ b.error_envio }}</p>
+  <div class="acciones">
+    <a class="btn fantasma" href="{{ b.whatsapp }}" target="_blank" rel="noopener">{{ icono("chat") }}<span>A mano</span></a>
+    <button type="button" class="btn primario" hx-post="/borradores/{{ b.id }}/reenviar"
+            hx-target="#b-{{ b.id }}" hx-swap="outerHTML">{{ icono("actualizar") }}<span>Reintentar</span></button>
+  </div>
+  {% elif not b.enviado %}
   <div class="acciones">
     <button type="button" class="btn fantasma" data-copiar="{{ b.texto_final }}">{{ icono("copiar") }}<span>Copiar</span></button>
     <a class="btn secundario" href="{{ b.whatsapp }}" target="_blank" rel="noopener">{{ icono("chat") }}<span>Abrir WhatsApp</span></a>
   </div>
+  {% endif %}
   {% endif %}
 </article>
 {% endif %}

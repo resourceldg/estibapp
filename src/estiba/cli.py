@@ -11,7 +11,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
 from estiba.adapters.fixtures import FIXTURES_DIR, FixtureMessageSource
@@ -268,9 +268,85 @@ def cmd_serve(args: argparse.Namespace) -> int:
         return 2
     engine = JobEngine(pricing=PricingEngine(Tarifa.desde_toml(args.tarifa)))
     app = create_app(args.db, engine=engine, ahora=_ahora(args), clave=clave)
+    sockets = [_escuchar(args.host, args.port)]
     print(f"Estiba en http://{args.host}:{args.port}  (API en /docs)")
-    uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
+
+    # WAHA corre en Docker y llega al host por la interfaz de Docker, no por
+    # 127.0.0.1. Ahi se abre una segunda puerta que solo atiende webhooks.
+    ip_docker = os.environ.get("ESTIBA_IP_DOCKER", "172.17.0.1")
+    if os.environ.get("ESTIBA_WAHA_URL") and args.host in _LOCALES:
+        try:
+            sockets.append(_escuchar(ip_docker, args.port))
+            app.state.puertas_webhook = {ip_docker}
+            print(f"Webhooks de WhatsApp en http://{ip_docker}:{args.port}/webhooks/ (solo desde Docker)")
+        except OSError as e:
+            print(f"No se pudo escuchar en {ip_docker} para los webhooks ({e}). "
+                  "Revisa ESTIBA_IP_DOCKER.", file=sys.stderr)
+
+    servidor = uvicorn.Server(uvicorn.Config(app, log_level="warning"))
+    servidor.run(sockets=sockets)
     return 0
+
+
+def _escuchar(host: str, puerto: int):
+    import socket
+
+    familia = socket.AF_INET6 if ":" in host else socket.AF_INET
+    s = socket.socket(familia, socket.SOCK_STREAM)
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    s.bind((host, puerto))
+    s.listen(128)
+    s.set_inheritable(True)
+    return s
+
+
+def _whatsapp():
+    from estiba.adapters.waha import ConfigWaha, WahaClient
+    from estiba.whatsapp import WhatsApp
+
+    config = ConfigWaha.desde_entorno()
+    if config is None:
+        print("WhatsApp no esta configurado: defini ESTIBA_WAHA_URL (ver .env.example)", file=sys.stderr)
+        return None
+    return WhatsApp(WahaClient(config))
+
+
+def cmd_waha(args: argparse.Namespace) -> int:
+    from estiba.adapters.waha import ErrorWaha
+    from estiba.storage.repositories import SettingsRepository
+
+    w = _whatsapp()
+    if w is None:
+        return 2
+    conn = connect(args.db)
+    try:
+        if args.accion == "estado":
+            info = w.cliente.sesion()
+            if info is None:
+                print("Sin sesion. Conectala con: estiba waha conectar")
+                return 1
+            me = (info.get("me") or {}).get("id", "")
+            print(f"{info['status']}{'  ' + me if me else ''}")
+            return 0 if info["status"] == "WORKING" else 1
+        if args.accion == "conectar":
+            secreto = SettingsRepository(conn).secreto("webhook_waha")
+            info = w.cliente.conectar(secreto)
+            print(f"Sesion {info.get('status')}. Escanea el QR desde el dashboard: /whatsapp")
+            return 0
+        if args.accion == "importar":
+            desde = datetime.now() - timedelta(days=args.dias)
+            nuevos = w.importar(conn, desde)
+            print(f"{nuevos} mensajes nuevos de los ultimos {args.dias} dias")
+            reporte = w.transcribir(conn)
+            if reporte is not None:
+                print(f"{len(reporte.transcriptos)} audios transcriptos")
+            return 0
+    except ErrorWaha as e:
+        print(e, file=sys.stderr)
+        return 1
+    finally:
+        conn.close()
+    return 2
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -326,6 +402,11 @@ def build_parser() -> argparse.ArgumentParser:
     v.add_argument("--tarifa", default=str(TARIFA_DEFAULT))
     v.set_defaults(func=cmd_serve)
 
+    k = sub.add_parser("waha", help="WhatsApp por WAHA: estado, conectar, importar historial")
+    k.add_argument("accion", choices=["estado", "conectar", "importar"])
+    k.add_argument("--dias", type=int, default=30, help="para importar: cuantos dias para atras")
+    k.set_defaults(func=cmd_waha)
+
     w = sub.add_parser("wer", help="tasa de error contra la transcripcion esperada")
     w.add_argument("--fixtures", default=str(FIXTURES_DIR))
     w.set_defaults(func=cmd_wer)
@@ -338,5 +419,13 @@ def main(argv: list[str] | None = None) -> int:
     return args.func(args)
 
 
+def ejecutar() -> int:
+    """El comando `estiba`: lee el .env (el mismo que usa docker compose) y corre."""
+    from estiba.entorno import cargar_env
+
+    cargar_env()
+    return main()
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(ejecutar())

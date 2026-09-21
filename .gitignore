@@ -7,3 +7,4 @@ estiba.db-*
 fixtures/audios/*
 !fixtures/audios/.gitkeep
 data/
+.env

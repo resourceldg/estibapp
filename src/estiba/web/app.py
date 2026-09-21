@@ -5,9 +5,9 @@ JSON en /api, documentada en /docs. Las dos leen lo mismo: la ultima
 sincronizacion, que corre al arrancar, cada vez que se toca "actualizar" y
 despues de cada accion.
 
-Nada de aca le escribe al cliente. Aprobar un borrador lo marca como
-aprobado y abre WhatsApp con el texto listo; el envio automatico llega con
-WAHA en la Fase 7.
+Nada de aca le escribe al cliente sin aprobacion. Aprobar un borrador lo
+manda por WhatsApp si WAHA esta conectado; si no, abre WhatsApp en el
+celular con el texto listo.
 """
 
 from __future__ import annotations
@@ -21,12 +21,13 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Literal
 
-from fastapi import FastAPI, Form, HTTPException, Request
+from fastapi import BackgroundTasks, FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
+from estiba.adapters.waha import ConfigWaha, ErrorWaha, WahaClient, firma_valida
 from estiba.agenda.caldav import ConfigCalDAV, EspejoCalDAV
 from estiba.agenda.evento import calendario
 from estiba.agenda.local import LocalCalendar
@@ -35,8 +36,14 @@ from estiba.core.models import JobState
 from estiba.crm import embudo
 from estiba.jobs.engine import PERDIDO, REALIZADO, JobEngine
 from estiba.storage.db import connect
-from estiba.storage.repositories import ActionRepository, CRMRepository, DraftRepository
+from estiba.storage.repositories import (
+    ActionRepository,
+    CRMRepository,
+    DraftRepository,
+    SettingsRepository,
+)
 from estiba.web import presentacion as P
+from estiba.whatsapp import WhatsApp
 
 AQUI = Path(__file__).parent
 
@@ -52,8 +59,11 @@ class Estado:
     engine: JobEngine
     ahora: Callable[[], datetime]
     espejo: EspejoCalDAV | None = None
+    whatsapp: WhatsApp | None = None
     resultado: Resultado = field(default_factory=Resultado)
     sincronizado_at: datetime | None = None
+    #: Ultimo estado conocido de la sesion de WhatsApp (lo avisa WAHA por webhook).
+    sesion: str | None = None
 
     def conectar(self):
         return connect(self.db)
@@ -66,6 +76,18 @@ class Estado:
             self.sincronizado_at = ahora
         finally:
             conn.close()
+
+    def consultar_sesion(self) -> dict | None:
+        """Pregunta a WAHA como esta la sesion. None si WAHA no responde."""
+        if self.whatsapp is None:
+            return None
+        try:
+            info = self.whatsapp.cliente.sesion()
+        except ErrorWaha:
+            self.sesion = "SIN_WAHA"
+            return None
+        self.sesion = info["status"] if info else "SIN_SESION"
+        return info
 
 
 class Decision(BaseModel):
@@ -83,23 +105,37 @@ def create_app(
     ahora: Callable[[], datetime] = datetime.now,
     clave: str | None = None,
     espejo: EspejoCalDAV | None = None,
+    whatsapp: WhatsApp | None = None,
 ) -> FastAPI:
     if espejo is None and (config := ConfigCalDAV.desde_entorno()):
         espejo = EspejoCalDAV(config)
-    estado = Estado(str(db), engine or JobEngine(), ahora, espejo)
+    if whatsapp is None and (config_waha := ConfigWaha.desde_entorno()):
+        whatsapp = WhatsApp(WahaClient(config_waha))
+    estado = Estado(str(db), engine or JobEngine(), ahora, espejo, whatsapp)
 
     @asynccontextmanager
     async def ciclo(_app: FastAPI):
         estado.sincronizar()
+        estado.consultar_sesion()
         yield
 
     app = FastAPI(
         lifespan=ciclo,
         title="Estiba",
         description="Conversaciones de WhatsApp convertidas en fletes. Nada sale sin aprobacion.",
-        version="0.6.0",
+        version="0.7.0",
     )
     app.state.estado = estado
+    #: IPs donde se escucha solo para WAHA (las completa `estiba serve`).
+    app.state.puertas_webhook = set()
+
+    @app.middleware("http")
+    async def _solo_webhooks(request: Request, call_next):
+        """La puerta para Docker atiende webhooks y nada mas: el dashboard no se ve desde ahi."""
+        local = (request.scope.get("server") or ("", 0))[0]
+        if local in app.state.puertas_webhook and not request.url.path.startswith("/webhooks/"):
+            return JSONResponse({"detail": "aca solo se reciben webhooks"}, status_code=404)
+        return await call_next(request)
     app.mount("/static", StaticFiles(directory=AQUI / "static"), name="static")
     templates = Jinja2Templates(directory=AQUI / "templates")
 
@@ -113,8 +149,9 @@ def create_app(
         @app.middleware("http")
         async def _exigir_clave(request: Request, call_next):
             ruta = request.url.path
-            # El .ics lleva su propio secreto en la URL: el celular no tiene cookie.
-            if ruta.startswith(("/static", "/calendario/")) or ruta == "/entrar":
+            # El .ics y el webhook llevan su propio secreto en la URL: ni el
+            # celular ni WAHA tienen la cookie.
+            if ruta.startswith(("/static", "/calendario/", "/webhooks/")) or ruta == "/entrar":
                 return await call_next(request)
             if hmac.compare_digest(request.cookies.get("estiba", ""), token):
                 return await call_next(request)
@@ -163,6 +200,16 @@ def create_app(
         fletes = _fletes()
         items = [(P.borrador(b), fletes[b["job_id"]]) for b in pendientes if b["job_id"] in fletes]
         return sorted(items, key=lambda x: (_URGENCIA.index(x[0].tipo), x[1].ultimo_at))
+
+    def _sin_salir() -> list[tuple[P.Borrador, P.Flete]]:
+        """Aprobados que WhatsApp no mando: arriba de todo, hasta que salgan."""
+        conn = estado.conectar()
+        try:
+            filas = DraftRepository(conn).unsent()
+        finally:
+            conn.close()
+        fletes = _fletes()
+        return [(P.borrador(b), fletes[b["job_id"]]) for b in filas if b["job_id"] in fletes]
 
     def _detalle(job_id: str) -> P.DetalleFlete:
         par = estado.resultado.fletes.get(job_id)
@@ -231,6 +278,8 @@ def create_app(
             conn.close()
         return {
             "pendientes": pendientes,
+            "whatsapp": P.sesion_whatsapp(estado.sesion) if estado.whatsapp else None,
+            "envio_directo": estado.whatsapp is not None,
             "sincronizado": P.hace(estado.sincronizado_at, estado.ahora()) if estado.sincronizado_at else None,
             "espejo_error": estado.resultado.espejo_error,
             "ruta": request.url.path,
@@ -249,7 +298,8 @@ def create_app(
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
     def pagina_bandeja(request: Request):
         return templates.TemplateResponse(
-            request, "bandeja.html", _contexto(request, items=_bandeja(), titulo="Bandeja")
+            request, "bandeja.html",
+            _contexto(request, items=_bandeja(), sin_salir=_sin_salir(), titulo="Bandeja"),
         )
 
     @app.get("/agenda", response_class=HTMLResponse, include_in_schema=False)
@@ -300,10 +350,21 @@ def create_app(
             conn.close()
         return P.borrador(fila)
 
+    def _enviar(draft_id: int) -> P.Borrador:
+        conn = estado.conectar()
+        try:
+            estado.whatsapp.enviar(conn, draft_id, estado.ahora())
+            fila = DraftRepository(conn).get(draft_id)
+        finally:
+            conn.close()
+        estado.sincronizar()
+        return P.borrador(fila)
+
     def _tarjeta(request: Request, b: P.Borrador) -> Response:
         if request.headers.get("HX-Request"):
             return templates.TemplateResponse(
-                request, "_borrador.html", {"b": b, "f": _fletes().get(b.job_id), "suelto": True}
+                request, "_borrador.html",
+                {"b": b, "f": _fletes().get(b.job_id), "suelto": True, "envio_directo": estado.whatsapp is not None},
             )
         return RedirectResponse(request.headers.get("referer", "/"), status_code=303)
 
@@ -329,9 +390,22 @@ def create_app(
             return Response(headers={"HX-Refresh": "true"})
         return RedirectResponse(request.headers.get("referer", a), status_code=303)
 
+    def _aprobar(draft_id: int, texto: str | None) -> P.Borrador:
+        b = _decidir(draft_id, True, texto)
+        return _enviar(draft_id) if estado.whatsapp is not None else b
+
     @app.post("/borradores/{draft_id}/aprobar", include_in_schema=False)
     def aprobar_form(request: Request, draft_id: int, texto: str = Form("")):
-        return _tarjeta(request, _decidir(draft_id, True, texto))
+        return _tarjeta(request, _aprobar(draft_id, texto))
+
+    @app.post("/borradores/{draft_id}/reenviar", include_in_schema=False)
+    def reenviar_form(request: Request, draft_id: int):
+        if estado.whatsapp is None:
+            raise HTTPException(409, "WhatsApp no esta conectado")
+        try:
+            return _tarjeta(request, _enviar(draft_id))
+        except ValueError as e:
+            raise HTTPException(409, str(e)) from e
 
     @app.post("/borradores/{draft_id}/descartar", include_in_schema=False)
     def descartar_form(request: Request, draft_id: int):
@@ -364,6 +438,107 @@ def create_app(
         return _volver(request, "/")
 
     # ------------------------------------------------------------------
+    # WhatsApp
+    # ------------------------------------------------------------------
+
+    def _secreto_webhook() -> str:
+        conn = estado.conectar()
+        try:
+            return SettingsRepository(conn).secreto("webhook_waha")
+        finally:
+            conn.close()
+
+    def _whatsapp_vista() -> P.VistaWhatsApp:
+        info = estado.consultar_sesion()
+        return P.vista_whatsapp(estado.whatsapp, info, estado.sesion)
+
+    @app.get("/whatsapp", response_class=HTMLResponse, include_in_schema=False)
+    def pagina_whatsapp(request: Request):
+        return templates.TemplateResponse(
+            request, "whatsapp.html", _contexto(request, w=_whatsapp_vista(), titulo="WhatsApp")
+        )
+
+    @app.get("/whatsapp/estado", response_class=HTMLResponse, include_in_schema=False)
+    def estado_whatsapp(request: Request):
+        return templates.TemplateResponse(request, "_whatsapp_estado.html", {"w": _whatsapp_vista()})
+
+    @app.get("/whatsapp/qr.png", include_in_schema=False)
+    def qr_whatsapp():
+        if estado.whatsapp is None:
+            raise HTTPException(404)
+        try:
+            return Response(estado.whatsapp.cliente.qr(), media_type="image/png",
+                            headers={"Cache-Control": "no-store"})
+        except ErrorWaha as e:
+            raise HTTPException(404, str(e)) from e
+
+    def _exigir_whatsapp() -> WhatsApp:
+        if estado.whatsapp is None:
+            raise HTTPException(409, "WhatsApp no esta configurado (ESTIBA_WAHA_URL)")
+        return estado.whatsapp
+
+    @app.post("/whatsapp/conectar", include_in_schema=False)
+    def conectar_whatsapp(request: Request):
+        try:
+            _exigir_whatsapp().cliente.conectar(_secreto_webhook())
+        except ErrorWaha as e:
+            raise HTTPException(502, str(e)) from e
+        return _volver(request, "/whatsapp")
+
+    @app.post("/whatsapp/desconectar", include_in_schema=False)
+    def desconectar_whatsapp(request: Request):
+        try:
+            _exigir_whatsapp().cliente.desconectar()
+        except ErrorWaha as e:
+            raise HTTPException(502, str(e)) from e
+        return _volver(request, "/whatsapp")
+
+    @app.post("/whatsapp/importar", include_in_schema=False)
+    def importar_whatsapp(request: Request, background: BackgroundTasks, dias: int = Form(30)):
+        w = _exigir_whatsapp()
+        desde = estado.ahora() - timedelta(days=max(1, min(dias, 365)))
+        conn = estado.conectar()
+        try:
+            w.importar(conn, desde)
+        except ErrorWaha as e:
+            raise HTTPException(502, str(e)) from e
+        finally:
+            conn.close()
+        background.add_task(_procesar)
+        estado.sincronizar()
+        return _volver(request, "/")
+
+    def _procesar() -> None:
+        """Despues de recibir: transcribir los audios nuevos y reevaluar."""
+        conn = estado.conectar()
+        try:
+            estado.whatsapp.transcribir(conn)
+        finally:
+            conn.close()
+        estado.sincronizar()
+
+    @app.post("/webhooks/waha/{secreto}", include_in_schema=False)
+    async def webhook_waha(secreto: str, request: Request, background: BackgroundTasks):
+        if estado.whatsapp is None or not hmac.compare_digest(secreto, _secreto_webhook()):
+            raise HTTPException(404)
+        cuerpo = await request.body()
+        clave_hmac = estado.whatsapp.cliente.config.hmac_key
+        if clave_hmac and not firma_valida(cuerpo, request.headers.get("X-Webhook-Hmac"), clave_hmac):
+            raise HTTPException(401, "firma invalida")
+        evento = await request.json()
+        if evento.get("event") == "session.status":
+            estado.sesion = (evento.get("payload") or {}).get("status", estado.sesion)
+            return {"ok": True}
+        conn = estado.conectar()
+        try:
+            nuevo = estado.whatsapp.recibir(conn, evento)
+        finally:
+            conn.close()
+        if nuevo is not None:
+            background.add_task(_procesar)
+        return {"ok": True, "nuevo": nuevo is not None}
+
+    # ------------------------------------------------------------------
     # Calendario para suscribirse desde el celular
     # ------------------------------------------------------------------
 
@@ -390,7 +565,7 @@ def create_app(
     @app.post("/api/borradores/{draft_id}/aprobar", tags=["bandeja"],
               summary="Aprobar un borrador, con el texto final")
     def api_aprobar(draft_id: int, decision: Decision):
-        return P.a_json(_decidir(draft_id, True, decision.texto))
+        return P.a_json(_aprobar(draft_id, decision.texto))
 
     @app.post("/api/borradores/{draft_id}/descartar", tags=["bandeja"], summary="Descartar un borrador")
     def api_descartar(draft_id: int):
@@ -426,6 +601,20 @@ def create_app(
     @app.get("/api/clientes", tags=["numeros"], summary="Clientes con sus fletes")
     def api_clientes():
         return [P.a_json(c) for c in _clientes()]
+
+    @app.get("/api/whatsapp", tags=["sistema"], summary="Estado de la conexion con WhatsApp")
+    def api_whatsapp():
+        return P.a_json(_whatsapp_vista())
+
+    @app.post("/api/borradores/{draft_id}/reenviar", tags=["bandeja"],
+              summary="Reintentar el envio de un borrador aprobado que fallo")
+    def api_reenviar(draft_id: int):
+        if estado.whatsapp is None:
+            raise HTTPException(409, "WhatsApp no esta conectado")
+        try:
+            return P.a_json(_enviar(draft_id))
+        except ValueError as e:
+            raise HTTPException(409, str(e)) from e
 
     @app.post("/api/sincronizar", tags=["sistema"], summary="Reevaluar todas las conversaciones")
     def api_sincronizar():

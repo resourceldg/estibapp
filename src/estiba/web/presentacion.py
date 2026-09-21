@@ -125,6 +125,8 @@ class Borrador:
     estado: str
     texto_final: str | None
     whatsapp: str | None
+    enviado: bool = False
+    error_envio: str | None = None
 
 
 @dataclass
@@ -232,6 +234,8 @@ def borrador(fila: sqlite3.Row) -> Borrador:
         estado=fila["status"],
         texto_final=texto_final,
         whatsapp=whatsapp(fila["chat_id"], texto_final) if texto_final else None,
+        enviado=bool(fila["sent_at"]),
+        error_envio=fila["send_error"],
     )
 
 
@@ -500,6 +504,61 @@ def clientes(leads, fletes: dict[str, Flete], nombres: dict[str, str], ahora: da
         ))
     return sorted(salida, key=lambda c: fletes[c.ultimo_job_id].ultimo_at if c.ultimo_job_id in fletes else "",
                   reverse=True)
+
+
+# --------------------------------------------------------------------------
+# WhatsApp
+# --------------------------------------------------------------------------
+
+SESIONES = {
+    "WORKING": ("Conectado", "ok"),
+    "SCAN_QR_CODE": ("Escaneá el QR", "aviso"),
+    "STARTING": ("Arrancando…", "aviso"),
+    "PASSKEY_REQUIRED": ("Confirmá en el celular", "aviso"),
+    "PASSKEY_CONFIRMATION_REQUIRED": ("Confirmá en el celular", "aviso"),
+    "STOPPED": ("Desconectado", "mal"),
+    "FAILED": ("Falló la conexión", "mal"),
+    "SIN_SESION": ("Sin conectar", "neutro"),
+    "SIN_WAHA": ("WAHA no responde", "mal"),
+}
+
+
+@dataclass
+class SesionWhatsApp:
+    estado: str
+    etiqueta: str
+    tono: str
+
+
+def sesion_whatsapp(estado: str | None) -> SesionWhatsApp:
+    estado = estado or "SIN_SESION"
+    etiqueta, tono = SESIONES.get(estado, (estado.title(), "neutro"))
+    return SesionWhatsApp(estado, etiqueta, tono)
+
+
+@dataclass
+class VistaWhatsApp:
+    configurado: bool
+    sesion: SesionWhatsApp
+    numero: str | None
+    nombre: str | None
+    url_waha: str | None
+    #: Mientras no este conectado, la pagina se refresca sola.
+    esperando: bool
+
+
+def vista_whatsapp(whatsapp, info: dict | None, estado: str | None) -> VistaWhatsApp:
+    s = sesion_whatsapp(estado)
+    me = (info or {}).get("me") or {}
+    numero = me.get("id", "").split("@")[0] or None
+    return VistaWhatsApp(
+        configurado=whatsapp is not None,
+        sesion=s,
+        numero=telefono(numero) if numero else None,
+        nombre=me.get("pushName"),
+        url_waha=whatsapp.cliente.config.url if whatsapp else None,
+        esperando=s.estado in ("STARTING", "SCAN_QR_CODE", "PASSKEY_REQUIRED", "PASSKEY_CONFIRMATION_REQUIRED"),
+    )
 
 
 def a_json(obj) -> dict:

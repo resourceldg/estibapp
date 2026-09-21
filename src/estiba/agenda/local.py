@@ -7,12 +7,12 @@ configurado, el espejo en CalDAV.
 
 from __future__ import annotations
 
-import secrets
 import sqlite3
 from datetime import date, datetime
 
 from estiba.agenda.evento import Evento, evento_de
 from estiba.core.models import FreightJob
+from estiba.storage.repositories import SettingsRepository
 
 
 def _texto(v: date | datetime) -> str:
@@ -102,13 +102,7 @@ class LocalCalendar:
 
     def token(self) -> str:
         """El secreto de la URL del .ics: se crea una vez y queda."""
-        fila = self.conn.execute("SELECT value FROM settings WHERE key = 'ics_token'").fetchone()
-        if fila:
-            return fila["value"]
-        nuevo = secrets.token_urlsafe(24)
-        with self.conn:
-            self.conn.execute("INSERT INTO settings (key, value) VALUES ('ics_token', ?)", (nuevo,))
-        return nuevo
+        return SettingsRepository(self.conn).secreto("ics_token")
 
 
 def _evento(f: sqlite3.Row) -> Evento:

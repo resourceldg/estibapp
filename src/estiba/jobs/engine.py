@@ -161,7 +161,8 @@ class JobEngine:
         dias = silencio.days
         if estado in (*_ABIERTOS, JobState.DRAFT):
             if ultimo.from_customer and estado is not JobState.WAITING_CUSTOMER:
-                alertas.append(f"te escribió hace {_hace(silencio)} y espera respuesta")
+                cuando = "recién" if silencio < timedelta(minutes=1) else f"hace {_hace(silencio)}"
+                alertas.append(f"te escribió {cuando} y espera respuesta")
             elif silencio >= self.politica.abandono:
                 mover(
                     JobState.CANCELLED,

@@ -1,0 +1,35 @@
+{% from "_macros.html" import icono, chip %}
+<section class="panel conexion" id="conexion"
+  {% if w.esperando %}hx-get="/whatsapp/estado" hx-trigger="every 3s" hx-swap="outerHTML"{% endif %}>
+  <div class="conexion-cab">
+    <h2>Conexión</h2>
+    {{ chip(w.sesion.etiqueta, w.sesion.tono) }}
+  </div>
+
+  {% if w.sesion.estado == "WORKING" %}
+  <p class="conexion-numero">{{ icono("chat") }}<span><strong>{{ w.nombre or "Tu WhatsApp" }}</strong>{% if w.numero %} · {{ w.numero }}{% endif %}</span></p>
+  <p class="ayuda">Los mensajes entran solos y lo que aprobás en la bandeja sale desde este número.</p>
+
+  {% elif w.sesion.estado == "SCAN_QR_CODE" %}
+  <div class="qr">
+    <img src="/whatsapp/qr.png?t={{ range(100000)|random }}" alt="Código QR para vincular WhatsApp" width="264" height="264">
+  </div>
+  <ol class="pasos">
+    <li>En el celular abrí WhatsApp.</li>
+    <li>Tocá <strong>Dispositivos vinculados</strong> → <strong>Vincular un dispositivo</strong>.</li>
+    <li>Apuntá la cámara a este código. Se actualiza solo.</li>
+  </ol>
+
+  {% elif w.sesion.estado in ("STARTING", "PASSKEY_REQUIRED", "PASSKEY_CONFIRMATION_REQUIRED") %}
+  <p class="ayuda">{% if w.sesion.estado == "STARTING" %}WAHA está abriendo WhatsApp. En unos segundos aparece el código QR.{% else %}WhatsApp pide que confirmes desde el celular.{% endif %}</p>
+
+  {% elif w.sesion.estado == "SIN_WAHA" %}
+  <p class="ayuda">WAHA no responde en <code>{{ w.url_waha }}</code>. ¿Está corriendo? Probá <code>docker compose up -d</code> en la carpeta de Estiba.</p>
+
+  {% else %}
+  <p class="ayuda">Vinculá el WhatsApp del negocio: Estiba va a leer las conversaciones y mandar lo que apruebes. Nada sale sin tu aprobación.</p>
+  <form method="post" action="/whatsapp/conectar" hx-post="/whatsapp/conectar">
+    <button class="btn primario" type="submit">{{ icono("chat") }}<span>Conectar WhatsApp</span></button>
+  </form>
+  {% endif %}
+</section>

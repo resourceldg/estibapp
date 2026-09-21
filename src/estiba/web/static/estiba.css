@@ -599,6 +599,46 @@ ul.sin-contar { margin: 4px 0 0; padding-left: 18px; color: var(--tinta-2); }
   background: color-mix(in srgb, var(--acento) 14%, transparent); color: var(--tinta);
 }
 
+/* ------------------------------------------------------- fase 7 */
+
+.conexion-mini {
+  margin-left: auto;
+  display: inline-flex; align-items: center; gap: 7px;
+  min-height: 40px; padding: 0 12px; border-radius: 999px;
+  font-size: 13px; font-weight: 650; text-decoration: none;
+  background: transparent !important;
+}
+.conexion-mini + .btn-icono { margin-left: 0; }
+.conexion-mini .punto { width: 9px; height: 9px; border-radius: 50%; background: currentColor; }
+.conexion-mini.tono-ok .punto { box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); }
+.conexion-mini.apagado { color: var(--tenue); }
+.conexion-mini.apagado .punto { background: transparent; border: 1.5px solid currentColor; }
+@media (max-width: 420px) { .conexion-texto { display: none; } }
+
+.conexion-cab { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.conexion form { margin-top: 14px; }
+.conexion-numero { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 16px; }
+.conexion-numero .ico { color: var(--ok); }
+.qr {
+  display: grid; place-items: center; margin: 16px 0 6px; padding: 16px;
+  background: #fff; border-radius: var(--radio); border: 1px solid var(--linea);
+}
+.qr img { width: min(264px, 100%); height: auto; image-rendering: pixelated; }
+.pasos { margin: 12px 0 0; padding-left: 20px; display: grid; gap: 8px; color: var(--tinta-2); }
+.pasos pre { margin: 6px 0 0; padding: 10px 12px; border-radius: 10px; background: var(--superficie-2); border: 1px solid var(--linea); overflow-x: auto; }
+.pasos code, .ayuda code { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-size: 13px; color: var(--tinta); }
+.importar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 14px; }
+.importar label { font-weight: 600; font-size: 14px; }
+.importar select {
+  min-height: 46px; padding: 0 12px; border: 1.5px solid var(--linea-2); border-radius: 12px;
+  background: var(--superficie); color: var(--tinta); font: inherit;
+}
+.sello.fallo { color: var(--aviso); }
+.error-envio {
+  margin-top: 10px; padding: 10px 12px; border-radius: 10px;
+  background: var(--aviso-fondo); color: var(--aviso); font-size: 14px; font-weight: 550;
+}
+
 @media (min-width: 900px) {
   .kpis { grid-template-columns: repeat(4, 1fr); max-width: 1120px; }
   .kpis .kpi:first-child { grid-column: auto; }

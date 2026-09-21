@@ -1,0 +1,7 @@
+{
+ "clave": "clave-de-prueba",
+ "cuerpo": "{\"id\":\"evt_01m314w0ntrvb3px3k0crq2ah3\",\"timestamp\":1789966287547,\"event\":\"session.status\",\"session\":\"vector\",\"me\":null,\"payload\":{\"name\":\"vector\",\"status\":\"STARTING\",\"statuses\":[{\"status\":\"STARTING\",\"timestamp\":1789966287546}],\"data\":null},\"engine\":\"WEBJS\",\"environment\":{\"version\":\"2026.8.2\",\"engine\":\"WEBJS\",\"tier\":\"CORE\",\"browser\":\"/usr/bin/chromium\",\"platform\":\"linux/x64\",\"worker\":{\"id\":null}}}",
+ "hmac": "f9fbc3d048420df7e5f6572cdbfd213d4e3922ed2ff3979dfecaeb5255b3f4990c654b9be1bc235bea8d49431cc2bb64d23ad92066bd09059281c9261db68021",
+ "algoritmo": "sha512",
+ "waha": "WAHA/2026.8.2"
+}

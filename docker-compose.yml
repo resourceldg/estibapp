@@ -1,0 +1,28 @@
+# WhatsApp para Estiba: WAHA (WhatsApp HTTP API) en Docker.
+#
+#   cp .env.example .env      # y cambia las claves
+#   docker compose up -d
+#   uv run estiba serve       # y en el dashboard: WhatsApp -> Conectar
+#
+# Probado con WAHA 2026.8.2. Escucha solo en esta maquina (127.0.0.1).
+services:
+  waha:
+    image: devlikeapro/waha:latest-2026.8.2
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    extra_hosts:
+      # Para que WAHA le mande los webhooks a Estiba, que corre en el host.
+      - "host.docker.internal:host-gateway"
+    environment:
+      WAHA_API_KEY: ${ESTIBA_WAHA_API_KEY:?Defini ESTIBA_WAHA_API_KEY en .env}
+      WAHA_BASE_URL: http://localhost:3000
+      # Estiba tiene su propio dashboard; el de WAHA no hace falta.
+      WAHA_DASHBOARD_ENABLED: "false"
+      # Solo se bajan los audios: las fotos no se usan para nada.
+      WAHA_EVENTS_DOWNLOAD_MEDIA_MIMETYPES: audio/ogg,audio/mpeg,audio/mp4,audio/aac
+      WAHA_LOG_LEVEL: warn
+    volumes:
+      # La sesion de WhatsApp: si se borra, hay que volver a escanear el QR.
+      - ./data/waha/sesiones:/app/.sessions
+      - ./data/waha/archivos:/app/.media

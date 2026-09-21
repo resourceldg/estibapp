@@ -1,9 +1,10 @@
 // Estiba: lo poco que hace falta ademas de htmx.
 
-// Aprobar abre WhatsApp con el texto listo. Tiene que pasar en el mismo
-// click para que el navegador no lo bloquee como popup.
+// Aprobar un mensaje vacio no se puede. Sin WAHA, aprobar ademas abre
+// WhatsApp con el texto listo: tiene que pasar en el mismo click para que el
+// navegador no lo bloquee como popup.
 document.addEventListener("click", (e) => {
-  const boton = e.target.closest("[data-abre-whatsapp]");
+  const boton = e.target.closest("[data-aprobar]");
   if (!boton) return;
   const area = boton.form.querySelector("textarea");
   const texto = area.value.trim();
@@ -16,6 +17,7 @@ document.addEventListener("click", (e) => {
     area.focus();
     return;
   }
+  if (!boton.hasAttribute("data-abre-whatsapp")) return;
   window.open(`https://wa.me/${area.dataset.chat}?text=${encodeURIComponent(texto)}`, "_blank", "noopener");
 }, true);
 
@@ -25,7 +27,7 @@ document.addEventListener("keydown", (e) => {
   const area = e.target.closest(".redactar textarea");
   if (!area) return;
   e.preventDefault();
-  area.form.querySelector("[data-abre-whatsapp]").click();
+  area.form.querySelector("[data-aprobar]").click();
 });
 
 // Copiar el texto aprobado.

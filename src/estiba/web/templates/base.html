@@ -23,6 +23,15 @@
       <a href="/numeros" {% if ruta in ("/numeros", "/clientes") %}aria-current="page"{% endif %}>Números</a>
       <a href="/docs">API</a>
     </nav>
+    {% if whatsapp is not none %}
+    <a class="conexion-mini tono-{{ whatsapp.tono }}" href="/whatsapp" title="WhatsApp: {{ whatsapp.etiqueta }}">
+      <span class="punto"></span><span class="conexion-texto">WhatsApp</span>
+    </a>
+    {% else %}
+    <a class="conexion-mini apagado" href="/whatsapp" title="WhatsApp sin configurar">
+      <span class="punto"></span><span class="conexion-texto">WhatsApp</span>
+    </a>
+    {% endif %}
     <button class="btn-icono sincronizar" hx-post="/sincronizar" hx-swap="none"
             title="Volver a leer las conversaciones" aria-label="Actualizar">
       {{ icono("actualizar") }}

@@ -9,6 +9,15 @@ from estiba.core.models import Message, MessageKind
 from estiba.storage.db import connect
 
 
+@pytest.fixture(autouse=True)
+def entorno_limpio(monkeypatch):
+    """Los tests no leen tu configuracion: ni tu WAHA, ni tu CalDAV, ni tu clave."""
+    import os
+
+    for clave in [k for k in os.environ if k.startswith("ESTIBA_")]:
+        monkeypatch.delenv(clave)
+
+
 @pytest.fixture
 def conn():
     c = connect(":memory:")

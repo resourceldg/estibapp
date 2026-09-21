@@ -290,6 +290,24 @@ class DraftRepository:
             self.conn.execute("SELECT * FROM drafts WHERE status = 'pendiente' ORDER BY created_at, id")
         )
 
+    def mark_sent(self, draft_id: int, message_id: str | None, ahora: datetime) -> None:
+        with self.conn:
+            self.conn.execute(
+                "UPDATE drafts SET sent_at = ?, sent_message_id = ?, send_error = NULL WHERE id = ?",
+                (_a_texto(ahora), message_id, draft_id),
+            )
+
+    def mark_send_error(self, draft_id: int, error: str) -> None:
+        with self.conn:
+            self.conn.execute("UPDATE drafts SET send_error = ? WHERE id = ?", (error, draft_id))
+
+    def unsent(self) -> list[sqlite3.Row]:
+        """Aprobados que todavia no salieron: fallo el envio y hay que reintentar."""
+        return list(self.conn.execute(
+            "SELECT * FROM drafts WHERE status = 'aprobado' AND sent_at IS NULL "
+            "AND send_error IS NOT NULL ORDER BY decided_at"
+        ))
+
     def get(self, draft_id: int) -> sqlite3.Row | None:
         return self.conn.execute("SELECT * FROM drafts WHERE id = ?", (draft_id,)).fetchone()
 
@@ -387,3 +405,22 @@ class CRMRepository:
             cur = self.conn.execute("UPDATE contacts SET display_name = ? WHERE id = ?", (nombre, chat_id))
         if cur.rowcount == 0:
             raise KeyError(f"no existe el contacto {chat_id}")
+
+
+class SettingsRepository:
+    """Ajustes que genera el sistema, como los secretos de las URLs."""
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self.conn = conn
+
+    def secreto(self, clave: str) -> str:
+        """Un secreto al azar que se crea la primera vez y despues no cambia."""
+        import secrets
+
+        fila = self.conn.execute("SELECT value FROM settings WHERE key = ?", (clave,)).fetchone()
+        if fila:
+            return fila["value"]
+        nuevo = secrets.token_urlsafe(24)
+        with self.conn:
+            self.conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (clave, nuevo))
+        return self.conn.execute("SELECT value FROM settings WHERE key = ?", (clave,)).fetchone()["value"]

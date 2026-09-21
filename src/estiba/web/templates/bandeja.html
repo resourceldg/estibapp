@@ -12,13 +12,22 @@
   {% endif %}
 </div>
 
+{% if sin_salir %}
+<section class="seccion">
+  <h2 class="seccion-titulo">No salieron <span class="seccion-cuenta">{{ sin_salir|length }}</span></h2>
+  <div class="pila">
+    {% for b, f in sin_salir %}{% include "_borrador.html" %}{% endfor %}
+  </div>
+</section>
+{% endif %}
+
 {% if items %}
 <div class="pila">
   {% for b, f in items %}
     {% include "_borrador.html" %}
   {% endfor %}
 </div>
-{% else %}
+{% elif not sin_salir %}
 <div class="vacio">
   <div class="vacio-ico">{{ icono("check") }}</div>
   <h2>Todo al día</h2>
