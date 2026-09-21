@@ -69,6 +69,17 @@ class MessageRepository:
         )
         return [self._a_mensaje(f) for f in filas]
 
+    def audio_without_model(self, model: str) -> list[Message]:
+        """Audios que este modelo todavia no transcribio, tengan o no otra."""
+        filas = self.conn.execute(
+            "SELECT m.* FROM messages m "
+            "LEFT JOIN transcripts t ON t.message_id = m.id AND t.model = ? "
+            "WHERE m.kind = 'audio' AND t.message_id IS NULL "
+            "ORDER BY m.sent_at",
+            (model,),
+        )
+        return [self._a_mensaje(f) for f in filas]
+
     def chat_ids(self) -> list[str]:
         return [
             r[0]

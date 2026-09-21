@@ -5,6 +5,9 @@ description = "Convierte conversaciones de WhatsApp en fletes agendados. Local, 
 requires-python = ">=3.12,<3.13"
 dependencies = []
 
+[project.optional-dependencies]
+audio = ["faster-whisper>=1.1"]
+
 [project.scripts]
 estiba = "estiba.cli:main"
 

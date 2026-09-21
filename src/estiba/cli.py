@@ -1,7 +1,7 @@
 """Interfaz de linea de comandos.
 
-En la Fase 1 hace tres cosas: cargar fixtures, listar conversaciones y
-mostrar una reconstruida desde la base.
+Carga fixtures, lista conversaciones, muestra una reconstruida desde la base
+y transcribe los audios pendientes con Whisper local.
 """
 
 from __future__ import annotations
@@ -11,6 +11,9 @@ import sys
 from pathlib import Path
 
 from estiba.adapters.fixtures import FIXTURES_DIR, FixtureMessageSource
+from estiba.adapters.whisper import FasterWhisperTranscriber
+from estiba.audio.pipeline import AudioPipeline
+from estiba.audio.wer import comparar, wer_total
 from estiba.conversation.store import ConversationStore
 from estiba.storage.db import DEFAULT_DB, connect
 
@@ -64,10 +67,58 @@ def cmd_pending_audio(args: argparse.Namespace) -> int:
     if not pendientes:
         print("No hay audios pendientes de transcribir")
         return 0
-    print(f"{len(pendientes)} audios esperando al AudioPipeline (Fase 2):")
+    print(f"{len(pendientes)} audios esperando. Transcribilos con: estiba transcribe")
     for m in pendientes:
         existe = "" if Path(m.media_path or "").exists() else "  [FALTA EL ARCHIVO]"
         print(f"  {m.id}  {m.media_path}{existe}")
+    return 0
+
+
+def crear_transcriber(args: argparse.Namespace) -> FasterWhisperTranscriber:
+    return FasterWhisperTranscriber(model_size=args.modelo, device=args.device)
+
+
+def cmd_transcribe(args: argparse.Namespace) -> int:
+    conn = connect(args.db)
+    store = ConversationStore(conn)
+    if not args.comparar and not store.pending_audio():
+        print("No hay audios pendientes de transcribir")
+        return 0
+    transcriber = crear_transcriber(args)
+    modelo = transcriber.nombre if args.comparar else None
+    reporte = AudioPipeline(store, transcriber).run(limite=args.limite, modelo=modelo)
+
+    for t in reporte.transcriptos:
+        print(f"  {t.message_id}  [{t.confidence:.2f}]  {t.text}")
+    for m in reporte.sin_archivo:
+        print(f"  {m.id}  FALTA EL ARCHIVO {m.media_path}", file=sys.stderr)
+    for m, error in reporte.fallidos:
+        print(f"  {m.id}  FALLO: {error}", file=sys.stderr)
+    print(
+        f"{len(reporte.transcriptos)} transcriptos, "
+        f"{len(reporte.sin_archivo)} sin archivo, {len(reporte.fallidos)} fallidos"
+    )
+    return 1 if reporte.fallidos else 0
+
+
+def cmd_wer(args: argparse.Namespace) -> int:
+    conn = connect(args.db)
+    store = ConversationStore(conn)
+    comparaciones = []
+    for archivo in sorted(Path(args.fixtures).glob("*.json")):
+        for message_id, esperada in FixtureMessageSource.expected_transcripts(archivo).items():
+            transcripciones = list(store.transcripciones.all_for_message(message_id))
+            if not transcripciones:
+                print(f"  {message_id}  sin transcribir")
+                continue
+            for t in transcripciones:
+                c = comparar(esperada, t.text)
+                comparaciones.append(c)
+                print(f"  {message_id}  {t.model}  WER {c.wer:.1%}  ({c.errores}/{c.palabras})")
+    if not comparaciones:
+        print("No hay audios transcriptos con transcripcion esperada")
+        return 1
+    print(f"WER total: {wer_total(comparaciones):.1%}")
     return 0
 
 
@@ -89,6 +140,21 @@ def build_parser() -> argparse.ArgumentParser:
 
     a = sub.add_parser("pending-audio", help="audios sin transcribir")
     a.set_defaults(func=cmd_pending_audio)
+
+    t = sub.add_parser("transcribe", help="transcribir los audios pendientes")
+    t.add_argument("--modelo", default="small", help="tamano de Whisper: base, small, medium...")
+    t.add_argument("--device", default="auto", help="auto, cpu o cuda")
+    t.add_argument("--limite", type=int, help="transcribir como mucho N audios")
+    t.add_argument(
+        "--comparar",
+        action="store_true",
+        help="re-transcribir con este modelo los audios que ya tienen otra transcripcion",
+    )
+    t.set_defaults(func=cmd_transcribe)
+
+    w = sub.add_parser("wer", help="tasa de error contra la transcripcion esperada")
+    w.add_argument("--fixtures", default=str(FIXTURES_DIR))
+    w.set_defaults(func=cmd_wer)
 
     return p
 
