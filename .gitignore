@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+estiba.db
+estiba.db-*
+fixtures/audios/*
+!fixtures/audios/.gitkeep
+data/

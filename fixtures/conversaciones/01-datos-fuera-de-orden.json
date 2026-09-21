@@ -1,0 +1,18 @@
+{
+  "chat_id": "5491133334444",
+  "descripcion": "Flujo feliz, pero los datos llegan salteados: el ascensor y los ayudantes aparecen cuatro mensajes despues de la direccion. Rompe cualquier extractor incremental.",
+  "mensajes": [
+    {"de": "cliente", "hora": "2026-09-15T10:02:00", "texto": "hola buenas, haces fletes?"},
+    {"de": "vos", "hora": "2026-09-15T10:11:00", "texto": "Buenas! Si, contame que necesitas"},
+    {"de": "cliente", "hora": "2026-09-15T10:12:00", "texto": "necesito mudar un lavarropas y una heladera de Villa Crespo a Caballito"},
+    {"de": "cliente", "hora": "2026-09-15T10:12:30", "texto": "Aguirre al 500"},
+    {"de": "vos", "hora": "2026-09-15T10:20:00", "texto": "Perfecto. Para cuando lo necesitarias?"},
+    {"de": "cliente", "hora": "2026-09-15T10:21:00", "texto": "el sabado a la manana si se puede"},
+    {"de": "cliente", "hora": "2026-09-15T10:21:40", "texto": "ah me olvidaba, somos 2 y hay ascensor en los dos lados"},
+    {"de": "vos", "hora": "2026-09-15T10:35:00", "texto": "Barbaro, con ascensor es mas rapido. Te sale 45 mil"},
+    {"de": "cliente", "hora": "2026-09-15T10:38:00", "texto": "dale, cerramos"},
+    {"de": "cliente", "hora": "2026-09-15T10:38:20", "texto": "a que hora pasarias?"},
+    {"de": "vos", "hora": "2026-09-15T10:41:00", "texto": "9 de la manana te queda bien?"},
+    {"de": "cliente", "hora": "2026-09-15T10:42:00", "texto": "perfecto, ahi te espero"}
+  ]
+}

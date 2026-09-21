@@ -1,0 +1,21 @@
+{
+  "chat_id": "5491177778888",
+  "descripcion": "El destino cambia a mitad de conversacion y la fecha viene como 'el jueves que viene', que es ambiguo si hoy ya es jueves. Ademas hay un audio.",
+  "mensajes": [
+    {"de": "cliente", "hora": "2026-09-17T09:15:00", "texto": "hola, necesito llevar unas cajas y un placard de Almagro a San Telmo"},
+    {"de": "vos", "hora": "2026-09-17T09:40:00", "texto": "Buenas! Cuantas cajas mas o menos?"},
+    {
+      "de": "cliente",
+      "hora": "2026-09-17T09:44:00",
+      "audio": "fixtures/audios/03-cajas.ogg",
+      "transcripcion_esperada": "son como quince cajas, no son pesadas, y el placard que se desarma. Ah, y vivo en un tercero sin ascensor"
+    },
+    {"de": "vos", "hora": "2026-09-17T10:05:00", "texto": "Un tercero sin ascensor suma. Te paso presupuesto en un rato"},
+    {"de": "cliente", "hora": "2026-09-17T10:30:00", "texto": "pera, cambio de planes"},
+    {"de": "cliente", "hora": "2026-09-17T10:30:40", "texto": "no es mas a San Telmo, es a Barracas. Av Montes de Oca al 1200"},
+    {"de": "vos", "hora": "2026-09-17T11:00:00", "texto": "Listo, anotado Barracas. Te sale 70 mil por el tercero sin ascensor"},
+    {"de": "cliente", "hora": "2026-09-17T11:20:00", "texto": "dale, lo hacemos el jueves que viene"},
+    {"de": "vos", "hora": "2026-09-17T11:25:00", "texto": "El jueves 24 entonces?"},
+    {"de": "cliente", "hora": "2026-09-17T11:26:00", "texto": "si, ese"}
+  ]
+}
