@@ -16,8 +16,7 @@ from estiba.extraction.texto import NUMERO, Hallazgo, a_numero, cita, plano
 # Lugares
 # --------------------------------------------------------------------------
 
-BARRIOS = [
-    # CABA
+BARRIOS_CABA = [
     "Agronomía", "Almagro", "Balvanera", "Barracas", "Belgrano", "Boedo",
     "Caballito", "Chacarita", "Coghlan", "Colegiales", "Constitución", "Flores",
     "Floresta", "La Boca", "La Paternal", "Liniers", "Mataderos", "Monte Castro",
@@ -28,7 +27,8 @@ BARRIOS = [
     "Villa del Parque", "Villa Devoto", "Villa General Mitre", "Villa Lugano",
     "Villa Luro", "Villa Ortúzar", "Villa Pueyrredón", "Villa Real",
     "Villa Riachuelo", "Villa Santa Rita", "Villa Soldati", "Villa Urquiza",
-    # Conurbano
+]
+CONURBANO = [
     "Adrogué", "Avellaneda", "Banfield", "Berazategui", "Bernal", "Caseros",
     "Castelar", "Escobar", "Ezeiza", "Florencio Varela", "Haedo", "Hurlingham",
     "Ituzaingó", "La Matanza", "La Plata", "Lanús", "Lomas de Zamora",
@@ -36,6 +36,18 @@ BARRIOS = [
     "Pilar", "Quilmes", "Ramos Mejía", "San Fernando", "San Isidro",
     "San Justo", "San Martín", "Temperley", "Tigre", "Vicente López", "Wilde",
 ]
+BARRIOS = BARRIOS_CABA + CONURBANO
+
+
+def zona(lugar: str) -> str | None:
+    """"caba", "conurbano", o None si el lugar no esta en la lista."""
+    if lugar in BARRIOS_CABA:
+        return "caba"
+    if lugar in CONURBANO:
+        return "conurbano"
+    return None
+
+
 _CANONICO = {plano(b): b for b in BARRIOS}
 _LUGAR = "(" + "|".join(re.escape(b) for b in sorted(_CANONICO, key=len, reverse=True)) + ")"
 
@@ -117,8 +129,9 @@ _MUEBLES = [
 ]
 _FORMA = {}
 for singular, plural, otras in _MUEBLES:
-    _FORMA[singular] = (singular, plural, False)
+    # Primero el plural: si se escribe igual ("lavarropas"), cuenta como singular.
     _FORMA[plural] = (singular, plural, True)
+    _FORMA[singular] = (singular, plural, False)
     for o in otras:
         _FORMA[o] = (singular, plural, o.endswith("s") and not singular.endswith("s"))
 _MUEBLE = re.compile(
@@ -126,6 +139,16 @@ _MUEBLE = re.compile(
     + "|".join(re.escape(f) for f in sorted(_FORMA, key=len, reverse=True))
     + r")\b"
 )
+
+
+def leer_item(texto: str) -> Item | None:
+    """La vuelta de `str(item)`: "15 cajas" -> Item("caja", ..., 15, True)."""
+    m = _MUEBLE.fullmatch(plano(texto.strip()))
+    if m is None:
+        return None
+    singular, plural, en_plural = _FORMA[m.group(2)]
+    cantidad = a_numero(m.group(1)) if m.group(1) else None
+    return Item(singular, plural, cantidad, en_plural)
 
 
 def items(texto: str) -> list[Hallazgo]:

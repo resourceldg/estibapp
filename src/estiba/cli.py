@@ -2,14 +2,16 @@
 
 Carga fixtures, lista conversaciones, muestra una reconstruida desde la base
 transcribe los audios pendientes con Whisper local y extrae los datos del
-flete de cada conversacion, con la evidencia de donde salio cada uno.
+flete de cada conversacion, con la evidencia de donde salio cada uno, y arma
+el flete: estado, historia, precio sugerido y que preguntarle al cliente.
 """
 
 from __future__ import annotations
 
 import argparse
 import sys
-from datetime import date, time
+from datetime import date, datetime, time
+from decimal import Decimal
 from pathlib import Path
 
 from estiba.adapters.fixtures import FIXTURES_DIR, FixtureMessageSource
@@ -19,6 +21,10 @@ from estiba.audio.wer import comparar, wer_total
 from estiba.conversation.store import ConversationStore
 from estiba.extraction.extractor import SlotExtractor
 from estiba.extraction.fechas import NOMBRE_DIA
+from estiba.jobs.engine import JobEngine
+from estiba.jobs.preguntas import ETIQUETAS
+from estiba.jobs.pricing import TARIFA_DEFAULT, PricingEngine, Tarifa
+from estiba.storage.repositories import JobRepository
 from estiba.storage.db import DEFAULT_DB, connect
 
 
@@ -126,14 +132,6 @@ def cmd_wer(args: argparse.Namespace) -> int:
     return 0
 
 
-_ETIQUETAS = {
-    "origin": "origen", "destination": "destino", "items": "que lleva",
-    "when": "fecha", "hour": "hora", "daypart": "franja",
-    "floors_no_lift": "pisos x escalera", "helpers": "ayudantes",
-    "quoted_price": "precio cotizado",
-}
-
-
 def _valor(v: object) -> str:
     if isinstance(v, list):
         return ", ".join(map(str, v))
@@ -159,7 +157,7 @@ def cmd_extract(args: argparse.Namespace) -> int:
             return 1
         ex = extractor.extract(conv)
         print(f"--- {chat_id} ---")
-        for campo, etiqueta in _ETIQUETAS.items():
+        for campo, etiqueta in ETIQUETAS.items():
             c = ex.ganadores.get(campo)
             if c is None:
                 continue
@@ -167,7 +165,7 @@ def cmd_extract(args: argparse.Namespace) -> int:
             print(f"  {etiqueta:17} {_valor(c.slot.value):32} [{c.slot.confidence:.2f}]  "
                   f"{ev.message_id}  \"{ev.quote}\"")
         if ex.job.missing:
-            faltan = ", ".join(_ETIQUETAS[f] for f in ex.job.missing)
+            faltan = ", ".join(ETIQUETAS[f] for f in ex.job.missing)
             print(f"  FALTA: {faltan}")
         for duda in ex.dudas:
             print(f"  DUDA: {duda}")
@@ -175,6 +173,55 @@ def cmd_extract(args: argparse.Namespace) -> int:
             print(f"  AUDIOS SIN TRANSCRIBIR: {', '.join(ex.sin_texto)}")
         for i in ex.intenciones:
             print(f"  {i.intencion.value:9} {i.message_id}  \"{i.cita}\"")
+    return 0
+
+
+def _pesos(monto: Decimal | int) -> str:
+    return f"${int(monto):,}".replace(",", ".")
+
+
+def cmd_jobs(args: argparse.Namespace) -> int:
+    conn = connect(args.db)
+    store = ConversationStore(conn)
+    repo = JobRepository(conn)
+    ids = [args.chat_id] if args.chat_id else store.chat_ids()
+    if not ids:
+        print("No hay conversaciones. Corre primero: estiba ingest")
+        return 1
+    ahora = datetime.fromisoformat(args.ahora) if args.ahora else datetime.now()
+    engine = JobEngine(pricing=PricingEngine(Tarifa.desde_toml(args.tarifa)))
+
+    for chat_id in ids:
+        conv = store.get(chat_id)
+        if not conv.messages:
+            print(f"No hay mensajes para {chat_id}", file=sys.stderr)
+            return 1
+        ev = engine.evaluar(conv, ahora)
+        repo.save(ev.job, ev.eventos)
+
+        print(f"--- {chat_id}  {ev.job.state.value.upper()} ---")
+        for e in ev.eventos:
+            desde = e.desde.value if e.desde else "-"
+            print(f"  {e.at:%d/%m %H:%M}  {desde} -> {e.hacia.value:18} {e.causa}  ({e.message_id})")
+
+        cotizado = ev.job.quoted_price
+        p = ev.presupuesto
+        linea = f"cotizado {_pesos(cotizado.value)}" if cotizado else "sin cotizar"
+        if p is not None:
+            linea += f" | sugerido {_pesos(p.total)}"
+            if not p.completo:
+                linea += " o mas"
+        print(f"  precio: {linea}")
+        if p is not None:
+            print("    " + " + ".join(f"{c} {_pesos(m)}" for c, m in p.desglose))
+            for falta in p.sin_contar:
+                print(f"    sin contar: {falta}")
+        for alerta in ev.alertas:
+            print(f"  ALERTA: {alerta}")
+        if ev.preguntas:
+            print("  para preguntar (borrador, no se envia):")
+            for pregunta in ev.preguntas:
+                print(f"    {pregunta}")
     return 0
 
 
@@ -211,6 +258,12 @@ def build_parser() -> argparse.ArgumentParser:
     e = sub.add_parser("extract", help="datos del flete con su evidencia")
     e.add_argument("chat_id", nargs="?", help="sin chat_id, todas las conversaciones")
     e.set_defaults(func=cmd_extract)
+
+    j = sub.add_parser("jobs", help="estado de cada flete, precio sugerido y que falta")
+    j.add_argument("chat_id", nargs="?", help="sin chat_id, todas las conversaciones")
+    j.add_argument("--ahora", help="evaluar como si fuera esta fecha (ISO), para el silencio")
+    j.add_argument("--tarifa", default=str(TARIFA_DEFAULT), help="TOML con los montos")
+    j.set_defaults(func=cmd_jobs)
 
     w = sub.add_parser("wer", help="tasa de error contra la transcripcion esperada")
     w.add_argument("--fixtures", default=str(FIXTURES_DIR))

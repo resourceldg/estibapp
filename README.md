@@ -8,17 +8,17 @@ llegue entera. Es lo que el sistema hace con conversaciones desordenadas.
 
 ## Estado
 
-**Fase 3 de 7: terminada.** Sobre la base de las Fases 1 y 2 (SQLite, ingesta,
-conversaciones reconstruidas, audios transcriptos con Whisper local), Estiba ya
-lee cada conversación y saca los datos del flete por reglas, cada uno con la
-cita del mensaje de donde salió, y la intención del cliente en cada mensaje.
+**Fase 4 de 7: terminada.** Estiba ingiere conversaciones, transcribe los
+audios con Whisper local, saca los datos del flete por reglas (cada uno con la
+cita de donde salió) y arma el flete: en qué estado está y por qué, qué
+precio sugiere la tarifa y qué falta preguntarle al cliente.
 
 | Fase | Qué trae | Estado |
 | --- | --- | --- |
 | 1 | Esqueleto, SQLite, ingesta de fixtures, ConversationStore | Listo |
 | 2 | AudioPipeline con Whisper local | Listo |
 | 3 | Intención y extracción de datos por reglas | Listo |
-| 4 | JobEngine, datos faltantes, PricingEngine | Pendiente |
+| 4 | JobEngine, datos faltantes, PricingEngine | Listo |
 | 5 | API y dashboard con bandeja de aprobación | Pendiente |
 | 6 | Calendario CalDAV, CRM y funnel | Pendiente |
 | 7 | WAHA en Docker, ingesta real de WhatsApp | Pendiente |
@@ -34,7 +34,9 @@ uv run estiba pending-audio             # audios sin transcribir
 uv run estiba transcribe                # los pasa por Whisper (--modelo small por defecto)
 uv run estiba wer                       # error contra transcripcion_esperada
 uv run estiba extract                   # datos del flete con su evidencia, dudas y faltantes
-uv run pytest                           # 106 tests, no necesitan Whisper
+uv run estiba jobs                      # estado, historia, precio sugerido, qué preguntar
+uv run estiba jobs --ahora 2026-09-21T12:00   # evaluar como si fuera otra fecha
+uv run pytest                           # 135 tests, no necesitan Whisper
 ```
 
 ## Cómo está armado
@@ -55,6 +57,9 @@ src/estiba/
   extraction/reglas.py  Barrios, muebles, pisos, ayudantes, precio.
   extraction/intencion.py  Consulta, acepta, pospone, corrige, cancela.
   extraction/extractor.py  Junta todo: gana la última mención, las otras quedan.
+  jobs/engine.py        Estado del flete, recalculado mensaje a mensaje.
+  jobs/pricing.py       Precio sugerido con desglose. Montos en tarifa.toml.
+  jobs/preguntas.py     Qué preguntarle al cliente. Borrador: no se envía.
   storage/            SQLite, migraciones versionadas, repositorios.
   conversation/store.py  Reconstruye el hilo con las transcripciones pegadas.
   cli.py
@@ -85,6 +90,41 @@ modelo, poné ahí tus audios, cargá su `transcripcion_esperada` en el fixture 
 corré `estiba transcribe --modelo small`, después
 `estiba transcribe --modelo medium --comparar`, y mirá `estiba wer`. Cada modelo guarda su propia transcripción y gana la de mayor
 confianza.
+
+## Cómo se mueve un flete
+
+El estado no se edita a mano: se recalcula recorriendo la conversación, y
+cada cambio queda con su causa y el mensaje que lo provocó.
+
+- **borrador → presupuestado**: el fletero dice un precio ("te sale 45 mil").
+- **presupuestado → esperando cliente**: el cliente pospone ("mañana te confirmo").
+- **→ confirmado**: el cliente acepta *y* origen, destino, fecha y qué se
+  lleva están sin dudas. Si acepta con la fecha ambigua, queda una alerta y
+  se confirma recién cuando se aclara.
+- **→ cancelado**: el cliente cancela, o pasan 4 días sin respuesta después
+  de cotizar. Si el último que escribió fue el cliente, no se cancela: la
+  alerta es que está esperando respuesta.
+
+## Tarifa
+
+Los montos por defecto están ajustados a las tres cotizaciones de prueba
+(sugiere $46.000, $57.000 y $70.000 donde cotizaste $45.000, $60.000 y
+$70.000). Para usar los tuyos, creá `tarifa.toml` con los que quieras cambiar:
+
+```toml
+base = 30000               # todo flete
+conurbano = 15000          # si origen o destino es del conurbano
+grande = 8000              # heladera, lavarropas, placard, sillón, cama...
+mediano = 3000             # mesa, escritorio, tele...
+chico = 1000               # silla, microondas
+caja = 700
+juego_comedor = 12000      # incluye la mesa y las sillas
+piso_sin_ascensor = 7000   # por piso
+ayudante = 10000
+```
+
+Lo que no se sabe no se cobra ni se esconde: el presupuesto dice "o más" y
+lista qué quedó sin contar.
 
 ## Decisiones tomadas
 

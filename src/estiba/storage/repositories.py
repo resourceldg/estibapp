@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from collections.abc import Iterable, Iterator
-from datetime import datetime
+from datetime import date, datetime, time
+from decimal import Decimal
+from typing import TYPE_CHECKING
 
-from estiba.core.models import Message, MessageKind, Transcript
+from estiba.core.models import FreightJob, JobState, Message, MessageKind, Slot, Transcript
+
+if TYPE_CHECKING:
+    from estiba.jobs.engine import Evento
 
 
 def _a_texto(dt: datetime) -> str:
@@ -154,3 +160,85 @@ class TranscriptRepository:
                 model=f["model"],
                 duration_s=f["duration_s"],
             )
+
+
+#: Campos del FreightJob que se guardan como slot en job_slots.
+SLOT_FIELDS = (
+    "origin", "destination", "items", "when", "hour", "daypart",
+    "floors_no_lift", "helpers", "quoted_price",
+)
+
+
+def _a_json(valor: object) -> str:
+    def convertir(v: object) -> object:
+        if isinstance(v, (date, time)):
+            return v.isoformat()
+        if isinstance(v, Decimal):
+            return str(v)
+        raise TypeError(f"no se como guardar {type(v).__name__}")
+
+    return json.dumps(valor, default=convertir, ensure_ascii=False)
+
+
+class JobRepository:
+    """Guarda el resultado del JobEngine.
+
+    Todo lo de un flete se deriva de la conversacion, asi que guardar es
+    reemplazar: los slots y la historia de estados se reescriben enteros.
+    """
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self.conn = conn
+
+    def save(self, job: FreightJob, eventos: Iterable[Evento]) -> None:
+        creado = _a_texto(job.created_at or datetime.now())
+        ahora = _a_texto(datetime.now())
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO jobs (id, conversation_id, state, calendar_event_id, created_at) "
+                "VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT (id) DO UPDATE SET state = excluded.state, "
+                "calendar_event_id = excluded.calendar_event_id",
+                (job.id, job.conversation_id, job.state.value, job.calendar_event_id, creado),
+            )
+            self.conn.execute("DELETE FROM job_slots WHERE job_id = ?", (job.id,))
+            for campo in SLOT_FIELDS:
+                slot: Slot | None = getattr(job, campo)
+                if slot is None:
+                    continue
+                self.conn.execute(
+                    "INSERT INTO job_slots (job_id, field, value_json, confidence, "
+                    "message_id, quote, method, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        job.id, campo, _a_json(slot.value), slot.confidence,
+                        slot.evidence.message_id, slot.evidence.quote,
+                        slot.evidence.method.value, ahora,
+                    ),
+                )
+            self.conn.execute("DELETE FROM job_events WHERE job_id = ?", (job.id,))
+            for e in eventos:
+                self.conn.execute(
+                    "INSERT INTO job_events (job_id, from_state, to_state, at, cause, message_id) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (
+                        job.id, e.desde.value if e.desde else None, e.hacia.value,
+                        _a_texto(e.at), e.causa, e.message_id,
+                    ),
+                )
+
+    def state(self, job_id: str) -> JobState | None:
+        fila = self.conn.execute("SELECT state FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        return JobState(fila["state"]) if fila else None
+
+    def slots(self, job_id: str) -> dict[str, sqlite3.Row]:
+        filas = self.conn.execute("SELECT * FROM job_slots WHERE job_id = ?", (job_id,))
+        return {f["field"]: f for f in filas}
+
+    def events(self, job_id: str) -> list[sqlite3.Row]:
+        return list(
+            self.conn.execute("SELECT * FROM job_events WHERE job_id = ? ORDER BY id", (job_id,))
+        )
+
+    def by_state(self) -> dict[JobState, int]:
+        filas = self.conn.execute("SELECT state, COUNT(*) AS n FROM jobs GROUP BY state")
+        return {JobState(f["state"]): f["n"] for f in filas}
