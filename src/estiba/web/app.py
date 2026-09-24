@@ -175,6 +175,17 @@ def create_app(
             return JSONResponse({"detail": "aca solo se reciben webhooks"}, status_code=404)
         return await call_next(request)
     app.mount("/static", StaticFiles(directory=AQUI / "static"), name="static")
+
+    def _version_estatica() -> str:
+        """Huella de los archivos estaticos, para que el navegador no use
+        una version vieja.
+
+        Sin esto el navegador se queda con el CSS que ya tenia: se cambia
+        una regla, se recarga la pagina y no pasa nada. Es la clase de bug
+        que hace perder una tarde buscando en el lugar equivocado.
+        """
+        estaticos = (AQUI / "static").glob("*.[cj]s*")
+        return str(int(max((f.stat().st_mtime for f in estaticos), default=0)))
     templates = Jinja2Templates(directory=AQUI / "templates")
 
     # ------------------------------------------------------------------
@@ -199,7 +210,8 @@ def create_app(
 
     @app.get("/entrar", response_class=HTMLResponse, include_in_schema=False)
     def entrar_form(request: Request, error: bool = False):
-        return templates.TemplateResponse(request, "entrar.html", {"error": error})
+        return templates.TemplateResponse(
+            request, "entrar.html", {"error": error, "v": _version_estatica()})
 
     @app.post("/entrar", include_in_schema=False)
     def entrar(clave_ingresada: str = Form(alias="clave")):
@@ -463,6 +475,7 @@ def create_app(
             conn.close()
         return {
             "pendientes": pendientes,
+            "v": _version_estatica(),
             "whatsapp": P.sesion_whatsapp(estado.sesion) if estado.whatsapp else None,
             "envio_directo": estado.whatsapp is not None,
             "sincronizado": P.hace(estado.sincronizado_at, estado.ahora()) if estado.sincronizado_at else None,

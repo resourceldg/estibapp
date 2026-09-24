@@ -867,6 +867,9 @@ body:has(.barra-accion) { padding-bottom: calc(var(--tabbar) + 48px + env(safe-a
   display: flex; align-items: center; gap: 10px; cursor: pointer; list-style: none;
 }
 .clase-puesta > summary::-webkit-details-marker { display: none; }
+/* Firefox dibuja el triangulo con ::marker, no con el pseudo de webkit. */
+summary::marker { content: ""; }
+summary::-webkit-details-marker { display: none; }
 .cambiar { margin-left: auto; color: var(--tenue); font-size: 13px; }
 .clase-puesta[open] > summary { margin-bottom: 8px; }
 .oir { width: 100%; max-width: 230px; height: 34px; margin: 4px 0 2px; }

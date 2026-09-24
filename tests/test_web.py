@@ -602,3 +602,26 @@ class TestChatCompacto:
         css = (Path(__file__).parents[1] / "src/estiba/web/static/estiba.css").read_text()
         bloque = css[css.index(".mensajes {"):css.index("}", css.index(".mensajes {"))]
         assert "overscroll-behavior" not in bloque
+
+
+class TestCacheDelNavegador:
+    def test_el_css_y_el_js_van_versionados(self, cliente):
+        """Sin esto el navegador se queda con el CSS viejo: se cambia una
+        regla, se recarga y no pasa nada. Cuesta una tarde de buscar mal."""
+        html = cliente.get("/").text
+        assert re.search(r'estiba\.css\?v=\d+', html)
+        assert re.search(r'estiba\.js\?v=\d+', html)
+
+    def test_la_version_cambia_si_cambia_un_archivo(self, cliente, tmp_path):
+        import os
+        from estiba.web.app import AQUI
+
+        antes = re.search(r'estiba\.css\?v=(\d+)', cliente.get("/").text).group(1)
+        css = AQUI / "static" / "estiba.css"
+        stat = css.stat()
+        try:
+            os.utime(css, (stat.st_atime, stat.st_mtime + 60))
+            despues = re.search(r'estiba\.css\?v=(\d+)', cliente.get("/").text).group(1)
+            assert despues != antes
+        finally:
+            os.utime(css, (stat.st_atime, stat.st_mtime))
