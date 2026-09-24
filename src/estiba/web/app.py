@@ -427,17 +427,21 @@ def create_app(
         )
 
     @app.get("/fletes/{job_id}", response_class=HTMLResponse, include_in_schema=False)
-    def pagina_flete(request: Request, job_id: str):
+    def pagina_flete(request: Request, job_id: str, f: str = "todos"):
         d = _detalle(job_id)
         conn = estado.conectar()
         try:
             dormida = SnoozeRepository(conn).vigentes(estado.ahora()).get(d.flete.chat_id)
         finally:
             conn.close()
+        filtro = f if any(c == f for c, _ in FILTROS) else "todos"
+        anterior, siguiente = _vecinos(job_id, filtro)
+        clase = estado.resultado.clases.get(d.flete.chat_id)
         return templates.TemplateResponse(
             request, "flete.html",
             _contexto(
-                request, d=d, siguiente=_siguiente(job_id), plazos=PLAZOS,
+                request, d=d, anterior=anterior, siguiente=siguiente, filtro=filtro,
+                plazos=PLAZOS, dudosa=bool(clase and clase.pide_decision),
                 pospuesta_hasta=P.cuando_vuelve(dormida, estado.ahora()) if dormida else None,
                 titulo=d.flete.quien,
             ),
@@ -532,10 +536,18 @@ def create_app(
             conn.close()
         estado.sincronizar()
 
-    def _siguiente(job_id: str) -> str | None:
-        """El proximo que espera algo: resolver uno y seguir, sin volver a la lista."""
-        pendientes = [f.job_id for _, f in _bandeja() if f.job_id != job_id]
-        return pendientes[0] if pendientes else None
+    def _vecinos(job_id: str, filtro: str) -> tuple[str | None, str | None]:
+        """La anterior y la siguiente, en el orden del filtro que estas usando.
+
+        Resolver una y pasar a la otra sin volver a la lista, respetando lo
+        que estabas mirando: si filtraste "Cotizar", seguis entre esas.
+        """
+        orden = [f.job_id for _, f, _ in _conversaciones(filtro)["filas"]]
+        if job_id not in orden:
+            # Ya no pasa el filtro (recien lo resolviste): sigue el primero.
+            return None, orden[0] if orden else None
+        i = orden.index(job_id)
+        return (orden[i - 1] if i else None, orden[i + 1] if i + 1 < len(orden) else None)
 
     def _volver(request: Request, a: str) -> Response:
         if request.headers.get("HX-Request"):

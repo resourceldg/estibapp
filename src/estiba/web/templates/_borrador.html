@@ -29,17 +29,21 @@
   </blockquote>
   {% endif %}
 
-  <form class="redactar" method="post" action="/borradores/{{ b.id }}/aprobar"
+  <form class="redactar" id="redactar-{{ b.id }}" method="post" action="/borradores/{{ b.id }}/aprobar"
         hx-post="/borradores/{{ b.id }}/aprobar" hx-target="#b-{{ b.id }}" hx-swap="outerHTML">
     <label class="sr" for="t-{{ b.id }}">Mensaje para el cliente</label>
     <textarea id="t-{{ b.id }}" name="texto" rows="3" data-chat="{{ b.chat_id }}"
               placeholder="Escribí tu respuesta…">{{ b.texto }}</textarea>
-    <div class="acciones">
+    {# Adentro de la conversacion la accion principal vive en la botonera de
+       abajo, al alcance del pulgar: aca quedaria repetida. #}
+    <div class="acciones{% if en_detalle %} solo-descartar{% endif %}">
       <button type="submit" class="btn fantasma" formaction="/borradores/{{ b.id }}/descartar"
               hx-post="/borradores/{{ b.id }}/descartar">Descartar</button>
+      {% if not en_detalle %}
       <button type="submit" class="btn primario" data-aprobar{% if not envio_directo %} data-abre-whatsapp{% endif %}>
         {{ icono("enviar") }}<span>Aprobar y enviar</span>
       </button>
+      {% endif %}
     </div>
     <p class="nota">{% if envio_directo %}Sale por WhatsApp apenas lo aprobás.{% else %}Se abre WhatsApp con el mensaje listo.{% endif %}<span class="atajo"> <kbd>Ctrl</kbd>+<kbd>Enter</kbd> para aprobar.</span></p>
   </form>

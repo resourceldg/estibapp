@@ -45,6 +45,9 @@
     {% block contenido %}{% endblock %}
   </main>
 
+  {# Adentro de una conversacion manda la botonera de accion: dos barras
+     abajo se comen media pantalla de celular. #}
+  {% block barra_inferior %}
   <nav class="tabbar" aria-label="Secciones">
     <a href="/" {% if ruta == "/" or ruta.startswith("/fletes") %}aria-current="page"{% endif %}>
       <span class="tab-ico">{{ icono("bandeja") }}{% if pendientes %}<span class="cuenta">{{ pendientes }}</span>{% endif %}</span>
@@ -68,5 +71,6 @@
       WhatsApp
     </a>
   </nav>
+  {% endblock %}
 </body>
 </html>

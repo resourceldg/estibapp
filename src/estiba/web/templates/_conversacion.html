@@ -3,7 +3,7 @@
    conversacion. Por eso aca no hay compositor: quien, que dijo, cuando,
    como viene y que haria Estiba. #}
 <li>
-  <a class="conv{% if b and b.tipo == 'respuesta' %} pide-atencion{% endif %}" href="/fletes/{{ f.job_id }}">
+  <a class="conv{% if b and b.tipo == 'respuesta' %} pide-atencion{% endif %}" href="/fletes/{{ f.job_id }}{% if filtro and filtro != 'todos' %}?f={{ filtro }}{% endif %}">
     <div class="conv-linea1">
       <span class="conv-quien">{{ f.quien }}</span>
       <span class="conv-hora">{{ f.ultimo }}</span>

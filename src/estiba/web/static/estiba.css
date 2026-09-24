@@ -771,3 +771,38 @@ ul.sin-contar { margin: 4px 0 0; padding-left: 18px; color: var(--tinta-2); }
 .conv-duda .btn { min-height: 36px; padding: 0 16px; font-size: 14px; }
 .conv-fecha { display: inline-flex; align-items: center; gap: 5px; color: var(--tinta-2); font-size: 13px; font-weight: 600; }
 .conv-fecha .ico { width: 14px; height: 14px; }
+
+/* ------------------------------------------------- botonera de accion */
+/* Adentro de una conversacion reemplaza a la navegacion: una mano, el
+   pulgar abajo, y la accion principal ocupando el centro. */
+.barra-accion {
+  position: fixed; inset: auto 0 0 0; z-index: 20;
+  display: grid; grid-template-columns: 56px 1fr 56px; align-items: center; gap: 8px;
+  min-height: calc(var(--tabbar) + 8px);
+  padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+  background: color-mix(in srgb, var(--superficie) 94%, transparent);
+  backdrop-filter: saturate(1.4) blur(14px);
+  -webkit-backdrop-filter: saturate(1.4) blur(14px);
+  border-top: 1px solid var(--linea);
+}
+.paso {
+  display: inline-grid; place-items: center;
+  min-height: 48px; border-radius: 12px;
+  border: 1px solid var(--linea); background: var(--superficie); color: var(--tinta-2);
+  text-decoration: none;
+}
+.paso.apagado { opacity: .35; pointer-events: none; }
+.accion-centro { display: grid; gap: 6px; min-width: 0; }
+.accion-centro form { display: contents; }
+.btn.ancho { width: 100%; }
+.accion-par { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.accion-par form { display: contents; }
+.accion-pregunta { text-align: center; font-size: 13px; font-weight: 650; color: var(--tinta-2); }
+.accion-nada {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  min-height: 48px; color: var(--tenue); font-size: 14px;
+}
+.accion-nada .ico { width: 17px; height: 17px; }
+.acciones.solo-descartar { grid-template-columns: auto; justify-content: start; }
+/* La botonera es mas alta que la navegacion: sin esto tapa el final del chat. */
+body:has(.barra-accion) { padding-bottom: calc(var(--tabbar) + 48px + env(safe-area-inset-bottom)); }

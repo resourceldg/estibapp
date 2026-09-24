@@ -394,3 +394,36 @@ class TestPosponer:
         r = cliente.post(f"/fletes/{job_id}/posponer",
                          data={"cuando": "fecha", "fecha": "cuando pueda"})
         assert r.status_code == 400
+
+
+class TestBotonera:
+    """Adentro de la conversacion manda la accion, no la navegacion global."""
+
+    CONFIRMAR = "5491177778888:job"     # tiene un borrador de confirmacion
+    AGENDADO = "5491133334444:job"      # agendado y ya paso: se puede realizar
+
+    def test_reemplaza_la_navegacion_de_abajo(self, cliente):
+        html = cliente.get(f"/fletes/{self.CONFIRMAR}").text
+        assert "barra-accion" in html
+        assert 'class="tabbar"' not in html     # dos barras se comen la pantalla
+
+    def test_la_accion_principal_es_la_que_pide_el_estado(self, cliente):
+        html = cliente.get(f"/fletes/{self.CONFIRMAR}").text
+        assert "Confirmar flete" in html
+
+    def test_no_repite_el_boton_de_aprobar(self, cliente):
+        """Si la accion vive abajo, arriba queda duplicada."""
+        html = cliente.get(f"/fletes/{self.CONFIRMAR}").text
+        assert html.count("data-aprobar") == 1
+
+    def test_sin_nada_que_hacer_lo_dice(self, cliente):
+        html = cliente.get("/fletes/5491155556666:job").text
+        assert "Marcar realizado" in html or "Nada que hacer" in html or "Hacer seguimiento" in html
+
+    def test_la_navegacion_respeta_el_filtro(self, cliente):
+        """Si filtraste Cotizar, Siguiente sigue entre esas."""
+        html = cliente.get(f"/fletes/{self.AGENDADO}?f=confirmados").text
+        assert "?f=confirmados" in html
+
+    def test_la_bandeja_sigue_teniendo_su_navegacion(self, cliente):
+        assert 'class="tabbar"' in cliente.get("/").text

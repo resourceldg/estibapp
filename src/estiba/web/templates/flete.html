@@ -1,15 +1,13 @@
 {% extends "base.html" %}
 {% from "_macros.html" import icono, chip %}
 {% set f = d.flete %}
+{% set pendiente = (d.borradores | selectattr("estado", "equalto", "pendiente") | list | first) %}
 {% block contenido %}
 {# La unidad es la conversacion, no la ficha: primero con quien hablas, despues
    que sigue, despues el chat. Lo que Estiba dedujo queda plegado: esta para
    revisar cuando dudas, no para que lo cargues a mano. #}
 <div class="conv-cab">
-  <a class="volver" href="/">{{ icono("volver") }}Hoy</a>
-  {% if siguiente %}
-  <a class="btn-icono chico-texto" href="/fletes/{{ siguiente }}">Siguiente{{ icono("flecha") }}</a>
-  {% endif %}
+  <a class="volver" href="/{% if filtro != 'todos' %}?f={{ filtro }}{% endif %}">{{ icono("volver") }}Hoy</a>
 </div>
 
 <section class="quien-cab">
@@ -198,4 +196,49 @@
     <button class="btn fantasma peligro" type="submit">Sacar del circuito</button>
   </form>
 </details>
+{% endblock %}
+
+{# --------------------------------------------------------------------
+   La botonera manda mientras estas adentro: el estado decide que aparece,
+   no una coleccion de botones que se esconden. Todo al alcance del pulgar.
+   -------------------------------------------------------------------- #}
+{% block barra_inferior %}
+<nav class="barra-accion" aria-label="Acciones">
+  <a class="paso{% if not anterior %} apagado{% endif %}"
+     {% if anterior %}href="/fletes/{{ anterior }}{% if filtro != 'todos' %}?f={{ filtro }}{% endif %}"{% endif %}
+     aria-label="Anterior">{{ icono("volver") }}</a>
+
+  <div class="accion-centro">
+    {% if dudosa %}
+      {# Estiba no pudo determinar si es del negocio: eso primero. #}
+      <span class="accion-pregunta">¿Es un cliente?</span>
+      <div class="accion-par">
+        <form method="post" action="/clientes/{{ f.chat_id }}/clase" hx-post="/clientes/{{ f.chat_id }}/clase">
+          <input type="hidden" name="clase" value="flete">
+          <button class="btn primario" type="submit">Sí</button>
+        </form>
+        <form method="post" action="/clientes/{{ f.chat_id }}/clase" hx-post="/clientes/{{ f.chat_id }}/clase">
+          <input type="hidden" name="clase" value="personal">
+          <button class="btn secundario" type="submit">No</button>
+        </form>
+      </div>
+    {% elif pendiente %}
+      <button class="btn primario ancho" type="submit" form="redactar-{{ pendiente.id }}"
+              data-aprobar{% if not envio_directo %} data-abre-whatsapp{% endif %}>
+        {{ icono(pendiente.accion_icono) }}<span>{{ pendiente.accion }}</span>
+      </button>
+    {% elif d.puede_realizar %}
+      <form method="post" action="/fletes/{{ f.job_id }}/realizado"
+            hx-post="/fletes/{{ f.job_id }}/realizado" hx-confirm="¿Marcar el flete como realizado?">
+        <button class="btn primario ancho" type="submit">{{ icono("hecho") }}<span>Marcar realizado</span></button>
+      </form>
+    {% else %}
+      <span class="accion-nada">{{ icono("reloj") }}Nada que hacer: le toca contestar</span>
+    {% endif %}
+  </div>
+
+  <a class="paso{% if not siguiente %} apagado{% endif %}"
+     {% if siguiente %}href="/fletes/{{ siguiente }}{% if filtro != 'todos' %}?f={{ filtro }}{% endif %}"{% endif %}
+     aria-label="Siguiente">{{ icono("flecha") }}</a>
+</nav>
 {% endblock %}
