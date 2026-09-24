@@ -20,7 +20,10 @@
     </form>
     <a class="tel" href="https://wa.me/{{ f.chat_id }}" target="_blank" rel="noopener">{{ f.telefono }}</a>
   </div>
-  {{ chip(f.estado_etiqueta, f.tono) }}
+  <div class="quien-estado">
+    {% if f.numero %}<span class="numero-flete">Flete {{ f.numero }}</span>{% endif %}
+    {{ chip(f.estado_etiqueta, f.tono) }}
+  </div>
 </section>
 
 {# Sin categorizar: los cuatro, una sola vez. Ya decidida: la etiqueta, y

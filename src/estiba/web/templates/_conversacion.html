@@ -17,6 +17,7 @@
     </p>
     <div class="conv-linea3">
       {% if b %}<span class="conv-accion">{{ icono(b.accion_icono) }}{{ b.accion }}</span>{% endif %}
+      {% if f.numero %}<span class="numero-flete">{{ f.numero }}</span>{% endif %}
       {% if clase and clase != "dudosa" %}<span class="etq etq-{{ clase }}">{{ {"lead": "Lead", "cliente": "Cliente", "privado": "Privado", "spam": "Spam"}.get(clase, clase) }}</span>{% endif %}
       {{ chip(f.estado_etiqueta, f.tono) }}
       {# Si ya tiene fecha, es trabajo agendado: se ve sin entrar. #}

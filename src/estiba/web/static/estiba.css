@@ -1003,3 +1003,11 @@ summary::-webkit-details-marker { display: none; }
 .desde-aca.sugerido { border-color: var(--aviso); color: var(--tinta); }
 .desde-hora { color: var(--tenue); font-size: 12px; white-space: nowrap; }
 .desde-texto { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* El numero del flete: para nombrarlo, no para mirarlo. Discreto. */
+.numero-flete {
+  display: inline-flex; align-items: center; height: 22px; padding: 0 8px;
+  border-radius: 6px; background: var(--superficie-3); color: var(--tenue);
+  font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.quien-estado { display: flex; align-items: center; gap: 8px; }

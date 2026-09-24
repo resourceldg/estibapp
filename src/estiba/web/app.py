@@ -251,8 +251,17 @@ def create_app(
 
     def _fletes() -> dict[str, P.Flete]:
         ahora, nombres = estado.ahora(), _nombres()
+        conn = estado.conectar()
+        try:
+            numeros = {
+                f["id"]: f["numero"] for f in conn.execute(
+                    "SELECT id, numero FROM jobs WHERE numero IS NOT NULL")
+            }
+        finally:
+            conn.close()
         return {
-            job_id: P.flete(job_id, ev, conv, ahora, nombres.get(conv.chat_id))
+            job_id: P.flete(job_id, ev, conv, ahora, nombres.get(conv.chat_id),
+                            numeros.get(job_id))
             for job_id, (ev, conv) in estado.resultado.fletes.items()
         }
 

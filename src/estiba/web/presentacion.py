@@ -179,6 +179,8 @@ class Borrador:
 @dataclass
 class Flete:
     job_id: str
+    #: Para nombrarlo en voz alta: "el 12". None mientras es una consulta.
+    numero: int | None
     chat_id: str
     nombre: str | None
     telefono: str
@@ -264,7 +266,8 @@ class DetalleFlete:
     puede_perder: bool
 
 
-def flete(job_id: str, ev: Evaluacion, conv: Conversation, ahora: datetime, nombre: str | None = None) -> Flete:
+def flete(job_id: str, ev: Evaluacion, conv: Conversation, ahora: datetime,
+          nombre: str | None = None, numero: int | None = None) -> Flete:
     job = ev.job
     etiqueta, tono = ESTADOS[job.state]
     mensajes = [m for m in conv.messages if m.sent_at <= ahora]
@@ -277,6 +280,7 @@ def flete(job_id: str, ev: Evaluacion, conv: Conversation, ahora: datetime, nomb
         hora = _mostrar("daypart", job.daypart.value)
     return Flete(
         job_id=job_id,
+        numero=numero,
         chat_id=conv.chat_id,
         nombre=nombre,
         telefono=telefono(conv.chat_id),

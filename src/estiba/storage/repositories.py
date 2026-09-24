@@ -180,6 +180,13 @@ def _a_json(valor: object) -> str:
     return json.dumps(valor, default=convertir, ensure_ascii=False)
 
 
+#: Un flete existe cuando hubo un precio. Antes de eso es una consulta.
+_NUMERABLES = (
+    JobState.QUOTED, JobState.WAITING_CUSTOMER, JobState.CONFIRMED,
+    JobState.SCHEDULED, JobState.DONE,
+)
+
+
 class JobRepository:
     """Guarda el resultado del JobEngine.
 
@@ -190,16 +197,43 @@ class JobRepository:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self.conn = conn
 
+    def numero_de(self, job_id: str) -> int | None:
+        fila = self.conn.execute("SELECT numero FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        return fila["numero"] if fila else None
+
+    def _numerar(self, job: FreightJob) -> int | None:
+        """El numero con el que se lo nombra en voz alta.
+
+        Se da una sola vez, cuando hubo un precio sobre la mesa. Numerar
+        todo lo que dejaba de ser borrador metia en la cuenta a las
+        consultas que se cancelan solas por silencio, y daba 26 numeros
+        para 5 fletes de verdad.
+
+        Una vez dado no cambia, aunque el flete despues se pierda: si se
+        hablo de "el 12" con el cliente, sigue siendo el 12.
+        """
+        if job.state not in _NUMERABLES:
+            return self.numero_de(job.id)
+        actual = self.numero_de(job.id)
+        if actual is not None:
+            return actual
+        return (self.conn.execute(
+            "SELECT COALESCE(MAX(numero), 0) + 1 FROM jobs").fetchone()[0])
+
     def save(self, job: FreightJob, eventos: Iterable[Evento]) -> None:
         creado = _a_texto(job.created_at or datetime.now())
         ahora = _a_texto(datetime.now())
+        numero = self._numerar(job)
         with self.conn:
             self.conn.execute(
-                "INSERT INTO jobs (id, conversation_id, state, calendar_event_id, created_at) "
-                "VALUES (?, ?, ?, ?, ?) "
+                "INSERT INTO jobs (id, conversation_id, state, calendar_event_id, created_at, numero) "
+                "VALUES (?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT (id) DO UPDATE SET state = excluded.state, "
-                "calendar_event_id = excluded.calendar_event_id",
-                (job.id, job.conversation_id, job.state.value, job.calendar_event_id, creado),
+                "calendar_event_id = excluded.calendar_event_id, "
+                # El numero no se pisa nunca: si ya lo tenia, queda.
+                "numero = COALESCE(jobs.numero, excluded.numero)",
+                (job.id, job.conversation_id, job.state.value, job.calendar_event_id,
+                 creado, numero),
             )
             self.conn.execute("DELETE FROM job_slots WHERE job_id = ?", (job.id,))
             for campo in SLOT_FIELDS:

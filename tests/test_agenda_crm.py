@@ -447,3 +447,62 @@ class TestSospechasDeOtroFlete:
             ("v", "te sale 35 mil", inicio + timedelta(minutes=5)),
             ("c", "dale, gracias", inicio + timedelta(minutes=10)),
         )
+
+
+class TestNumeroDeFlete:
+    """Un numero para nombrarlo en voz alta: "el 12"."""
+
+    def test_una_consulta_todavia_no_tiene_numero(self, conn):
+        """Cada conversacion crea un flete en borrador: numerarlos a todos
+        seria darle numero a cosas que nunca pasaron."""
+        from estiba.bandeja.servicio import sincronizar
+
+        sincronizar(conn, JobEngine(), JUEVES_18)
+        sin_numero = conn.execute(
+            "SELECT COUNT(*) FROM jobs WHERE state = 'borrador' AND numero IS NOT NULL"
+        ).fetchone()[0]
+        assert sin_numero == 0
+
+    def test_una_consulta_que_se_pierde_por_silencio_tampoco(self, conn):
+        """Nunca hubo un precio sobre la mesa: no fue un flete.
+
+        Numerando todo lo que salia de borrador quedaban 26 numeros para 5
+        fletes reales, y "el flete 26" dejaba de significar algo.
+        """
+        from estiba.bandeja.servicio import sincronizar
+
+        sincronizar(conn, JobEngine(), datetime(2026, 10, 15, 12))
+        filas = conn.execute(
+            "SELECT id FROM jobs j WHERE state = 'cancelado' AND numero IS NOT NULL "
+            "AND NOT EXISTS (SELECT 1 FROM job_events e WHERE e.job_id = j.id "
+            "                AND e.hacia = 'presupuestado')"
+        ).fetchall()
+        assert not filas
+
+    def test_se_numera_al_dejar_de_ser_una_consulta(self, conn):
+        from estiba.bandeja.servicio import sincronizar
+
+        sincronizar(conn, JobEngine(), JUEVES_18)
+        numeros = [f["numero"] for f in conn.execute(
+            "SELECT numero FROM jobs WHERE numero IS NOT NULL ORDER BY numero")]
+        assert numeros and numeros == list(range(1, len(numeros) + 1))
+
+    def test_el_numero_no_cambia_nunca(self, conn):
+        """Si se hablo de "el 12" con el cliente, sigue siendo el 12."""
+        from estiba.bandeja.servicio import sincronizar
+
+        sincronizar(conn, JobEngine(), JUEVES_18)
+        antes = dict(conn.execute("SELECT id, numero FROM jobs WHERE numero IS NOT NULL"))
+        sincronizar(conn, JobEngine(), datetime(2026, 9, 21, 12))      # cambian estados, se pierden fletes
+        despues = dict(conn.execute("SELECT id, numero FROM jobs WHERE numero IS NOT NULL"))
+        for job_id, numero in antes.items():
+            assert despues[job_id] == numero
+
+    def test_no_se_repite_un_numero(self, conn):
+        from estiba.bandeja.servicio import sincronizar
+
+        sincronizar(conn, JobEngine(), JUEVES_18)
+        sincronizar(conn, JobEngine(), datetime(2026, 9, 21, 12))
+        filas = [f["numero"] for f in conn.execute(
+            "SELECT numero FROM jobs WHERE numero IS NOT NULL")]
+        assert len(filas) == len(set(filas))
