@@ -4,7 +4,7 @@
   "description": "Conversaciones de WhatsApp convertidas en fletes.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f4f2ed",
-  "theme_color": "#f4f2ed",
+  "background_color": "#17161a",
+  "theme_color": "#17161a",
   "icons": [{ "src": "/static/icono.svg", "sizes": "any", "type": "image/svg+xml" }]
 }

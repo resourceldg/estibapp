@@ -181,14 +181,30 @@ class TestConversacionPegada:
         ex = SlotExtractor().extract(conv)
         assert "when" not in ex.ganadores
 
-    def test_lo_que_dice_el_cliente_despues_del_reenvio_si_cuenta(self):
+    def test_lo_que_escribio_antes_de_pegar_si_cuenta(self):
         from estiba.extraction.extractor import SlotExtractor
 
-        conv = _chat(("c", "[15/8, 12:24 p. m.] Ana: mirá esto\n"
-                           "necesito un flete de Almagro a Boedo"))
+        conv = _chat(("c", "necesito un flete de Almagro a Boedo\n"
+                           "[15/8, 12:24 p. m.] Ana: mirá esto que me pasaron"))
         ex = SlotExtractor().extract(conv)
         assert ex.ganadores["origin"].slot.value == "Almagro"
         assert "when" not in ex.ganadores
+
+    def test_se_corta_hasta_el_final_aunque_se_pierda_algo(self):
+        """Decision tomada a proposito, con su costo.
+
+        Una conversacion pegada sigue muchas lineas sin volver a poner el
+        corchete: de ahi salian "de 10 a 12:30 hs" como hora del flete. Si
+        el cliente escribe algo despues de pegar, se pierde; Estiba se lo
+        pregunta de nuevo. Inventar una fecha es peor que preguntar dos veces.
+        """
+        from estiba.extraction.extractor import SlotExtractor
+
+        conv = _chat(("c", "[15/8, 12:24 p. m.] Ana: mirá\n"
+                           "Agustina cubre de 10 a 12:30 hs de lunes a viernes\n"
+                           "necesito un flete de Almagro a Boedo"))
+        ex = SlotExtractor().extract(conv)
+        assert not ex.ganadores
 
 
 class TestFechaConAnio:

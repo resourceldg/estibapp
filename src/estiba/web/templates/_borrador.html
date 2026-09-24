@@ -19,7 +19,7 @@
   </header>
   {% endif %}
 
-  {# En la lista el titulo del grupo ya dice el tipo: repetirlo tapa la razon. #}
+  {# Nivel 3: esto es informacion, no una accion. Gris, y chico. #}
   <p class="razon tipo-{{ b.tipo }}">{% if en_detalle %}<strong>{{ b.tipo_etiqueta }}</strong> · {% endif %}{{ b.razon }}</p>
 
   {% if f and f.ultimo_del_cliente and f.ultimo_texto %}
@@ -31,18 +31,34 @@
 
   <form class="redactar" id="redactar-{{ b.id }}" method="post" action="/borradores/{{ b.id }}/aprobar"
         hx-post="/borradores/{{ b.id }}/aprobar" hx-target="#b-{{ b.id }}" hx-swap="outerHTML">
+    {# Nivel 2: una propuesta, no algo ya decidido. Por eso se anuncia y se
+       apoya en su propia superficie, separada del fondo. #}
+    <p class="sugiere">{{ icono("chat") }}Estiba sugiere</p>
     <label class="sr" for="t-{{ b.id }}">Mensaje para el cliente</label>
     <textarea id="t-{{ b.id }}" name="texto" rows="3" data-chat="{{ b.chat_id }}"
-              placeholder="Escribí tu respuesta…">{{ b.texto }}</textarea>
-    {# Adentro de la conversacion la accion principal vive en la botonera de
-       abajo, al alcance del pulgar: aca quedaria repetida. #}
-    <div class="acciones{% if en_detalle %} solo-descartar{% endif %}">
-      <button type="submit" class="btn fantasma" formaction="/borradores/{{ b.id }}/descartar"
-              hx-post="/borradores/{{ b.id }}/descartar">Descartar</button>
-      {% if not en_detalle %}
-      <button type="submit" class="btn primario" data-aprobar{% if not envio_directo %} data-abre-whatsapp{% endif %}>
-        {{ icono("enviar") }}<span>Aprobar y enviar</span>
+              placeholder="Escribí tu respuesta…" {% if en_detalle %}readonly{% endif %}>{{ b.texto }}</textarea>
+    <div class="decision">
+      {% if en_detalle %}
+      {# Dominante, con color, al alcance del pulgar. Las otras dos bajan de
+         peso: modificar es gris visible, descartar es apenas un texto. #}
+      <button type="submit" class="btn primario ancho" data-aprobar{% if not envio_directo %} data-abre-whatsapp{% endif %}>
+        {{ icono("check") }}<span>Validar y enviar</span>
       </button>
+      <div class="decision-menores">
+        <button type="button" class="btn secundario chico" data-modificar="t-{{ b.id }}">
+          {{ icono("lapiz") }}<span>Modificar</span>
+        </button>
+        <button type="submit" class="btn texto" formaction="/borradores/{{ b.id }}/descartar"
+                hx-post="/borradores/{{ b.id }}/descartar">Descartar</button>
+      </div>
+      {% else %}
+      <button type="submit" class="btn primario ancho" data-aprobar{% if not envio_directo %} data-abre-whatsapp{% endif %}>
+        {{ icono("check") }}<span>Validar y enviar</span>
+      </button>
+      <div class="decision-menores">
+        <button type="submit" class="btn texto" formaction="/borradores/{{ b.id }}/descartar"
+                hx-post="/borradores/{{ b.id }}/descartar">Descartar</button>
+      </div>
       {% endif %}
     </div>
     <p class="nota">{% if envio_directo %}Sale por WhatsApp apenas lo aprobás.{% else %}Se abre WhatsApp con el mensaje listo.{% endif %}<span class="atajo"> <kbd>Ctrl</kbd>+<kbd>Enter</kbd> para aprobar.</span></p>

@@ -1,84 +1,60 @@
 /* Estiba — hoja de estilos unica.
    Celular primero: todo se disena para una mano y un pulgar, y desde 900px
-   se abre en columnas. Colores como tokens, con modo oscuro automatico. */
+   se abre en columnas.
+
+   Un solo tema, oscuro. Base grafito calido (no negro puro, que vibra en
+   pantalla), superficies que se separan por luminosidad y no por bordes, y
+   texto blanco roto. Sostener dos temas cuesta disenarlos, probarlos y
+   mantenerlos: no vale la pena para una app de una persona.
+
+   El color se gana: el gris dice informacion y propuesta, el acento queda
+   para la accion que necesita tu decision. Si todo lleva color, el color
+   deja de significar. */
 
 :root {
-  --fondo: #f4f2ed;
-  --superficie: #ffffff;
-  --superficie-2: #faf8f4;
-  --tinta: #1c1a17;
-  --tinta-2: #4f4b44;
-  --tenue: #8a857b;
-  --linea: #e6e1d7;
-  --linea-2: #d8d2c5;
+  --fondo: #17161a;           /* grafito calido: la base */
+  --superficie: #1f1e23;      /* tarjetas y filas */
+  --superficie-2: #27262c;    /* lo que se apoya sobre una tarjeta */
+  --superficie-3: #302e36;    /* la propuesta de Estiba, un escalon mas */
+  --tinta: #ece9e4;           /* blanco roto */
+  --tinta-2: #a9a4a0;
+  --tenue: #78736f;
+  --linea: #302e36;
+  --linea-2: #3d3a43;
 
-  --acento: #e0662a;          /* naranja de carga: marca y foco */
-  --primario: #14532d;        /* aprobar: la accion importante */
-  --primario-hover: #0f4424;
-  --primario-tinta: #ffffff;
+  --acento: #e0662a;          /* naranja de carga: la marca */
+  --primario: #3fae6a;        /* la accion que pide tu decision */
+  --primario-hover: #4cc27a;
+  --primario-tinta: #0d1f14;
 
-  --ok: #15803d;      --ok-fondo: #e8f4ec;
-  --info: #1d4ed8;    --info-fondo: #e8eefc;
-  --aviso: #a15c07;   --aviso-fondo: #fbf1e1;
-  --mal: #b42318;     --mal-fondo: #fbeceb;
-  --neutro: #57534e;  --neutro-fondo: #efece6;
+  --ok: #5cc485;      --ok-fondo: #1a2b21;
+  --info: #86a8ff;    --info-fondo: #1c2236;
+  --aviso: #d9a15c;   --aviso-fondo: #2b2419;
+  --mal: #e0857e;     --mal-fondo: #2e1f1e;
+  --neutro: #a9a4a0;  --neutro-fondo: #2a292f;
 
-  --burbuja-cliente: #ffffff;
-  --burbuja-vos: #e9f2ea;
+  --burbuja-cliente: #27262c;
+  --burbuja-vos: #23302a;
 
-  /* Graficos: una serie por grafico. Validados con la guia de dataviz
-     (banda de luminosidad y contraste >= 3:1 contra la superficie). */
   --grafico: #e0662a;
-  --grafico-tenue: #57534e;
-  --grafico-pista: #f1ede6;
+  --grafico-tenue: #78736f;
+  --grafico-pista: #2a292f;
 
   --radio: 14px;
   --radio-chico: 9px;
-  --sombra: 0 1px 2px rgb(28 26 23 / .05), 0 2px 8px rgb(28 26 23 / .04);
-  --sombra-alta: 0 8px 30px rgb(28 26 23 / .12);
+  --sombra: 0 1px 2px rgb(0 0 0 / .35);
+  --sombra-alta: 0 10px 34px rgb(0 0 0 / .5);
   --tabbar: 64px;
   --fuente: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  color-scheme: light;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --fondo: #151412;
-    --superficie: #1e1c19;
-    --superficie-2: #232120;
-    --tinta: #f2efe9;
-    --tinta-2: #c9c4ba;
-    --tenue: #8f897e;
-    --linea: #2e2b27;
-    --linea-2: #3a3631;
-
-    --acento: #f08a4b;
-    --primario: #3fae6a;
-    --primario-hover: #4cc27a;
-    --primario-tinta: #0d1f14;
-
-    --ok: #5cc485;      --ok-fondo: #173222;
-    --info: #86a8ff;    --info-fondo: #1a2440;
-    --aviso: #f0b45a;   --aviso-fondo: #33260f;
-    --mal: #f28b82;     --mal-fondo: #3a1c1a;
-    --neutro: #bdb7ac;  --neutro-fondo: #2a2825;
-
-    --burbuja-cliente: #262320;
-    --burbuja-vos: #1d2e22;
-
-    --grafico: #d9692f;
-    --grafico-tenue: #8a857b;
-    --grafico-pista: #2a2724;
-    --sombra: 0 1px 2px rgb(0 0 0 / .3);
-    --sombra-alta: 0 8px 30px rgb(0 0 0 / .45);
-    color-scheme: dark;
-  }
+  color-scheme: dark;
 }
 
 /* ---------------------------------------------------------------- base */
 
 *, *::before, *::after { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; scroll-padding-top: 72px; }
+/* Nada empuja la pagina a lo ancho: se lee con el pulgar, sin scroll lateral. */
+html, body { overflow-x: hidden; }
 body {
   margin: 0;
   font-family: var(--fuente);
@@ -227,8 +203,9 @@ p { margin: 0; }
 .quien .ruta { font-weight: 700; font-size: 17px; }
 .sub { color: var(--tenue); font-size: 13px; text-decoration: none; }
 
-.razon { margin-top: 12px; font-size: 14px; color: var(--tinta-2); }
-.razon strong { color: var(--tinta); font-weight: 650; }
+/* Nivel 3: informacion. No compite con la propuesta ni con la decision. */
+.razon { margin-top: 12px; font-size: 13px; color: var(--tenue); }
+.razon strong { color: var(--tinta-2); font-weight: 650; }
 .razon::before {
   content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 8px;
   border-radius: 50%; background: var(--acento); vertical-align: 1px;
@@ -362,7 +339,8 @@ p { margin: 0; }
 
 .aviso {
   display: flex; gap: 10px; margin-bottom: 16px; padding: 12px 14px;
-  border-radius: var(--radio); background: var(--aviso-fondo); color: var(--aviso);
+  border-radius: var(--radio); background: transparent; color: var(--aviso);
+  border: 1px solid color-mix(in srgb, var(--aviso) 28%, transparent);
   font-size: 14px; font-weight: 550;
 }
 .aviso ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
@@ -424,7 +402,7 @@ ul.sin-contar { margin: 4px 0 0; padding-left: 18px; color: var(--tinta-2); }
 /* ------------------------------------------------------ conversacion */
 
 .chat { background: var(--superficie-2); }
-.mensajes { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 8px; }
+.mensajes { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 8px; min-width: 0; }
 .msj { display: grid; max-width: 86%; scroll-margin-top: 90px; }
 .msj.cliente { justify-self: start; }
 .msj.vos { justify-self: end; justify-items: end; }
@@ -432,6 +410,9 @@ ul.sin-contar { margin: 4px 0 0; padding-left: 18px; color: var(--tinta-2); }
   padding: 8px 12px 6px; border-radius: 16px;
   background: var(--burbuja-cliente); border: 1px solid var(--linea);
   box-shadow: var(--sombra);
+  /* Un link largo o una conversacion pegada empujaban la pagina entera a lo
+     ancho: en el celular quedaba todo cortado y habia que scrollear de lado. */
+  min-width: 0; overflow-wrap: anywhere;
 }
 .msj.cliente .burbuja { border-bottom-left-radius: 5px; }
 .msj.vos .burbuja { background: var(--burbuja-vos); border-bottom-right-radius: 5px; }
@@ -727,7 +708,6 @@ ul.sin-contar { margin: 4px 0 0; padding-left: 18px; color: var(--tinta-2); }
   color: var(--primario); font-size: 13px; font-weight: 650;
 }
 .conv-accion .ico { width: 15px; height: 15px; }
-@media (prefers-color-scheme: dark) { .conv-accion { color: var(--primario); } }
 /* Te hizo una pregunta que las reglas no saben contestar: te toca a vos. */
 .conv.pide-atencion { border-left: 3px solid var(--acento); padding-left: 11px; }
 
@@ -806,3 +786,29 @@ ul.sin-contar { margin: 4px 0 0; padding-left: 18px; color: var(--tinta-2); }
 .acciones.solo-descartar { grid-template-columns: auto; justify-content: start; }
 /* La botonera es mas alta que la navegacion: sin esto tapa el final del chat. */
 body:has(.barra-accion) { padding-bottom: calc(var(--tabbar) + 48px + env(safe-area-inset-bottom)); }
+
+/* ------------------------------------------- la propuesta de Estiba */
+/* Nivel 2. Se ve como sugerencia: se anuncia, se apoya en su propia
+   superficie y se muestra bloqueada. Primero se lee; modificar es un paso
+   aparte, para que validar no compita con editar. */
+.sugiere {
+  display: flex; align-items: center; gap: 7px;
+  margin-bottom: 8px; font-size: 12px; font-weight: 700;
+  letter-spacing: .06em; text-transform: uppercase; color: var(--tenue);
+}
+.sugiere .ico { width: 14px; height: 14px; }
+.redactar textarea[readonly] {
+  background: var(--superficie-3); border-color: transparent;
+  color: var(--tinta); cursor: default;
+}
+.redactar textarea[readonly]:focus { outline: none; box-shadow: none; }
+
+/* Los tres niveles de decision, en orden de peso. */
+.decision { display: grid; gap: 10px; margin-top: 12px; }
+.decision-menores { display: flex; align-items: center; gap: 12px; }
+.decision-menores.modificando .btn.secundario { display: none; }
+.btn.texto {
+  min-height: 36px; padding: 0 4px; border: 0; background: none;
+  color: var(--tenue); font-size: 14px; font-weight: 500;
+}
+.btn.texto:hover { color: var(--mal); }

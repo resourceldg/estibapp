@@ -30,6 +30,19 @@ document.addEventListener("keydown", (e) => {
   area.form.querySelector("[data-aprobar]").click();
 });
 
+// La propuesta se muestra bloqueada a proposito: primero se lee, y recien
+// si hace falta se modifica. Asi "validar" no compite con "editar".
+document.addEventListener("click", (e) => {
+  const boton = e.target.closest("[data-modificar]");
+  if (!boton) return;
+  const area = document.getElementById(boton.dataset.modificar);
+  if (!area) return;
+  area.removeAttribute("readonly");
+  area.focus();
+  area.setSelectionRange(area.value.length, area.value.length);
+  boton.closest(".decision-menores")?.classList.add("modificando");
+});
+
 // Copiar el texto aprobado.
 document.addEventListener("click", async (e) => {
   const boton = e.target.closest("[data-copiar]");

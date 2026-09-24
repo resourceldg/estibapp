@@ -223,10 +223,9 @@
         </form>
       </div>
     {% elif pendiente %}
-      <button class="btn primario ancho" type="submit" form="redactar-{{ pendiente.id }}"
-              data-aprobar{% if not envio_directo %} data-abre-whatsapp{% endif %}>
-        {{ icono(pendiente.accion_icono) }}<span>{{ pendiente.accion }}</span>
-      </button>
+      {# La decision sobre la propuesta esta arriba, pegada a la propuesta.
+         Repetirla aca la desconecta de lo que se esta decidiendo. #}
+      <span class="accion-nada">{{ icono(pendiente.accion_icono) }}{{ pendiente.accion }}</span>
     {% elif d.puede_realizar %}
       <form method="post" action="/fletes/{{ f.job_id }}/realizado"
             hx-post="/fletes/{{ f.job_id }}/realizado" hx-confirm="¿Marcar el flete como realizado?">

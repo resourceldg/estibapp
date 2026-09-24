@@ -65,16 +65,19 @@ _LINEA_PEGADA = re.compile(
 
 
 def sin_conversacion_pegada(texto: str) -> str:
-    """Saca las lineas de un chat exportado que alguien reenvio.
+    """Corta desde la primera marca de chat pegado hasta el final.
 
-    Conserva el largo del texto restante para no romper las citas: se
-    reemplaza por espacios en vez de borrar.
+    No alcanza con sacar las lineas que tienen corchete: cuando alguien
+    reenvia una conversacion entera, las lineas que siguen tambien son de
+    esa charla ajena. De ahi salian "10 a 12:30 hs" como hora del flete y
+    un "[15/8, 12:24]" como fecha.
+
+    Lo que el cliente escribio antes de pegar si se conserva ("mira esto:").
+    Se reemplaza por espacios en vez de borrar, para no mover las citas.
     """
-    salida = list(texto)
-    for m in _LINEA_PEGADA.finditer(texto):
-        fin = texto.find("\n", m.start())
-        fin = len(texto) if fin == -1 else fin
-        for i in range(m.start(), fin):
-            if salida[i] != "\n":
-                salida[i] = " "
-    return "".join(salida)
+    m = _LINEA_PEGADA.search(texto)
+    if m is None:
+        return texto
+    corte = texto.rfind("\n", 0, m.start()) + 1
+    cola = "".join(" " if c != "\n" else "\n" for c in texto[corte:])
+    return texto[:corte] + cola
