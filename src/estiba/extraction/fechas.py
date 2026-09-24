@@ -103,7 +103,17 @@ def fechas(texto: str, enviado: datetime) -> list[Hallazgo]:
             return [_fecha(dia, texto, m, 0.9)]
     if m := _BARRA.search(p):
         if 1 <= int(m.group(2)) <= 12:
-            if (dia := _dia_del_mes(ref, int(m.group(1)), int(m.group(2)))) is not None:
+            if m.group(3):
+                # Con el año dicho no se adivina: "21/08/26" es 2026, aunque
+                # ya haya pasado. Antes se corria al año siguiente y quedaba
+                # un flete en 2027.
+                anio = int(m.group(3))
+                anio += 2000 if anio < 100 else 0
+                try:
+                    return [_fecha(date(anio, int(m.group(2)), int(m.group(1))), texto, m, 0.9)]
+                except ValueError:
+                    pass
+            elif (dia := _dia_del_mes(ref, int(m.group(1)), int(m.group(2)))) is not None:
                 return [_fecha(dia, texto, m, 0.9)]
     if m := _EL_NUMERO.search(p):
         if (dia := _dia_del_mes(ref, int(m.group(1)))) is not None:

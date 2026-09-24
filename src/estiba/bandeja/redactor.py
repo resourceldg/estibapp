@@ -12,7 +12,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from estiba.core.models import Conversation, JobState
+from estiba.bandeja.accion import Accion, decidir
+from estiba.core.models import Conversation
 from estiba.extraction.fechas import hora_legible, nombre_dia
 from estiba.formato import pesos
 from estiba.jobs.engine import Evaluacion
@@ -70,43 +71,39 @@ def _juntar(frases: list[str]) -> str:
 
 
 def proponer(ev: Evaluacion, conv: Conversation, ahora: datetime) -> Propuesta | None:
+    """El mensaje que Estiba dejaria escrito, si corresponde mandar alguno.
+
+    Primero se decide que toca hacer (`accion.decidir`) y recien despues se
+    escribe. Hay acciones que no llevan mensaje: esperar no es escribir
+    "¿pudiste ver lo del flete?", y posponer tampoco.
+    """
     mensajes = [m for m in conv.messages if m.sent_at <= ahora]
     if not mensajes:
         return None
     ultimo = mensajes[-1]
     job = ev.job
-    estado = job.state
+    d = decidir(ev, conv, ahora)
 
-    def propuesta(kind: str, reason: str, text: str) -> Propuesta:
-        return Propuesta(kind, reason, text, ultimo.id)
+    def propuesta(text: str) -> Propuesta:
+        return Propuesta(d.accion.value, d.razon, text, ultimo.id)
 
-    if estado in (JobState.CANCELLED, JobState.DONE):
-        return None
+    if d.accion in (Accion.ESPERAR, Accion.POSPONER):
+        return None   # no hay nada que mandarle: la accion no es un mensaje
 
-    if not ultimo.from_customer or estado is JobState.WAITING_CUSTOMER:
-        # Nos toca esperar: o el ultimo mensaje es nuestro, o el cliente
-        # pospuso ("mañana te confirmo"). Solo el seguimiento rompe el silencio.
-        if not ev.requiere_seguimiento:
-            return None
-        razon = (
-            "Dijo que confirmaba y no volvió a escribir"
-            if estado is JobState.WAITING_CUSTOMER
-            else "Hace más de un día que no responde"
-        )
+    if d.accion is Accion.RESPONDER:
+        return propuesta("")   # te toca a vos: Estiba no inventa la respuesta
+
+    if d.accion is Accion.SEGUIR:
         flete = "lo del flete"
         if job.origin and job.destination:
             flete += f" de {job.origin.value} a {job.destination.value}"
-        return propuesta(
-            SEGUIMIENTO, razon, f"¡Hola! ¿Pudiste ver {flete}? Si me decís el día, te lo reservo."
-        )
+        return propuesta(f"¡Hola! ¿Pudiste ver {flete}? Si me decís el día, te lo reservo.")
 
-    if estado in (JobState.CONFIRMED, JobState.SCHEDULED):
-        if job.when and job.when.value < ahora.date():
-            return None  # ya paso: no hay nada que confirmarle
+    if d.accion is Accion.CONFIRMAR:
         partes = ["¡Listo!"]
         if job.when:
-            d = job.when.value
-            cuando = f"el {nombre_dia(d)} {d:%d/%m}"
+            f = job.when.value
+            cuando = f"el {nombre_dia(f)} {f:%d/%m}"
             if job.hour:
                 cuando += f" a las {hora_legible(job.hour.value)}"
             elif job.daypart:
@@ -120,44 +117,24 @@ def proponer(ev: Evaluacion, conv: Conversation, ahora: datetime) -> Propuesta |
         if job.quoted_price:
             partes.append(f"Total {pesos(job.quoted_price.value)}.")
         texto = " ".join(partes)
-        if ev.preguntas:
-            texto += "\n" + " ".join(ev.preguntas)
-        else:
-            texto += " Cualquier cambio, avisame."
-        return propuesta(CONFIRMACION, "Aceptó: falta confirmarle los detalles", texto)
+        texto += ("\n" + " ".join(ev.preguntas[:2])) if ev.preguntas else " Cualquier cambio, avisame."
+        return propuesta(texto)
 
-    # Borrador o presupuestado, y el ultimo en escribir fue el cliente.
-    texto_ultimo = conv.text_of(ultimo) or ""
-    entendido = any(i.message_id == ultimo.id for i in ev.extraccion.intenciones)
-    if texto_ultimo.rstrip().endswith("?") and not entendido:
-        # Pregunto algo que las reglas no saben contestar: primero se le responde.
-        return propuesta(RESPUESTA, "Te hizo una pregunta", "")
-
-    p = ev.presupuesto
-    if estado is JobState.DRAFT and p is not None and p.completo:
+    if d.accion is Accion.COTIZAR:
+        p = ev.presupuesto
         texto = (
             f"Te sale {pesos(p.total)}, de {job.origin.value} a {job.destination.value}, "
             f"con carga y descarga de {_cosas(job.items.value)}."
         )
         if job.when is None:
             texto += " ¿Para cuándo lo necesitás?"
-        return propuesta(COTIZACION, "Tiene todos los datos para cotizar", texto)
+        return propuesta(texto)
 
-    if ev.preguntas:
-        # Como maximo dos preguntas: tres ya es un formulario, y el cliente
-        # contesta una sola. Las que quedan se preguntan en el mensaje que
-        # viene, cuando conteste estas.
-        pide = ev.preguntas[:2]
-        reconocido = _reconocer(job)
-        if reconocido:
-            texto = _juntar([reconocido, *pide])
-        else:
-            texto = _juntar(["¡Buenas!", *pide])
-        # "Falta origen y destino" dice mas que "Faltan datos": ya se sabe
-        # que falta, no hace falta abrir el flete para verlo.
-        faltan = [ETIQUETAS[campo] for campo in job.missing]
-        razon = f"Falta {_cosas(faltan)}" if faltan else "Faltan datos para avanzar"
-        return propuesta(PREGUNTAS, razon, texto)
-
-    # El cliente pregunto algo que las reglas no saben contestar.
-    return propuesta(RESPUESTA, "Te escribió y espera respuesta", "")
+    # PEDIR_DATOS: reconocer lo entendido y pedir a lo sumo dos cosas. Tres
+    # ya es un formulario, y el cliente contesta una sola.
+    pide = ev.preguntas[:2]
+    reconocido = _reconocer(job)
+    texto = _juntar([reconocido or "¡Buenas!", *pide])
+    faltan = [ETIQUETAS[campo] for campo in job.missing]
+    razon = f"Falta {_cosas(faltan)}" if faltan else d.razon
+    return Propuesta(d.accion.value, razon, texto, ultimo.id)

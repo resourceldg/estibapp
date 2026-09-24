@@ -54,3 +54,27 @@ class Hallazgo:
 def cita(original: str, m: re.Match) -> str:
     """El pedazo del mensaje original que corresponde a un match sobre `plano`."""
     return original[m.start() : m.end()].strip()
+
+#: Una conversacion pegada o reenviada: "[15/8, 12:24 p. m.] Fulano: ...".
+#: Lo que se dijo ahi adentro no es lo que este cliente esta pidiendo ahora,
+#: y la marca de hora se leia como la fecha del flete.
+_LINEA_PEGADA = re.compile(
+    r"^\s*[\[(]\s*\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?[,\s].{0,24}?[\])]\s*[^:\n]{1,40}:",
+    re.MULTILINE,
+)
+
+
+def sin_conversacion_pegada(texto: str) -> str:
+    """Saca las lineas de un chat exportado que alguien reenvio.
+
+    Conserva el largo del texto restante para no romper las citas: se
+    reemplaza por espacios en vez de borrar.
+    """
+    salida = list(texto)
+    for m in _LINEA_PEGADA.finditer(texto):
+        fin = texto.find("\n", m.start())
+        fin = len(texto) if fin == -1 else fin
+        for i in range(m.start(), fin):
+            if salida[i] != "\n":
+                salida[i] = " "
+    return "".join(salida)

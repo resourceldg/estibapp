@@ -27,6 +27,7 @@ from estiba.core.models import (
     Slot,
 )
 from estiba.extraction import fechas, reglas
+from estiba.extraction.texto import sin_conversacion_pegada
 from estiba.extraction.intencion import Intencion, IntencionDetectada, intencion
 from estiba.extraction.texto import Hallazgo
 
@@ -74,7 +75,13 @@ def _slot(h: Hallazgo, m: Message, confianza: float | None = None) -> Slot:
 class SlotExtractor:
     def extract(self, conv: Conversation, job_id: str | None = None) -> Extraccion:
         ex = Extraccion(job=FreightJob(id=job_id or f"{conv.chat_id}:job", conversation_id=conv.chat_id))
-        textos = {m.id: conv.text_of(m) for m in conv.messages}
+        # Lo que alguien reenvio o pego de otro chat no es lo que este cliente
+        # esta pidiendo: la marca de hora de un chat exportado se leia como la
+        # fecha del flete (un "[15/8, 12:24]" termino siendo 15/08/2027).
+        textos = {
+            m.id: sin_conversacion_pegada(t) if (t := conv.text_of(m)) else t
+            for m in conv.messages
+        }
         ex.sin_texto = [m.id for m in conv.messages if textos[m.id] is None]
 
         # Primero las intenciones: hacen falta para saber si el cliente

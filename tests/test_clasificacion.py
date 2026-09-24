@@ -7,7 +7,7 @@ embudo como consultas de flete.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from estiba.conversation.clasificacion import Clase, clasificar
 from estiba.core.models import Conversation, Message, MessageKind
@@ -164,3 +164,47 @@ class TestIdentidad:
         assert main(["--db", str(tmp_path / "c.db"), "clases"]) == 0
         salida = capsys.readouterr().out
         assert "creyó spam" in salida.replace("creyo", "creyó") or "spam" in salida
+
+
+# --------------------------------------------------------------------------
+# Lo que alguien reenvio no es lo que este cliente esta pidiendo
+# --------------------------------------------------------------------------
+
+
+class TestConversacionPegada:
+    def test_la_hora_de_un_chat_reenviado_no_es_la_fecha_del_flete(self):
+        """Real: "[15/8, 12:24 p. m.] María Agustina:" quedaba como 15/08/2027."""
+        from estiba.extraction.extractor import SlotExtractor
+
+        conv = _chat(("c", "[15/8, 12:24 p. m.] María Agustina ☀️: Contar con "
+                           "intérpretes online para cubrir la demanda"))
+        ex = SlotExtractor().extract(conv)
+        assert "when" not in ex.ganadores
+
+    def test_lo_que_dice_el_cliente_despues_del_reenvio_si_cuenta(self):
+        from estiba.extraction.extractor import SlotExtractor
+
+        conv = _chat(("c", "[15/8, 12:24 p. m.] Ana: mirá esto\n"
+                           "necesito un flete de Almagro a Boedo"))
+        ex = SlotExtractor().extract(conv)
+        assert ex.ganadores["origin"].slot.value == "Almagro"
+        assert "when" not in ex.ganadores
+
+
+class TestFechaConAnio:
+    def test_el_anio_dicho_manda(self):
+        """Real: "21/08/26" quedaba en 2027 por correrse al futuro."""
+        from datetime import datetime as dt
+
+        from estiba.extraction.fechas import fechas
+
+        h = fechas("el 21/08/26 lo necesito", dt(2026, 9, 24, 10))
+        assert h[0].valor == date(2026, 8, 21)
+
+    def test_sin_anio_se_sigue_buscando_la_proxima(self):
+        from datetime import datetime as dt
+
+        from estiba.extraction.fechas import fechas
+
+        h = fechas("el 30/9 a las 10", dt(2026, 9, 24, 10))
+        assert h[0].valor == date(2026, 9, 30)
