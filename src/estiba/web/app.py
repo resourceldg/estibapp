@@ -47,7 +47,7 @@ from estiba.conversation.store import ConversationStore
 from estiba.core.models import JobState
 from estiba.crm import embudo
 from estiba.formato import telefono
-from estiba.jobs import aprendido
+from estiba.jobs import aprendido, episodios
 from estiba.jobs.engine import (
     COTIZADO,
     MOTIVOS_PERDIDA,
@@ -61,6 +61,7 @@ from estiba.storage.repositories import (
     CRMRepository,
     DraftRepository,
     ClaseRepository,
+    CorteRepository,
     ExclusionRepository,
     PanelRepository,
     SettingsRepository,
@@ -557,6 +558,8 @@ def create_app(
         anterior, siguiente = _vecinos(job_id, filtro)
         clase = estado.resultado.clases.get(d.flete.chat_id)
         sugerido = _precio_aprendido(job_id)
+        _, conv_det = estado.resultado.fletes[job_id]
+        pistas = episodios.sospechas(conv_det, estado.engine, estado.ahora())
         conn2 = estado.conectar()
         try:
             guardada = ClaseRepository(conn2).de(d.flete.chat_id)
@@ -570,6 +573,8 @@ def create_app(
                 motivos=MOTIVOS_PERDIDA,
                 clase=guardada["clase"] if guardada else None,
                 sugerido=sugerido,
+                pistas=pistas,
+                mensajes_recientes=list(reversed(d.mensajes[-12:])),
                 clase_porque=(guardada["porque"] if guardada else None),
                 pospuesta_hasta=P.cuando_vuelve(dormida, estado.ahora()) if dormida else None,
                 titulo=d.flete.quien,
@@ -869,6 +874,27 @@ def create_app(
             conn.close()
         estado.sincronizar()
         return _volver(request, "/?f=spam")
+
+    @app.post("/fletes/{job_id}/otro-flete", include_in_schema=False)
+    def otro_flete_form(request: Request, job_id: str, desde: str = Form(...)):
+        """Partir la conversacion: de aca en adelante es otro flete.
+
+        Lo que se arregla en persona o por telefono no deja rastro en el
+        chat, asi que ninguna regla lo va a separar sola.
+        """
+        par = estado.resultado.fletes.get(job_id)
+        if par is None:
+            raise HTTPException(404, f"no hay un flete {job_id}")
+        _, conv = par
+        if not any(m.id == desde for m in conv.messages):
+            raise HTTPException(404, "ese mensaje no es de esta conversación")
+        conn = estado.conectar()
+        try:
+            CorteRepository(conn).cortar(conv.chat_id, desde, estado.ahora())
+        finally:
+            conn.close()
+        estado.sincronizar()
+        return _volver(request, "/")
 
     @app.post("/fletes/{job_id}/posponer", include_in_schema=False)
     def posponer_form(request: Request, job_id: str, cuando: str = Form("manana"),

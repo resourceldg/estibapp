@@ -652,6 +652,38 @@ class PanelRepository:
         )
 
 
+class CorteRepository:
+    """Donde el fletero dijo que empieza otro flete.
+
+    Lo que se arregla en persona no deja rastro en la conversacion. Sin
+    esto, dos mudanzas seguidas del mismo cliente quedan como una sola y
+    los numeros mienten.
+    """
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self.conn = conn
+
+    def cortar(self, chat_id: str, message_id: str, ahora: datetime) -> None:
+        with self.conn:
+            self.conn.execute(
+                "INSERT OR IGNORE INTO cortes_manuales (chat_id, message_id, at) "
+                "VALUES (?, ?, ?)", (chat_id, message_id, _a_texto(ahora)),
+            )
+
+    def deshacer(self, chat_id: str, message_id: str) -> None:
+        with self.conn:
+            self.conn.execute(
+                "DELETE FROM cortes_manuales WHERE chat_id = ? AND message_id = ?",
+                (chat_id, message_id),
+            )
+
+    def de(self, chat_id: str) -> set[str]:
+        return {
+            f["message_id"] for f in self.conn.execute(
+                "SELECT message_id FROM cortes_manuales WHERE chat_id = ?", (chat_id,))
+        }
+
+
 class EstimacionRepository:
     """Lo que Estiba estimo, guardado antes de saber como salio.
 

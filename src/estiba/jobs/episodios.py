@@ -13,12 +13,15 @@ corto no abre nada: es el mismo flete que retoma.
 
 from __future__ import annotations
 
+import re
+
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from estiba.core.models import Conversation, FreightJob, JobState
 from estiba.extraction.intencion import Intencion, intencion
+from estiba.extraction.texto import plano
 from estiba.jobs.engine import Accion, JobEngine
 
 #: Sin mensajes durante esto, una consulta nueva es otro flete aunque el anterior no se haya cerrado.
@@ -41,6 +44,60 @@ def _termino(job: FreightJob, cuando: datetime) -> bool:
     )
 
 
+#: El cliente habla de un viaje anterior como algo que ya paso: "como ayer",
+#: "igual que la otra vez". Es la pista mas clara de que hubo otro flete.
+_OTRA_VEZ = re.compile(
+    r"\b(?:como\s+(?:ayer|la\s+otra\s+vez|el\s+otro\s+dia|antes)"
+    r"|igual\s+que\s+(?:ayer|la\s+otra|el\s+otro)"
+    r"|(?:otro|otra)\s+(?:flete|viaje|vuelta)"
+    r"|de\s+nuevo\s+(?:te|el|la)\b)"
+)
+
+
+@dataclass(frozen=True)
+class Sospecha:
+    """Un flete que parece haber pasado sin que nadie lo separara."""
+
+    message_id: str
+    cuando: datetime
+    porque: str
+
+
+def sospechas(conv: Conversation, engine: JobEngine, ahora: datetime) -> list[Sospecha]:
+    """Señales de que hubo otro flete que el chat no dice con todas las letras.
+
+    Dos pistas, las dos de conversaciones reales:
+
+    - El cliente nombra un viaje anterior: "como ayer 19 hs".
+    - Se vuelve a acordar dia y hora despues de que paso la fecha que ya
+      estaba acordada. Nadie negocia dos veces el mismo viaje una vez que
+      ya se hizo.
+    """
+    mensajes = [m for m in conv.messages if m.sent_at <= ahora]
+    if not mensajes:
+        return []
+    halladas: list[Sospecha] = []
+    for m in mensajes:
+        texto = conv.text_of(m)
+        if m.from_customer and texto and _OTRA_VEZ.search(plano(texto)):
+            halladas.append(Sospecha(m.id, m.sent_at, "habla de un viaje anterior"))
+
+    # La fecha acordada ya paso y despues se siguio hablando de horarios.
+    ev = engine.evaluar(conv, ahora)
+    acordada = ev.job.when.value if ev.job.when else None
+    if acordada:
+        for m in mensajes:
+            if not m.from_customer or m.sent_at.date() <= acordada:
+                continue
+            texto = plano(conv.text_of(m) or "")
+            if re.search(r"\b(?:\d{1,2}\s?(?:hs|hrs|horas)|a\s+las\s+\d{1,2})\b", texto):
+                halladas.append(
+                    Sospecha(m.id, m.sent_at, "se volvió a acordar un horario después de esa fecha")
+                )
+                break
+    return halladas
+
+
 @dataclass(frozen=True)
 class Episodio:
     job_id: str
@@ -56,11 +113,24 @@ def episodios(
     conv: Conversation,
     engine: JobEngine,
     acciones: Callable[[str], list[Accion]],
+    a_mano: set[str] | None = None,
 ) -> list[Episodio]:
+    """Parte la conversacion en fletes.
+
+    `a_mano` son los mensajes donde el fletero dijo que empieza otro flete.
+    Mandan sobre cualquier regla: lo que se arreglo en persona no deja
+    rastro en el chat y no hay forma de deducirlo.
+    """
+    a_mano = a_mano or set()
     mensajes = conv.messages
     cortes = [0]
     for i, m in enumerate(mensajes):
-        if i == cortes[-1] or not m.from_customer:
+        if i == cortes[-1]:
+            continue
+        if m.id in a_mano:
+            cortes.append(i)
+            continue
+        if not m.from_customer:
             continue
         texto = conv.text_of(m)
         hallada = intencion(texto) if texto else None

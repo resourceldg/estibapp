@@ -91,6 +91,38 @@
 </form>
 {% endif %}
 
+{# Un flete arreglado en persona no deja rastro en el chat: ninguna regla
+   lo va a separar sola. Aca se dice a mano desde donde empieza el otro. #}
+<details class="panel plegado otro-flete"{% if pistas %} open{% endif %}>
+  <summary>
+    {{ icono("camion") }}Otro flete en esta conversación
+    {%- if pistas %} · <span class="pista-cuenta">parece que hubo uno</span>{% endif %}
+  </summary>
+  {% if pistas %}
+  <p class="ayuda pista">
+    {% for p in pistas[:1] %}El {{ p.cuando.strftime("%d/%m") }} {{ p.porque }}. ¿Era otro flete?{% endfor %}
+  </p>
+  {% else %}
+  <p class="ayuda">Si hiciste otro viaje para esta persona y se arregló por
+  teléfono o en persona, marcá desde qué mensaje empieza.</p>
+  {% endif %}
+  <ul class="elegir-mensaje">
+    {% for m in mensajes_recientes %}
+    <li>
+      <form method="post" action="/fletes/{{ f.job_id }}/otro-flete"
+            hx-post="/fletes/{{ f.job_id }}/otro-flete"
+            hx-confirm="¿De este mensaje en adelante es otro flete?">
+        <input type="hidden" name="desde" value="{{ m.id }}">
+        <button type="submit" class="desde-aca{% if pistas and m.id == pistas[0].message_id %} sugerido{% endif %}">
+          <span class="desde-hora">{{ m.hora }}</span>
+          <span class="desde-texto">{{ (m.texto or "audio o archivo")[:52] }}</span>
+        </button>
+      </form>
+    </li>
+    {% endfor %}
+  </ul>
+</details>
+
 {# Posponer no cierra nada: la saca de lo urgente y vuelve sola. #}
 <details class="panel plegado posponer">
   <summary>{{ icono("reloj") }}Posponer{% if pospuesta_hasta %} · vuelve {{ pospuesta_hasta }}{% endif %}</summary>

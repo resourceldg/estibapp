@@ -385,3 +385,65 @@ def test_el_ics_no_pide_la_clave_pero_si_su_secreto(tmp_path):
     with TestClient(create_app(db, ahora=lambda: JUEVES_18, clave="x")) as tc:
         assert tc.get(f"/calendario/{token}.ics").status_code == 200
         assert tc.get("/agenda", follow_redirects=False).status_code == 303
+
+
+class TestOtroFleteAMano:
+    """Lo que se arregla en persona no deja rastro en el chat."""
+
+    def test_el_fletero_puede_partir_la_conversacion(self):
+        from estiba.jobs.episodios import episodios
+
+        inicio = datetime(2026, 9, 20, 10)
+        conv = _chat(
+            ("c", "necesito llevar una heladera de Alberti a Colon", inicio),
+            ("v", "te sale 35 mil", inicio + timedelta(minutes=5)),
+            ("c", "dale", inicio + timedelta(minutes=10)),
+            ("c", "hola, como ayer 19 hs", inicio + timedelta(days=2)),
+        )
+        sin_corte = episodios(conv, JobEngine(), lambda _: [])
+        assert len(sin_corte) == 1        # ninguna regla lo separa solo
+
+        ultimo = conv.messages[-1].id
+        con_corte = episodios(conv, JobEngine(), lambda _: [], a_mano={ultimo})
+        assert len(con_corte) == 2
+        assert len(con_corte[1].conversacion.messages) == 1
+
+    def test_el_corte_a_mano_manda_sobre_las_reglas(self):
+        """Aunque no haya ninguna señal, si el fletero lo dice, se parte."""
+        from estiba.jobs.episodios import episodios
+
+        inicio = datetime(2026, 9, 20, 10)
+        conv = _chat(
+            ("c", "hola", inicio),
+            ("v", "hola", inicio + timedelta(minutes=1)),
+            ("c", "gracias", inicio + timedelta(minutes=2)),
+        )
+        cortado = episodios(conv, JobEngine(), lambda _: [], a_mano={conv.messages[2].id})
+        assert len(cortado) == 2
+
+
+class TestSospechasDeOtroFlete:
+    """Señales de un flete que el chat no dice con todas las letras."""
+
+    def _sospechas(self, *lineas):
+        from estiba.jobs.episodios import sospechas
+
+        conv = _chat(*lineas)
+        return sospechas(conv, JobEngine(), datetime(2026, 9, 26, 12))
+
+    def test_nombrar_un_viaje_anterior(self):
+        """Real: "Hola si como ayer 19 hs"."""
+        inicio = datetime(2026, 9, 20, 10)
+        s = self._sospechas(
+            ("c", "necesito un flete de Alberti a Colon", inicio),
+            ("c", "hola si como ayer 19 hs", inicio + timedelta(days=2)),
+        )
+        assert s and "viaje anterior" in s[0].porque
+
+    def test_una_conversacion_normal_no_levanta_sospechas(self):
+        inicio = datetime(2026, 9, 20, 10)
+        assert not self._sospechas(
+            ("c", "necesito un flete de Alberti a Colon", inicio),
+            ("v", "te sale 35 mil", inicio + timedelta(minutes=5)),
+            ("c", "dale, gracias", inicio + timedelta(minutes=10)),
+        )

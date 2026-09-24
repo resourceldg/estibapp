@@ -27,6 +27,7 @@ from estiba.storage.repositories import (
     ActionRepository,
     CRMRepository,
     ClaseRepository,
+    CorteRepository,
     DraftRepository,
     EstimacionRepository,
     ExclusionRepository,
@@ -59,6 +60,7 @@ def sincronizar(conn: sqlite3.Connection, engine: JobEngine, ahora: datetime, es
     excluidos = ExclusionRepository(conn).excluidos()
     clases = ClaseRepository(conn)
     estimaciones = EstimacionRepository(conn)
+    cortes = CorteRepository(conn)
     guardadas = clases.todas()
 
     for chat_id in store.chat_ids():
@@ -86,7 +88,7 @@ def sincronizar(conn: sqlite3.Connection, engine: JobEngine, ahora: datetime, es
         if clase in (Clase.PRIVADO, Clase.SPAM):
             r.fuera[chat_id] = clase.value
             continue
-        todos = episodios(conv, engine, acciones.for_job)
+        todos = episodios(conv, engine, acciones.for_job, cortes.de(chat_id))
         for n, ep in enumerate(todos, start=1):
             if not any(m.sent_at <= ahora for m in ep.conversacion.messages):
                 continue

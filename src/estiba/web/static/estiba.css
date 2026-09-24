@@ -987,3 +987,19 @@ summary::-webkit-details-marker { display: none; }
   text-transform: uppercase; letter-spacing: .06em; color: var(--tenue);
 }
 .grupo-etapa::after { content: ""; flex: 1; height: 1px; background: var(--linea); }
+
+/* Partir una conversacion en dos fletes: se elige el mensaje, no se escribe. */
+.pista-cuenta { color: var(--aviso); font-weight: 650; }
+.pista { color: var(--aviso); }
+.elegir-mensaje { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 2px; }
+.elegir-mensaje form { display: contents; }
+.desde-aca {
+  display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: baseline;
+  width: 100%; text-align: left; padding: 8px 10px;
+  border: 1px solid transparent; border-radius: var(--radio-chico);
+  background: none; color: var(--tinta-2); font: inherit; font-size: 14px; cursor: pointer;
+}
+.desde-aca:hover { background: var(--superficie-2); border-color: var(--linea); }
+.desde-aca.sugerido { border-color: var(--aviso); color: var(--tinta); }
+.desde-hora { color: var(--tenue); font-size: 12px; white-space: nowrap; }
+.desde-texto { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
