@@ -224,3 +224,47 @@ class TestFechaConAnio:
 
         h = fechas("el 30/9 a las 10", dt(2026, 9, 24, 10))
         assert h[0].valor == date(2026, 9, 30)
+
+
+class TestSenalesNuevas:
+    """El nombre del contacto y como le habla el fletero."""
+
+    def _con_nombre(self, nombre, *lineas):
+        conv = _chat(*lineas)
+        return clasificar(conv, SlotExtractor().extract(conv), nombre)
+
+    def test_un_usuario_no_es_una_persona(self):
+        r = self._con_nombre("ideaspublicom518", ("c", "hacemos fletes y mudanzas, consultanos"))
+        assert r.clase is Clase.SPAM
+
+    def test_pero_un_nombre_con_numero_si_lo_es(self):
+        """Real: "Natalia Parece 462" quedaba como spam, y el spam se borra.
+
+        El espacio es lo que separa un usuario de una persona.
+        """
+        r = self._con_nombre("Natalia Parece 462", ("c", "hola, necesito un flete"))
+        assert r.clase is Clase.LEAD
+
+    def test_si_dijo_de_donde_a_donde_es_un_pedido_igual(self):
+        """Aunque se llame "Tienda X": los datos concretos mandan."""
+        r = self._con_nombre("Tienda Sol", ("c", "llevar una heladera de Almagro a Boedo"))
+        assert r.clase is Clase.LEAD
+
+    def test_el_que_ofrece_su_servicio_no_esta_pidiendo_uno(self):
+        r = self._con_nombre("GoNzA", ("c", "soy entrenador personal, te cuento cómo "
+                                            "podés participar de mi canal de WhatsApp"))
+        assert r.clase is Clase.SPAM
+
+    def test_como_le_hablas_vos_tambien_cuenta(self):
+        """A un cliente no se le escribe "te quiero"."""
+        r = self._con_nombre("Sabi", ("c", "llegaste bien?"), ("v", "si, todo bien, te quiero"))
+        assert r.clase is Clase.PRIVADO
+
+    def test_un_abrazo_no_alcanza_para_sacar_a_un_cliente(self):
+        """Entre hombres se cierra asi un mensaje de trabajo.
+
+        Marcar a un cliente como privado lo saca del embudo sin avisar, que
+        es el error mas caro: mejor quedarse corto.
+        """
+        r = self._con_nombre("Marcelo", ("c", "cuanto me sale?"), ("v", "te paso, un abrazo"))
+        assert r.clase is not Clase.PRIVADO

@@ -46,6 +46,26 @@ _PROMO = re.compile(
 _ENLACE = re.compile(r"https?://|\bwa\.me/|\bbit\.ly\b")
 _ENLACE_COMPLETO = re.compile(r"\S*(?:https?://|wa\.me/|bit\.ly)\S*")
 
+#: Como se llama el contacto en WhatsApp. Un nombre puede cantar solo lo que
+#: es, sin leer un mensaje: "ideaspublicom518" o "Promos Movistar".
+_NOMBRE_COMERCIAL = re.compile(
+    r"\b(?:promo|promos|promocion|ofertas?|descuentos?|publicidad|marketing|"
+    r"ventas|tienda|shop|store|canal|emprendimiento|delivery|inmobiliaria)\b"
+)
+#: Un usuario, no una persona: todo junto, sin espacios, con numeros al
+#: final. El espacio es lo que separa "ideaspublicom518" de "Natalia
+#: Parece 462", que es una persona de carne y hueso.
+_ES_HANDLE = re.compile(r"^[a-z][a-z._-]{5,}\d{2,}$")
+
+#: Alguien que ofrece su servicio en vez de pedir el tuyo. No dice "promo"
+#: ni "descuento": es una propuesta escrita a mano, y entra igual como lead.
+_OFRECE = re.compile(
+    r"\b(?:te\s+(?:ofrezco|cuento\s+como)|le\s+ofrecemos|ofrecemos\s+"
+    r"|sumate|seguinos|segui\s+nuestro|canal\s+de\s+whatsapp|lista\s+de\s+difusion"
+    r"|me\s+dedico\s+a|brindo\s+(?:el\s+)?servicio|mi\s+emprendimiento"
+    r"|contactame\s+si\s+(?:necesitas|queres))\b"
+)
+
 #: Afecto y casa: una charla que no es del negocio.
 _PERSONAL = re.compile(
     r"\b(?:te\s+amo|te\s+quiero|mi\s+amor|amor\b|besos?|beso\b|cari[nñ]o|"
@@ -123,7 +143,17 @@ def _texto_del_cliente(conv: Conversation) -> str:
     return plano(" ".join(t for t in dichos if t))
 
 
-def clasificar(conv: Conversation, ex: Extraccion) -> Clasificacion:
+def _texto_del_fletero(conv: Conversation) -> str:
+    """Lo que escribe el fletero. Como le habla a alguien dice quien es.
+
+    Si el le manda "un abrazo" o "gracias Sabi", eso pesa tanto como lo que
+    diga el otro: a un cliente no se le escribe asi.
+    """
+    dichos = (conv.text_of(m) for m in conv.messages if not m.from_customer)
+    return plano(" ".join(t for t in dichos if t))
+
+
+def clasificar(conv: Conversation, ex: Extraccion, nombre: str | None = None) -> Clasificacion:
     """Que es esta conversacion, y por que.
 
     El orden no es casual. Primero lo que solo pasa en un pedido de flete
@@ -139,6 +169,13 @@ def clasificar(conv: Conversation, ex: Extraccion) -> Clasificacion:
     fuertes = [c for c in _CAMPOS_FUERTES if c in ex.ganadores]
     if fuertes:
         return Clasificacion(Clase.LEAD, f"se entendió {', '.join(fuertes)} del chat")
+    # Como se llama ya lo dice, sin leer nada. Va antes que el oficio porque
+    # una publicidad de transporte tambien lo nombra, y despues de los datos
+    # concretos porque si dijo de donde a donde, es un pedido igual.
+    liso = plano(nombre or "")
+    if liso and (_NOMBRE_COMERCIAL.search(liso) or _ES_HANDLE.match(liso)):
+        return Clasificacion(Clase.SPAM, f"el contacto se llama “{nombre}”")
+
     if _OFICIO.search(texto):
         return Clasificacion(Clase.LEAD, "habla del oficio")
 
@@ -150,11 +187,18 @@ def clasificar(conv: Conversation, ex: Extraccion) -> Clasificacion:
     if promos and (not nuestros or (promos >= 2 and len(nuestros) < 3)):
         return Clasificacion(Clase.SPAM, "parece publicidad, no una consulta")
 
+    # Ofrece su servicio en vez de pedir el tuyo.
+    if _OFRECE.search(_sin_enlaces(texto)) and len(nuestros) < 3:
+        return Clasificacion(Clase.SPAM, "te está ofreciendo algo, no pidiendo un flete")
+
     # Lo personal tambien va antes que lo debil, por lo mismo que la
     # publicidad: "manana paso por lo de la abuela" deja una fecha, y una
     # fecha suelta no es un pedido de flete.
     if _PERSONAL.search(texto) and nuestros:
         return Clasificacion(Clase.PRIVADO, "charla personal, no del trabajo")
+    # Como le hablas vos vale tanto como lo que diga el otro.
+    if _PERSONAL.search(_texto_del_fletero(conv)):
+        return Clasificacion(Clase.PRIVADO, "le hablás como a alguien de confianza")
 
     debiles = [c for c in _CAMPOS_DEBILES if c in ex.ganadores]
     if debiles or any(i.intencion is Intencion.CONSULTA for i in ex.intenciones):

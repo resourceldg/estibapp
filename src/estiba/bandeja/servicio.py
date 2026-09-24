@@ -74,7 +74,7 @@ def sincronizar(conn: sqlite3.Connection, engine: JobEngine, ahora: datetime, es
             # Lo que decidio una persona no vuelve a preguntarse nunca.
             cl = Clasificacion(Clase(guardada["clase"]), "lo dijiste vos", hay_con_que=True)
         else:
-            cl = clasificar(conv, engine.extractor.extract(conv))
+            cl = clasificar(conv, engine.extractor.extract(conv), crm.name(chat_id))
             clases.guardar_inferida(chat_id, cl.clase.value, cl.porque, ahora)
         clase = cl.clase
         r.clases[chat_id] = cl
