@@ -280,3 +280,43 @@ class TestCli:
         db = str(tmp_path / "x.db")
         main(["--db", db, "ingest"])
         assert main(["--db", db, "extract", "no-existe"]) == 1
+
+
+class TestDireccionesDeVerdad:
+    """Como escribe la gente fuera de Buenos Aires.
+
+    La lista de barrios es de CABA y el conurbano; este fletero trabaja en
+    Mar del Plata, donde se dice la esquina o la direccion. En 58
+    conversaciones reales no se entendio un solo origen hasta que se
+    aceptaron direcciones sueltas, en minuscula.
+    """
+
+    def _lugares(self, texto):
+        from estiba.extraction.reglas import lugares
+        h = lugares(texto)
+        return (h[0].valor, h[1].valor) if h else None
+
+    def test_una_esquina_en_minuscula(self):
+        assert self._lugares("De Alberti y santa fe hasta rufino inda y vertiz") == (
+            "Alberti y santa fe", "rufino inda y vertiz")
+
+    def test_una_direccion_con_numero(self):
+        assert self._lugares("un flete desde b.goñi 836 hasta Colón 10955") == (
+            "b.goñi 836", "Colón 10955")
+
+    def test_un_horario_no_es_un_viaje(self):
+        """"de lunes a viernes" tiene la misma forma que "de Alberti a Colon"."""
+        assert self._lugares("Nuestro horario es de Lunes a viernes") is None
+        assert self._lugares("Estamos en Talcahuano 449 de 9 a 17h") is None
+
+    def test_de_nuevo_no_es_un_lugar(self):
+        assert self._lugares("voy de nuevo a casa de mi mamá") is None
+
+    def test_no_cruza_de_una_oracion_a_la_otra(self):
+        assert self._lugares("Hola. De Alberti a Colon. Gracias") == ("Alberti", "Colon")
+
+    def test_la_direccion_queda_marcada_como_dudosa(self):
+        """Escrita a mano: hay que mirarla antes de cotizar sobre eso."""
+        from estiba.extraction.reglas import lugares
+        h = lugares("desde chile y alvarado hasta mario bravo y de la maza")
+        assert h[0].confianza < 0.7 and h[0].duda

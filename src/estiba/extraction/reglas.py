@@ -61,6 +61,47 @@ _DE_A_LIBRE = re.compile(
 )
 
 
+#: Lo que parece un lugar pero no lo es. Sale de mensajes reales: "de lunes
+#: a viernes", "de 9 a 17h", "de los tuyos no se va a sumar ninguno".
+_DIAS_Y_MESES = re.compile(
+    r"^(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo|enero|febrero|"
+    r"marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|"
+    r"noviembre|diciembre|manana|hoy|ayer|ahora|aca|alla|ahi)\b"
+)
+_SOLO_HORA = re.compile(r"^\d{1,2}(?:[:.]\d{2})?\s*(?:hs?|horas?|am|pm)?$")
+_PRONOMBRES = re.compile(r"^(?:los|las|el|la|mi|tu|su|vos|nos|ellos|eso|esto|ahi)\b")
+#: Palabras que aparecen en "de X a Y" sin que X sea un lugar: "de nuevo a
+#: casa de mi mama", "de vuelta a la obra".
+_NO_LUGAR = re.compile(r"^(?:nuevo|nueva|vuelta|paso|ultima|una|un|otro|otra)\b")
+
+#: "de alberti y santa fe hasta rufino inda y vertiz": esquinas y direcciones
+#: en minuscula, que es como escribe la gente. Sin mayusculas obligatorias y
+#: sin la lista de barrios, que es de otra ciudad.
+#: Se acepta el punto de una abreviatura ("b.goñi") pero no el que cierra
+#: una oracion, para no cruzar de una frase a la siguiente.
+_TROZO = r"(?:(?!\.\s)[^,;:!?\n]){3,45}?"
+_DE_A_SUELTO = re.compile(
+    rf"\b(?:de|desde)\s+({_TROZO})\s+(?:a|hasta|para)\s+({_TROZO})"
+    r"(?=\s*(?:[,;.:!?\n]|$|\bel\b|\bpara\b|\bque\b|\bes\b|\bson\b|\bcon\b))",
+    re.IGNORECASE,
+)
+
+
+def _parece_lugar(texto: str) -> bool:
+    """Si eso puede ser una direccion o una esquina, y no otra cosa.
+
+    "de lunes a viernes" y "de 9 a 17h" tienen la misma forma que "de
+    Alberti a Colon": lo unico que las separa es mirar que hay adentro.
+    """
+    limpio = plano(texto).strip()
+    if len(limpio) < 3 or _SOLO_HORA.match(limpio):
+        return False
+    if _DIAS_Y_MESES.match(limpio) or _PRONOMBRES.match(limpio) or _NO_LUGAR.match(limpio):
+        return False
+    # Al menos una palabra de verdad: "9 y 17" no es una esquina.
+    return any(len(t) >= 3 and t.isalpha() for t in re.split(r"[^\wáéíóúñ]+", limpio))
+
+
 def lugares(texto: str) -> list[Hallazgo]:
     p = plano(texto)
     if m := _DE_A.search(p):
@@ -82,6 +123,16 @@ def lugares(texto: str) -> list[Hallazgo]:
             Hallazgo("origin", m.group(1), 0.6, m.group(0), duda),
             Hallazgo("destination", m.group(2), 0.6, m.group(0), duda),
         ]
+    # Ultimo recurso: direcciones y esquinas escritas como se escriben, en
+    # minuscula. Confianza baja y con duda: hay que mirarlo.
+    if m := _DE_A_SUELTO.search(texto):
+        origen, destino = m.group(1).strip(), m.group(2).strip()
+        if _parece_lugar(origen) and _parece_lugar(destino):
+            duda = "dirección escrita a mano: conviene confirmarla"
+            return [
+                Hallazgo("origin", origen, 0.55, m.group(0), duda),
+                Hallazgo("destination", destino, 0.55, m.group(0), duda),
+            ]
     return []
 
 
