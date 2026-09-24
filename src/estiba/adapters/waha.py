@@ -108,7 +108,12 @@ def normalizar(payload: dict, resolver_lid=None, media_path: str | None = None) 
     el @lid mismo queda como chat_id: es estable, solo que no es un telefono.
     """
     desde_mi = bool(payload.get("fromMe"))
-    jid = payload.get("to") if desde_mi else payload.get("from")
+    # Cada motor pone el chat en un lado distinto cuando el mensaje es propio:
+    # WEBJS manda "from" = tu numero y "to" = el cliente; GOWS deja "to" vacio
+    # y pone el chat en "from". Buscarlo solo en "to" hacia que todo lo que
+    # escribe el fletero se descartara en silencio, y Estiba quedaba ciega a
+    # la mitad de la conversacion: repreguntaba lo que el ya habia preguntado.
+    jid = (payload.get("to") if desde_mi else payload.get("from")) or payload.get("from")
     if not jid or not es_persona(jid):
         return None
     chat_id = telefono_de(jid)

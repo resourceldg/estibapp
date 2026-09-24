@@ -439,3 +439,22 @@ def test_env(tmp_path, monkeypatch):
     assert os.environ["ESTIBA_PRUEBA_B"] == "dos tres" and os.environ["ESTIBA_PRUEBA_C"] == "del entorno"
     monkeypatch.delenv("ESTIBA_PRUEBA_A")
     monkeypatch.delenv("ESTIBA_PRUEBA_B")
+
+
+class TestMotores:
+    """Cada motor de WAHA arma distinto el mensaje propio."""
+
+    def test_webjs_pone_el_chat_en_to(self):
+        m = normalizar(mensaje(fromMe=True, **{"from": "5491100000000@c.us",
+                                               "to": f"{CLIENTE}@c.us"}))
+        assert m.chat_id == CLIENTE and not m.from_customer
+
+    def test_gows_deja_to_vacio_y_manda_el_chat_en_from(self):
+        """Real: con GOWS se perdia todo lo que escribia el fletero.
+
+        Estiba quedaba viendo solo la mitad de la conversacion y volvia a
+        preguntar datos que el ya habia pedido dos horas antes.
+        """
+        m = normalizar(mensaje(fromMe=True, **{"from": f"{CLIENTE}@c.us", "to": None}))
+        assert m is not None
+        assert m.chat_id == CLIENTE and not m.from_customer
