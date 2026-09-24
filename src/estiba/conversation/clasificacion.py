@@ -61,6 +61,15 @@ _NOMBRE_COMERCIAL = re.compile(
 #: Parece 462", que es una persona de carne y hueso.
 _ES_HANDLE = re.compile(r"^[a-z][a-z._-]{5,}\d{2,}$")
 
+#: El mensaje que Meta pre-carga cuando alguien toca tu publicidad. No lo
+#: escribio la persona: lo puso el boton. Dice poco, pero dice lo unico que
+#: importa aca: llego por un anuncio de fletes, asi que es un lead.
+_DESDE_PUBLI = re.compile(
+    r"\b(?:quiero|quisiera|necesito|me\s+gustaria)\s+(?:saber\s+)?m[aá]s\s+informaci"
+    r"|\bme\s+interesa\s+(?:este|esta|lo\s+que)\b"
+    r"|\bvi\s+(?:tu|la|el)\s+(?:publicaci[oó]n|anuncio|aviso|publicidad)\b"
+)
+
 #: Alguien que ofrece su servicio en vez de pedir el tuyo. No dice "promo"
 #: ni "descuento": es una propuesta escrita a mano, y entra igual como lead.
 _OFRECE = re.compile(
@@ -186,6 +195,11 @@ def clasificar(conv: Conversation, ex: Extraccion, nombre: str | None = None) ->
     # clientes que cierran con "gracias mi amor" y no por eso dejan de serlo.
     if _OFICIO.search(texto):
         return Clasificacion(Clase.LEAD, "habla del oficio")
+
+    # Llego por la publicidad. Dijo poquito, pero no hay nada que dudar:
+    # ese mensaje sale de tocar un anuncio de fletes.
+    if _DESDE_PUBLI.search(texto):
+        return Clasificacion(Clase.LEAD, "llegó por la publicidad")
 
     # El afecto, en cambio, le gana a lo inferido: si la pareja pregunta por
     # el lavarropas, el lavarropas no la convierte en clienta.

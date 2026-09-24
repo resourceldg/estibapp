@@ -268,3 +268,23 @@ class TestSenalesNuevas:
         """
         r = self._con_nombre("Marcelo", ("c", "cuanto me sale?"), ("v", "te paso, un abrazo"))
         assert r.clase is not Clase.PRIVADO
+
+
+class TestDesdeLaPubli:
+    """El mensaje que Meta pre-carga al tocar un anuncio."""
+
+    def _clase_de(self, texto, nombre=None):
+        conv = _chat(("c", texto))
+        return clasificar(conv, SlotExtractor().extract(conv), nombre)
+
+    def test_quiero_mas_informacion_es_un_lead(self):
+        """15 conversaciones reales arrancan asi y quedaban sin clasificar."""
+        assert self._clase_de("¡Hola! Quiero más información").clase is Clase.LEAD
+
+    def test_tambien_si_dice_que_vio_la_publicacion(self):
+        r = self._clase_de("Buenas tardes, vi la publicación y quería consultar")
+        assert r.clase is Clase.LEAD
+
+    def test_no_pide_decidir_nada(self):
+        """Dijo poquito, pero no hay nada que dudar."""
+        assert not self._clase_de("¡Hola! Quiero más información").pide_decision
