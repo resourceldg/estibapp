@@ -283,12 +283,12 @@
 {# Spam o numero equivocado, con la opcion de contestarle antes. #}
 <details class="panel perder">
   <summary>{{ icono("cruz") }}Spam o número equivocado</summary>
-  <p class="ayuda">Charla personal, spam o número equivocado. {{ f.quien }} sale de Hoy, Fletes y Clientes para siempre. No se borra ningún mensaje.</p>
+  <p class="ayuda">Charla personal, spam o número equivocado. {{ f.quien }} sale de Hoy, Fletes y Clientes, y queda en la pestaña Spam por si te arrepentís. No se borra ningún mensaje.</p>
   <form method="post" action="/fletes/{{ f.job_id }}/no-es-cliente" hx-post="/fletes/{{ f.job_id }}/no-es-cliente">
     <label for="despedida">Contestarle antes <span class="opcional">Opcional</span></label>
     <textarea id="despedida" name="despedida" rows="2" data-chat="{{ f.chat_id }}"
               placeholder="Gracias, no me interesa. ¡Saludos!"></textarea>
-    <button class="btn fantasma peligro" type="submit">Sacar del circuito</button>
+    <button class="btn fantasma peligro" type="submit">Marcar como spam</button>
   </form>
 </details>
 {% endblock %}

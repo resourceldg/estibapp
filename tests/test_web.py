@@ -17,7 +17,7 @@ from estiba.conversation.store import ConversationStore
 from estiba.core.models import Conversation, Message, MessageKind
 from estiba.jobs.engine import JobEngine
 from estiba.storage.db import connect
-from estiba.storage.repositories import DraftRepository
+from estiba.storage.repositories import ClaseRepository, DraftRepository
 from estiba.web.app import create_app
 
 JUEVES_18 = datetime(2026, 9, 18, 12)
@@ -819,20 +819,29 @@ class TestVolverDelDescarte:
     """Una decision humana tiene que poder deshacerse."""
 
     def test_marcar_como_cliente_lo_trae_de_vuelta(self, cliente, db):
-        from estiba.storage.repositories import ExclusionRepository
-
         chat = "5491122223333"
-        # Se lo saca con el mecanismo viejo, el de "No es cliente".
         cliente.post(f"/fletes/{chat}:job2/no-es-cliente")
         assert cliente.get(f"/fletes/{chat}:job2").status_code == 404
 
         # Y despues se dice que si es un cliente: tiene que volver.
         cliente.post(f"/clientes/{chat}/clase", data={"clase": "cliente"})
-        conn = connect(db)
-        excluidos = ExclusionRepository(conn).excluidos()
-        conn.close()
-        assert chat not in excluidos
         assert cliente.get(f"/fletes/{chat}:job2").status_code == 200
+
+    def test_lo_sacado_queda_en_spam_y_no_en_el_aire(self, cliente, db):
+        """Sacar del circuito es decir "esto es spam", no hacerlo desaparecer.
+
+        Antes habia dos mecanismos: la clase, que tiene pestaña, y una tabla
+        de excluidos que no la tenia. Lo que caia en la segunda no estaba en
+        ninguna pantalla y no habia forma de traerlo de vuelta.
+        """
+        chat = "5491122223333"
+        cliente.post(f"/fletes/{chat}:job2/no-es-cliente")
+
+        conn = connect(db)
+        fila = ClaseRepository(conn).de(chat)
+        conn.close()
+        assert fila["clase"] == "spam" and fila["quien"] == "humano"
+        assert chat in cliente.get("/?f=spam").text
 
 
 class TestErroresLegibles:

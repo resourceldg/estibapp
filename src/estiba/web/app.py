@@ -62,7 +62,6 @@ from estiba.storage.repositories import (
     DraftRepository,
     ClaseRepository,
     CorteRepository,
-    ExclusionRepository,
     PanelRepository,
     SettingsRepository,
     SnoozeRepository,
@@ -800,7 +799,10 @@ def create_app(
                 raise HTTPException(502, f"no salio el mensaje, no se saco a nadie: {e}") from e
         conn = estado.conectar()
         try:
-            ExclusionRepository(conn).excluir(conv.chat_id, nota, estado.ahora())
+            # Sacar algo del circuito es decir que no es negocio: es la
+            # misma decision que marcarlo spam, y tiene que vivir en un solo
+            # lugar. Asi queda contado en su pestaña y se puede deshacer.
+            ClaseRepository(conn).corregir(conv.chat_id, "spam", estado.ahora())
         finally:
             conn.close()
         estado.sincronizar()
@@ -901,13 +903,6 @@ def create_app(
         conn = estado.conectar()
         try:
             ClaseRepository(conn).corregir(chat_id, clase, estado.ahora())
-            # "No es cliente" es de antes de que existieran las clases y
-            # sigue sacando la conversacion del circuito antes de mirar
-            # nada mas. Si ahora se dice que es un cliente, esa exclusion
-            # tiene que caer: si no, la decision no hace efecto y no hay
-            # forma de traer la conversacion de vuelta.
-            if clase in ("lead", "cliente"):
-                ExclusionRepository(conn).incluir(chat_id)
         finally:
             conn.close()
         estado.sincronizar()

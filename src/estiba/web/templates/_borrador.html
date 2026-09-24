@@ -9,10 +9,10 @@
     </a>
     <div class="tarjeta-cab-acciones">
       {{ chip(f.estado_etiqueta, f.tono) }}
-      <button type="button" class="btn-icono chico" title="No es cliente: sacar de la bandeja"
-              aria-label="No es cliente: sacar de la bandeja"
+      <button type="button" class="btn-icono chico" title="No es cliente: mandar a Spam"
+              aria-label="No es cliente: mandar a Spam"
               hx-post="/fletes/{{ f.job_id }}/no-es-cliente" hx-swap="none"
-              hx-confirm="¿{{ f.quien }} no es un cliente? Desaparece de la bandeja, Fletes y Clientes para siempre.">
+              hx-confirm="¿{{ f.quien }} no es un cliente? Sale de la bandeja y queda en la pestaña Spam.">
         {{ icono("cruz") }}
       </button>
     </div>
