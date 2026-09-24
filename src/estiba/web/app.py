@@ -12,8 +12,11 @@ celular con el texto listo.
 
 from __future__ import annotations
 
+import csv
 import hashlib
 import hmac
+import io
+import json
 import re
 from collections.abc import Callable
 from contextlib import asynccontextmanager
@@ -58,6 +61,7 @@ from estiba.storage.repositories import (
     DraftRepository,
     ClaseRepository,
     ExclusionRepository,
+    PanelRepository,
     SettingsRepository,
     SnoozeRepository,
 )
@@ -558,6 +562,82 @@ def create_app(
         return templates.TemplateResponse(
             request, "numeros.html",
             _contexto(request, n=n, periodo=periodo, periodos=PERIODOS, titulo="Números"),
+        )
+
+    # ------------------------------------------------------------------
+    # Panel: analitica y exportacion, fuera de la mensajeria
+    # ------------------------------------------------------------------
+    #
+    # La mensajeria es el trabajo del dia; el panel es donde uno se sienta a
+    # mirar numeros. Son dos modos distintos y no comparten cascara: el panel
+    # no muestra bandeja ni contadores, para no empujar a trabajar mientras
+    # se analiza.
+
+    SECCIONES_PANEL = [("/panel", "Cómo viene")]
+
+    def _contexto_panel(request: Request, **extra) -> dict:
+        return {
+            "v": _version_estatica(),
+            "ruta": request.url.path,
+            "secciones": SECCIONES_PANEL,
+            **extra,
+        }
+
+    @app.get("/panel", response_class=HTMLResponse, include_in_schema=False)
+    def pagina_panel(request: Request):
+        conn = estado.conectar()
+        try:
+            repo = PanelRepository(conn)
+            datos = {
+                "p": repo.propuestas(),
+                "precios": repo.estimado_vs_real(),
+                "correcciones": repo.correcciones_de_clase(),
+                "tablas": repo.tablas(),
+            }
+        finally:
+            conn.close()
+        return templates.TemplateResponse(
+            request, "panel.html", _contexto_panel(request, titulo="Cómo viene", **datos)
+        )
+
+    @app.get("/panel/exportar.json", include_in_schema=False)
+    def exportar_json():
+        """Todo, con las relaciones intactas: alcanza para levantar otra
+        instalacion desde cero. Los datos son del negocio."""
+        conn = estado.conectar()
+        try:
+            repo = PanelRepository(conn)
+            todo = {}
+            for nombre in repo.tablas():
+                columnas, filas = repo.tabla(nombre)
+                todo[nombre] = [dict(zip(columnas, f)) for f in filas]
+        finally:
+            conn.close()
+        cuando = estado.ahora().date().isoformat()
+        return Response(
+            json.dumps({"estiba": "1", "exportado": cuando, "tablas": todo},
+                       ensure_ascii=False, indent=2),
+            media_type="application/json; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="estiba-{cuando}.json"'},
+        )
+
+    @app.get("/panel/exportar/{nombre}.csv", include_in_schema=False)
+    def exportar_csv(nombre: str):
+        conn = estado.conectar()
+        try:
+            columnas, filas = PanelRepository(conn).tabla(nombre)
+        except KeyError as e:
+            raise HTTPException(404, f"no hay una tabla {nombre}") from e
+        finally:
+            conn.close()
+        salida = io.StringIO()
+        escritor = csv.writer(salida)
+        escritor.writerow(columnas)
+        escritor.writerows(filas)
+        return Response(
+            salida.getvalue(),
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{nombre}.csv"'},
         )
 
     @app.get("/clientes", response_class=HTMLResponse, include_in_schema=False)

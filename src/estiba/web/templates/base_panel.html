@@ -1,0 +1,34 @@
+{% from "_macros.html" import icono, marca %}<!doctype html>
+<html lang="es">
+{# El panel es otro lugar, no otra pestaña de la mensajeria. Se entra a
+   propósito, cuando uno se sienta a mirar numeros, y tiene su propia
+   cascara: sin bandeja, sin contadores, sin nada que empuje a trabajar.
+   Cada bloque es independiente y se puede sacar o agregar sin tocar el
+   resto. #}
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#17161a">
+  <title>{{ titulo }} · Panel de Estiba</title>
+  <link rel="icon" href="/static/icono.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/estiba.css?v={{ v }}">
+  <script src="/static/htmx.min.js" defer></script>
+  <script src="/static/estiba.js?v={{ v }}" defer></script>
+</head>
+<body class="panel-modo">
+  <header class="barra">
+    <a class="marca" href="/panel">{{ marca() }}<span>Panel</span></a>
+    <a class="btn-icono volver-trabajo" href="/">{{ icono("bandeja") }}<span>Volver al trabajo</span></a>
+  </header>
+
+  <nav class="panel-nav" aria-label="Secciones del panel">
+    {% for ruta_, etiqueta in secciones %}
+    <a class="panel-tab{% if ruta == ruta_ %} activo{% endif %}" href="{{ ruta_ }}">{{ etiqueta }}</a>
+    {% endfor %}
+  </nav>
+
+  <main class="contenido panel">
+    {% block contenido %}{% endblock %}
+  </main>
+</body>
+</html>

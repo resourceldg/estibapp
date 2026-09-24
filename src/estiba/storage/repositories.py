@@ -468,8 +468,24 @@ class ClaseRepository:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self.conn = conn
 
+    def _anotar(self, chat_id: str, clase: str, previa: str | None, porque: str | None,
+                quien: str, ahora: datetime) -> None:
+        """Cada decision queda, no solo la vigente."""
+        self.conn.execute(
+            "INSERT INTO clase_historia (chat_id, clase, clase_previa, porque, quien, at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (chat_id, clase, previa, porque, quien, _a_texto(ahora)),
+        )
+
     def guardar_inferida(self, chat_id: str, clase: str, porque: str, ahora: datetime) -> None:
         """Lo que dedujo Estiba. No toca lo que ya decidio una persona."""
+        anterior = self.de(chat_id)
+        if anterior is not None and anterior["quien"] == "humano":
+            return
+        if anterior is None or anterior["clase"] != clase:
+            with self.conn:
+                self._anotar(chat_id, clase, anterior["clase"] if anterior else None,
+                             porque, "estiba", ahora)
         with self.conn:
             self.conn.execute(
                 "INSERT INTO chat_clase (chat_id, clase, porque, quien, at) "
@@ -485,6 +501,8 @@ class ClaseRepository:
             "SELECT clase FROM chat_clase WHERE chat_id = ?", (chat_id,)
         ).fetchone()
         with self.conn:
+            self._anotar(chat_id, clase, previa["clase"] if previa else None,
+                         "lo dijiste vos", "humano", ahora)
             self.conn.execute(
                 "INSERT INTO chat_clase (chat_id, clase, porque, quien, clase_previa, at) "
                 "VALUES (?, ?, 'lo dijiste vos', 'humano', ?, ?) "
@@ -538,6 +556,137 @@ class ClaseRepository:
         ))
 
 
+class PanelRepository:
+    """Consultas para el modulo de analitica. Solo lee, nunca escribe.
+
+    Vive separada de las demas a proposito: la mensajeria no depende de
+    esto, y esto no puede romper la mensajeria.
+    """
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self.conn = conn
+
+    def propuestas(self, desde: datetime | None = None) -> dict:
+        """Cuanto trabajo te saca Estiba, medido en sus propias propuestas.
+
+        Es la pregunta que importa: no si clasifica bien, sino si lo que
+        escribe se usa tal cual, se corrige o se tira.
+        """
+        where, args = "", []
+        if desde is not None:
+            where, args = "WHERE created_at >= ?", [_a_texto(desde)]
+        filas = list(self.conn.execute(f"SELECT * FROM drafts {where}", args))
+        tal_cual = sum(
+            1 for f in filas
+            if f["status"] == "aprobado" and (f["final_text"] or "").strip() == (f["text"] or "").strip()
+        )
+        editados = sum(
+            1 for f in filas
+            if f["status"] == "aprobado" and (f["final_text"] or "").strip() != (f["text"] or "").strip()
+        )
+        descartados = sum(1 for f in filas if f["status"] == "descartado")
+        vencidos = sum(1 for f in filas if f["status"] == "reemplazado")
+        decididos = tal_cual + editados + descartados
+        return {
+            "total": len(filas),
+            "tal_cual": tal_cual,
+            "editados": editados,
+            "descartados": descartados,
+            "vencidos": vencidos,
+            "pendientes": sum(1 for f in filas if f["status"] == "pendiente"),
+            "decididos": decididos,
+            "sin_tocar_pct": round(100 * tal_cual / decididos) if decididos else None,
+        }
+
+    def estimado_vs_real(self) -> list[dict]:
+        """Lo que Estiba sugirio, lo que se cotizo y lo que se cobro."""
+        filas = self.conn.execute(
+            "SELECT j.id AS job_id, j.conversation_id AS chat_id, "
+            "  (SELECT valor FROM estimaciones e WHERE e.job_id = j.id AND e.tipo = 'precio' "
+            "   ORDER BY e.at DESC, e.id DESC LIMIT 1) AS sugerido, "
+            "  (SELECT monto FROM job_actions a WHERE a.job_id = j.id AND a.action = 'cotizado' "
+            "   ORDER BY a.at DESC LIMIT 1) AS cotizado, "
+            "  (SELECT monto FROM job_actions a WHERE a.job_id = j.id AND a.action = 'realizado' "
+            "   ORDER BY a.at DESC LIMIT 1) AS cobrado, "
+            "  j.state AS estado "
+            "FROM jobs j ORDER BY j.created_at DESC"
+        )
+        return [dict(f) for f in filas if f["sugerido"] or f["cotizado"] or f["cobrado"]]
+
+    def correcciones_de_clase(self) -> list[sqlite3.Row]:
+        return list(self.conn.execute(
+            "SELECT * FROM clase_historia WHERE quien = 'humano' "
+            "AND clase_previa IS NOT NULL AND clase_previa != clase ORDER BY at DESC"
+        ))
+
+    def tabla(self, nombre: str) -> tuple[list[str], list[sqlite3.Row]]:
+        """Una tabla entera, para exportar. El nombre se valida contra el
+        esquema real: nunca se interpola algo que venga de afuera."""
+        reales = {
+            f["name"] for f in self.conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'")
+        }
+        if nombre not in reales:
+            raise KeyError(nombre)
+        filas = list(self.conn.execute(f"SELECT * FROM {nombre}"))
+        columnas = [d[0] for d in self.conn.execute(f"SELECT * FROM {nombre} LIMIT 0").description]
+        return columnas, filas
+
+    def tablas(self) -> list[str]:
+        return sorted(
+            f["name"] for f in self.conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' "
+                "AND name NOT LIKE 'sqlite_%' AND name != 'schema_migrations'")
+        )
+
+
+class EstimacionRepository:
+    """Lo que Estiba estimo, guardado antes de saber como salio.
+
+    Sin esto la cadena arranca rota: se sabe que precio se mando y cuanto
+    se cobro, pero no que habia sugerido Estiba, que es contra lo que hay
+    que medirla. Nunca se edita una estimacion: si cambia, es otra.
+    """
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self.conn = conn
+
+    def guardar(self, job_id: str, tipo: str, valor: Decimal, ahora: datetime,
+                supuestos: object = None, completa: bool = True) -> None:
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO estimaciones (job_id, tipo, valor, supuestos, completa, at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (job_id, tipo, str(valor),
+                 _a_json(supuestos) if supuestos is not None else None,
+                 int(completa), _a_texto(ahora)),
+            )
+
+    def guardar_si_cambio(self, job_id: str, tipo: str, valor: Decimal, ahora: datetime,
+                          supuestos: object = None, completa: bool = True) -> None:
+        """Guarda solo cuando la estimacion es distinta de la ultima.
+
+        `sincronizar` recalcula todo cada vez: sin esto, abrir el dashboard
+        dos veces dejaria dos estimaciones identicas y la historia diria que
+        Estiba "cambio de opinion" cuando no paso nada.
+        """
+        ultima = self.ultima(job_id, tipo)
+        if ultima is not None and ultima["valor"] == str(valor):
+            return
+        self.guardar(job_id, tipo, valor, ahora, supuestos, completa)
+
+    def ultima(self, job_id: str, tipo: str = "precio") -> sqlite3.Row | None:
+        return self.conn.execute(
+            "SELECT * FROM estimaciones WHERE job_id = ? AND tipo = ? ORDER BY at DESC, id DESC",
+            (job_id, tipo),
+        ).fetchone()
+
+    def todas(self, tipo: str = "precio") -> list[sqlite3.Row]:
+        return list(self.conn.execute(
+            "SELECT * FROM estimaciones WHERE tipo = ? ORDER BY at", (tipo,)
+        ))
+
+
 class SnoozeRepository:
     """Conversaciones pospuestas: vuelven solas cuando se cumple la fecha.
 
@@ -551,14 +700,24 @@ class SnoozeRepository:
     def posponer(self, chat_id: str, hasta: datetime, motivo: str | None, ahora: datetime) -> None:
         with self.conn:
             self.conn.execute(
+                "INSERT INTO snooze_historia (chat_id, accion, hasta, motivo, at) "
+                "VALUES (?, 'pospuso', ?, ?, ?)",
+                (chat_id, _a_texto(hasta), motivo, _a_texto(ahora)),
+            )
+            self.conn.execute(
                 "INSERT INTO snoozed_chats (chat_id, hasta, motivo, at) VALUES (?, ?, ?, ?) "
                 "ON CONFLICT (chat_id) DO UPDATE SET hasta = excluded.hasta, "
                 "motivo = excluded.motivo, at = excluded.at",
                 (chat_id, _a_texto(hasta), (motivo or "").strip() or None, _a_texto(ahora)),
             )
 
-    def despertar(self, chat_id: str) -> None:
+    def despertar(self, chat_id: str, ahora: datetime | None = None) -> None:
+        """Se borra el estado vigente, pero queda que la trajiste de vuelta."""
         with self.conn:
+            self.conn.execute(
+                "INSERT INTO snooze_historia (chat_id, accion, at) VALUES (?, 'desperto', ?)",
+                (chat_id, _a_texto(ahora or datetime.now())),
+            )
             self.conn.execute("DELETE FROM snoozed_chats WHERE chat_id = ?", (chat_id,))
 
     def vigentes(self, ahora: datetime) -> dict[str, datetime]:

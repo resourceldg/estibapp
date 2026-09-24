@@ -674,3 +674,100 @@ class TestPlata:
         hechos = [a for a in self._acciones(conn, job) if a.tipo == "realizado"]
         conn.close()
         assert hechos[0].monto == Decimal("48500")
+
+
+class TestMemoria:
+    """Fase A: lo que Estiba estimo y cada decision humana, sin pisar nada."""
+
+    def test_lo_que_estima_queda_guardado(self, db):
+        from estiba.storage.repositories import EstimacionRepository
+
+        conn = connect(db)
+        sincronizar(conn, JobEngine(), JUEVES_18)
+        est = EstimacionRepository(conn).ultima("5491122223333:job2")
+        conn.close()
+        assert est is not None and est["valor"] == "52000"
+
+    def test_sincronizar_dos_veces_no_inventa_una_opinion_nueva(self, db):
+        from estiba.storage.repositories import EstimacionRepository
+
+        conn = connect(db)
+        sincronizar(conn, JobEngine(), JUEVES_18)
+        sincronizar(conn, JobEngine(), JUEVES_18)
+        todas = EstimacionRepository(conn).todas()
+        conn.close()
+        por_job = [e for e in todas if e["job_id"] == "5491122223333:job2"]
+        assert len(por_job) == 1
+
+    def test_guarda_con_que_la_calculo(self, db):
+        import json
+
+        from estiba.storage.repositories import EstimacionRepository
+
+        conn = connect(db)
+        sincronizar(conn, JobEngine(), JUEVES_18)
+        est = EstimacionRepository(conn).ultima("5491122223333:job2")
+        conn.close()
+        supuestos = json.loads(est["supuestos"])
+        assert supuestos["desglose"]      # el detalle de como llego a ese numero
+
+    def test_cada_correccion_queda_no_solo_la_ultima(self, db):
+        from estiba.storage.repositories import ClaseRepository
+
+        conn = connect(db)
+        repo = ClaseRepository(conn)
+        repo.corregir("x", "lead", JUEVES_18)
+        repo.corregir("x", "privado", JUEVES_18)
+        repo.corregir("x", "cliente", JUEVES_18)
+        historia = list(conn.execute(
+            "SELECT clase FROM clase_historia WHERE chat_id = 'x' ORDER BY id"))
+        conn.close()
+        assert [h["clase"] for h in historia] == ["lead", "privado", "cliente"]
+
+    def test_traer_de_vuelta_no_borra_que_la_pospusiste(self, db):
+        from estiba.storage.repositories import SnoozeRepository
+
+        conn = connect(db)
+        repo = SnoozeRepository(conn)
+        repo.posponer("y", LUNES_21, "dijo que seguían después", JUEVES_18)
+        repo.despertar("y", JUEVES_18)
+        historia = list(conn.execute(
+            "SELECT accion FROM snooze_historia WHERE chat_id = 'y' ORDER BY id"))
+        conn.close()
+        assert [h["accion"] for h in historia] == ["pospuso", "desperto"]
+
+
+class TestPanel:
+    """El analisis vive fuera de la mensajeria."""
+
+    def test_el_panel_no_arrastra_la_mensajeria(self, cliente):
+        html = cliente.get("/panel").text
+        assert 'class="tabbar"' not in html       # sin barra de trabajo
+        assert "Volver al trabajo" in html
+
+    def test_se_entra_desde_la_mensajeria(self, cliente):
+        assert 'href="/panel"' in cliente.get("/").text
+
+    def test_mide_si_estiba_ahorra_trabajo(self, cliente):
+        """La pregunta que importa: si lo que escribe se usa o se tira."""
+        primero = cliente.get("/api/bandeja").json()[0]["borrador"]
+        cliente.post(f"/borradores/{primero['id']}/aprobar",
+                     data={"texto": primero["texto"]})       # sin tocarla
+        html = cliente.get("/panel").text
+        assert "salieron sin tocarlas" in html and "100%" in html
+
+    def test_exporta_todo_en_json(self, cliente):
+        r = cliente.get("/panel/exportar.json")
+        assert r.status_code == 200
+        datos = r.json()
+        assert "messages" in datos["tablas"] and "jobs" in datos["tablas"]
+        assert "attachment" in r.headers["content-disposition"]
+
+    def test_exporta_una_tabla_en_csv(self, cliente):
+        r = cliente.get("/panel/exportar/messages.csv")
+        assert r.status_code == 200 and "chat_id" in r.text.splitlines()[0]
+
+    def test_no_exporta_cualquier_cosa(self, cliente):
+        """El nombre se valida contra el esquema real."""
+        assert cliente.get("/panel/exportar/sqlite_master.csv").status_code == 404
+        assert cliente.get("/panel/exportar/no_existe.csv").status_code == 404

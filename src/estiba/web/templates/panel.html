@@ -1,0 +1,104 @@
+{% extends "base_panel.html" %}
+{% from "_macros.html" import icono %}
+{% block contenido %}
+<div class="encabezado">
+  <h1>Cómo viene</h1>
+  <p class="bajada">Lo que Estiba propuso, lo que decidiste vos y lo que pasó después.</p>
+</div>
+
+{# --------------------------------------------------------------------
+   Bloque: cuánto trabajo saca Estiba. Es la pregunta que importa, más que
+   si clasifica bien: si lo que escribe se usa tal cual, se corrige o se
+   tira.
+   -------------------------------------------------------------------- #}
+<section class="bloque">
+  <h2 class="bloque-titulo">Las propuestas de Estiba</h2>
+  {% if p.decididos %}
+  <div class="kpis">
+    <div class="kpi">
+      <span class="kpi-valor">{{ p.sin_tocar_pct }}%</span>
+      <span class="kpi-etq">salieron sin tocarlas</span>
+    </div>
+    <div class="kpi">
+      <span class="kpi-valor">{{ p.tal_cual }}</span>
+      <span class="kpi-etq">tal cual</span>
+    </div>
+    <div class="kpi">
+      <span class="kpi-valor">{{ p.editados }}</span>
+      <span class="kpi-etq">las corregiste</span>
+    </div>
+    <div class="kpi">
+      <span class="kpi-valor">{{ p.descartados }}</span>
+      <span class="kpi-etq">las tiraste</span>
+    </div>
+  </div>
+  <p class="ayuda">
+    De {{ p.decididos }} decididas. Hay {{ p.pendientes }} esperando y
+    {{ p.vencidos }} que quedaron viejas antes de que las miraras.
+  </p>
+  {% else %}
+  <p class="nada">Todavía no decidiste ninguna propuesta. Cuando apruebes o descartes
+  algunas, acá vas a ver si Estiba te está ahorrando trabajo o dándotelo.</p>
+  {% endif %}
+</section>
+
+{# Bloque: la cadena completa de un precio. #}
+<section class="bloque">
+  <h2 class="bloque-titulo">Estimado, cotizado y cobrado</h2>
+  {% if precios %}
+  <table class="tabla">
+    <thead><tr><th>Flete</th><th class="num">Estiba</th><th class="num">Mandaste</th><th class="num">Cobraste</th></tr></thead>
+    <tbody>
+      {% for f in precios %}
+      <tr>
+        <td><a href="/fletes/{{ f.job_id }}">{{ f.chat_id }}</a></td>
+        <td class="num">{{ f.sugerido or "—" }}</td>
+        <td class="num">{{ f.cotizado or "—" }}</td>
+        <td class="num">{{ f.cobrado or "—" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="ayuda">Lo que Estiba sugirió queda guardado antes de saber cómo salió:
+  es contra eso que se la puede medir después.</p>
+  {% else %}
+  <p class="nada">Todavía no hay ningún precio para comparar. Aparece cuando mandes
+  una cotización y cierres el flete.</p>
+  {% endif %}
+</section>
+
+{# Bloque: donde Estiba se equivoco y vos la corregiste. #}
+<section class="bloque">
+  <h2 class="bloque-titulo">Donde se equivocó</h2>
+  {% if correcciones %}
+  <ul class="lista">
+    {% for c in correcciones %}
+    <li><a class="fila" href="/fletes/{{ c.chat_id }}:job">
+      <div class="fila-cuerpo">
+        <div class="fila-ruta">{{ c.chat_id }}</div>
+        <div class="fila-sub">creyó <strong>{{ c.clase_previa }}</strong> y era <strong>{{ c.clase }}</strong></div>
+      </div>
+    </a></li>
+    {% endfor %}
+  </ul>
+  <p class="ayuda">Cada corrección tuya es el material para afinar las reglas.</p>
+  {% else %}
+  <p class="nada">Ninguna corrección todavía: o no se equivocó, o no la corregiste.</p>
+  {% endif %}
+</section>
+
+<section class="bloque">
+  <h2 class="bloque-titulo">Llevarte los datos</h2>
+  <p class="ayuda">Los datos son del negocio, no de Estiba. Todo junto en JSON
+  conserva las relaciones; cada tabla en CSV se abre en cualquier planilla.</p>
+  <div class="descargas">
+    <a class="btn secundario" href="/panel/exportar.json">{{ icono("copiar") }}<span>Todo en JSON</span></a>
+  </div>
+  <details class="panel plegado">
+    <summary>Una tabla por vez, en CSV · {{ tablas|length }}</summary>
+    <div class="descargas-csv">
+      {% for t in tablas %}<a class="btn texto" href="/panel/exportar/{{ t }}.csv">{{ t }}</a>{% endfor %}
+    </div>
+  </details>
+</section>
+{% endblock %}

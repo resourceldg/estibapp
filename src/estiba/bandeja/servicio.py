@@ -28,6 +28,7 @@ from estiba.storage.repositories import (
     CRMRepository,
     ClaseRepository,
     DraftRepository,
+    EstimacionRepository,
     ExclusionRepository,
     JobRepository,
 )
@@ -57,6 +58,7 @@ def sincronizar(conn: sqlite3.Connection, engine: JobEngine, ahora: datetime, es
     r = Resultado()
     excluidos = ExclusionRepository(conn).excluidos()
     clases = ClaseRepository(conn)
+    estimaciones = EstimacionRepository(conn)
     guardadas = clases.todas()
 
     for chat_id in store.chat_ids():
@@ -105,6 +107,18 @@ def sincronizar(conn: sqlite3.Connection, engine: JobEngine, ahora: datetime, es
                 r.agenda.append((ep.job_id, "cancelado"))
 
             jobs.save(ev.job, ev.eventos)
+            # Lo que Estiba estima queda guardado antes de saber como salio:
+            # es contra esto que se mide despues, y sin el primer eslabon la
+            # cadena "estimacion -> decision humana -> resultado" no existe.
+            if ev.presupuesto is not None:
+                estimaciones.guardar_si_cambio(
+                    ep.job_id, "precio", ev.presupuesto.total, ahora,
+                    supuestos={
+                        "desglose": [[c, str(m)] for c, m in ev.presupuesto.desglose],
+                        "sin_contar": ev.presupuesto.sin_contar,
+                    },
+                    completa=ev.presupuesto.completo,
+                )
             # Solo el ultimo flete de la conversacion puede necesitar respuesta.
             propuesta = proponer(ev, ep.conversacion, ahora) if n == len(todos) else None
             borradores.sync(ep.job_id, chat_id, propuesta, ahora)

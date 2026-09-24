@@ -916,3 +916,37 @@ summary::-webkit-details-marker { display: none; }
   min-height: 46px; padding: 0 12px; border: 1.5px solid var(--linea-2);
   border-radius: 12px; background: var(--superficie); color: var(--tinta); font: inherit;
 }
+
+/* ------------------------------------------------------- el panel */
+/* Otro modo: sin bandeja, sin contadores, nada que empuje a trabajar. */
+.panel-modo { padding-bottom: 40px; }
+.volver-trabajo { margin-left: auto; }
+.panel-nav { display: flex; gap: 8px; max-width: 680px; margin: 14px auto 0; padding: 0 16px; }
+.panel-tab {
+  display: inline-flex; align-items: center; min-height: 38px; padding: 0 14px;
+  border-radius: 999px; border: 1px solid var(--linea); background: var(--superficie);
+  color: var(--tinta-2); font-size: 14px; font-weight: 600; text-decoration: none;
+}
+.panel-tab.activo { background: var(--tinta); border-color: var(--tinta); color: var(--fondo); }
+
+/* Cada bloque es independiente: se saca o se agrega sin tocar el resto. */
+.bloque {
+  margin-bottom: 22px; padding: 16px;
+  background: var(--superficie); border: 1px solid var(--linea);
+  border-radius: var(--radio); box-shadow: var(--sombra);
+}
+.bloque-titulo {
+  font-size: 13px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--tenue); margin-bottom: 14px;
+}
+.bloque .kpis { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 10px; }
+.bloque .kpi { display: grid; gap: 2px; }
+.kpi-valor { font-size: 26px; font-weight: 750; font-variant-numeric: tabular-nums; }
+.kpi-etq { font-size: 13px; color: var(--tenue); }
+.bloque .ayuda { margin-top: 10px; }
+.tabla { width: 100%; border-collapse: collapse; font-size: 14px; }
+.tabla th { text-align: left; font-size: 12px; color: var(--tenue); font-weight: 650; padding-bottom: 6px; }
+.tabla td { padding: 7px 0; border-top: 1px solid var(--linea); }
+.tabla .num { text-align: right; font-variant-numeric: tabular-nums; }
+.descargas { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.descargas-csv { display: flex; flex-wrap: wrap; gap: 4px 14px; }

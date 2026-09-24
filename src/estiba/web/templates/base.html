@@ -30,6 +30,9 @@
       <span class="punto"></span><span class="conexion-texto">WhatsApp</span>
     </a>
     {% endif %}
+    {# El analisis vive en otro lado: se entra a proposito, no se tropieza
+       con el mientras se contesta un WhatsApp. #}
+    <a class="btn-icono al-panel" href="/panel" title="Panel: números y exportar">{{ icono("numeros") }}</a>
     <button class="btn-icono sincronizar" hx-post="/sincronizar" hx-swap="none"
             title="Volver a leer las conversaciones" aria-label="Actualizar">
       {{ icono("actualizar") }}
