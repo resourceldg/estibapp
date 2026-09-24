@@ -70,10 +70,16 @@ class TestAcciones:
         assert [e.hacia for e in ev.eventos][-2:] == [JobState.SCHEDULED, JobState.DONE]
         assert ev.eventos[-1].causa == "marcado como realizado"
 
-    def test_realizado_sin_agendar_no_hace_nada(self, conn):
+    def test_se_puede_marcar_realizado_sin_haberlo_agendado(self, conn):
+        """En la calle se arregla por telefono y el chat nunca se entera.
+
+        Antes hacia falta pasar por "agendado" para poder cerrarlo, y un
+        flete hecho de verdad quedaba trabado en "esperando al cliente" sin
+        ninguna accion disponible. Si el fletero dice que lo hizo, lo hizo.
+        """
         ev = JobEngine().evaluar(self._conv(conn), datetime(2026, 9, 25),
                                  [Accion(datetime(2026, 9, 24, 18), REALIZADO)])
-        assert ev.job.state is JobState.CONFIRMED
+        assert ev.job.state is JobState.DONE
 
     def test_perdido_con_motivo(self, conn):
         conv = ConversationStore(conn).get("5491155556666")
@@ -333,7 +339,12 @@ class TestPantallas:
         assert "Para cerrar" not in cliente.get("/agenda").text
         assert cliente.get("/api/embudo?periodo=todo").json()["kpis"][0]["valor"] == "$48.000"
 
-    def test_no_se_marca_realizado_algo_sin_agendar(self, cliente):
+    def test_se_cierra_un_flete_aunque_no_estuviera_agendado(self, cliente):
+        assert cliente.post("/fletes/5491155556666:job/realizado").status_code in (200, 303)
+        assert cliente.get("/api/fletes/5491155556666:job").json()["flete"]["estado"] == "realizado"
+
+    def test_lo_ya_cerrado_no_se_cierra_dos_veces(self, cliente):
+        cliente.post("/fletes/5491155556666:job/realizado")
         assert cliente.post("/fletes/5491155556666:job/realizado").status_code == 409
 
     def test_dar_por_perdido(self, cliente):

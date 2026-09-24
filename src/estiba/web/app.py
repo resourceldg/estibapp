@@ -410,6 +410,21 @@ def create_app(
             ]
 
         filas = elegir(filtro)
+        # Agrupadas por etapa de la venta, en orden de cercania a la plata,
+        # pero sin romper la cronologia adentro de cada grupo.
+        ORDEN_ETAPAS = [
+            ("cerrado-falta-hacer", "Cerrado, falta hacerlo"),
+            ("cotizado", "Cotizado, esperando respuesta"),
+            ("sin-cotizar", "Sin cotizar"),
+            ("vendido", "Hechos"),
+            ("perdido", "Perdidos"),
+        ]
+        por_etapa = {}
+        for fila in filas:
+            por_etapa.setdefault(fila[1].etapa, []).append(fila)
+        grupos = [
+            (etiqueta, por_etapa[clave]) for clave, etiqueta in ORDEN_ETAPAS if clave in por_etapa
+        ]
         pospuestas, vistos = [], set()
         for f in sorted(_fletes().values(), key=lambda x: x.ultimo_at, reverse=True):
             if f.chat_id in dormidos and f.chat_id not in vistos:
@@ -427,6 +442,7 @@ def create_app(
         return {
             "sin_salir": _sin_salir() if filtro in ("todos", "hoy") else [],
             "filas": filas,
+            "grupos": grupos,
             "apartadas": apartadas,
             "filtros_aparte": FILTROS_APARTE,
             "es_spam": filtro == "spam",
@@ -699,7 +715,7 @@ def create_app(
             raise HTTPException(404, f"no hay un flete {job_id}")
         ev, _ = estado.resultado.fletes[job_id]
         permitido = {
-            REALIZADO: ev.job.state is JobState.SCHEDULED,
+            REALIZADO: ev.job.state not in (JobState.DONE, JobState.CANCELLED),
             PERDIDO: ev.job.state not in (JobState.DONE, JobState.CANCELLED),
             COTIZADO: True,
         }[tipo]

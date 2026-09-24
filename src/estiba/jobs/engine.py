@@ -131,7 +131,7 @@ class JobEngine:
         def aplicar(a: Accion) -> None:
             if a.tipo == AGENDADO and estado is JobState.CONFIRMED:
                 mover(JobState.SCHEDULED, a.at, "agendado en el calendario", None)
-            elif a.tipo == REALIZADO and estado is JobState.SCHEDULED:
+            elif a.tipo == REALIZADO and estado not in _CERRADOS:
                 mover(JobState.DONE, a.at, "marcado como realizado", None)
             elif a.tipo == PERDIDO and estado not in _CERRADOS:
                 causa = "dado por perdido" + (f": {a.nota}" if a.nota else "")

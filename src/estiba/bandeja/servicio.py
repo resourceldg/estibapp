@@ -98,7 +98,12 @@ def sincronizar(conn: sqlite3.Connection, engine: JobEngine, ahora: datetime, es
                 acciones.add(ep.job_id, AGENDADO, ahora, actor="calendario")
                 ev = engine.evaluar(ep.conversacion, ahora, acciones.for_job(ep.job_id))
                 ev.job.id = ep.job_id
-            if ev.job.state in (JobState.CONFIRMED, JobState.SCHEDULED, JobState.DONE):
+            # Sin fecha no hay nada que poner en el calendario. Un flete que
+            # se arreglo por telefono y se hizo el mismo dia se cierra igual:
+            # el calendario es una consecuencia, no un requisito.
+            if ev.job.when and ev.job.state in (
+                JobState.CONFIRMED, JobState.SCHEDULED, JobState.DONE
+            ):
                 evento, cambio = agenda.programar(ev.job)
                 ev.job.calendar_event_id = evento.uid
                 if cambio != "igual":

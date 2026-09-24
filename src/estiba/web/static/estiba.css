@@ -966,3 +966,24 @@ summary::-webkit-details-marker { display: none; }
 }
 .usar-precio:hover { border-color: var(--tinta-2); }
 .aprendido-porque { color: var(--tenue); font-size: 13px; }
+
+/* ------------------------------------------- la etapa de la venta */
+/* Una franja al costado dice de un vistazo si hay plata en juego y de que
+   lado. Franja y no relleno: el fondo de color en cada fila cansa la vista
+   cuando hay veinte, y el acento tiene que seguir siendo de la accion. */
+.conv { border-left: 3px solid transparent; padding-left: 11px; }
+.etapa-sin-cotizar          { border-left-color: var(--linea-2); }
+.etapa-cotizado             { border-left-color: var(--info); }
+.etapa-cerrado-falta-hacer  { border-left-color: var(--aviso); }
+.etapa-vendido              { border-left-color: var(--ok); }
+.etapa-perdido              { border-left-color: transparent; }
+/* La atencion pisa a la etapa: si te preguntaron algo, eso va primero. */
+.conv.pide-atencion { border-left-color: var(--acento); }
+
+/* Los titulos de grupo separan las etapas sin repetir color. */
+.grupo-etapa {
+  display: flex; align-items: center; gap: 8px;
+  margin: 18px 4px 8px; font-size: 12px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .06em; color: var(--tenue);
+}
+.grupo-etapa::after { content: ""; flex: 1; height: 1px; background: var(--linea); }

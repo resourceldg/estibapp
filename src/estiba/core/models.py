@@ -106,17 +106,23 @@ class JobState(Enum):
 
 
 #: Transiciones permitidas. El JobEngine (Fase 4) es el unico que las aplica.
+# Un flete se puede dar por hecho desde cualquier estado abierto. El camino
+# ideal es cotizar, confirmar, agendar y recien ahi marcarlo, pero en la
+# calle se arregla por telefono o en la puerta y el chat nunca se entera. Si
+# el fletero dice que lo hizo, lo hizo: el sistema no esta para discutirselo.
+_TERMINAR = frozenset({JobState.DONE, JobState.CANCELLED})
+
 ALLOWED_TRANSITIONS: dict[JobState, frozenset[JobState]] = {
-    JobState.DRAFT: frozenset({JobState.QUOTED, JobState.CANCELLED}),
+    JobState.DRAFT: frozenset({JobState.QUOTED, *_TERMINAR}),
     JobState.QUOTED: frozenset(
-        {JobState.WAITING_CUSTOMER, JobState.CONFIRMED, JobState.CANCELLED}
+        {JobState.WAITING_CUSTOMER, JobState.CONFIRMED, *_TERMINAR}
     ),
     # El silencio no es ausencia de estado: es un estado con un reloj corriendo.
     JobState.WAITING_CUSTOMER: frozenset(
-        {JobState.CONFIRMED, JobState.QUOTED, JobState.CANCELLED}
+        {JobState.CONFIRMED, JobState.QUOTED, *_TERMINAR}
     ),
-    JobState.CONFIRMED: frozenset({JobState.SCHEDULED, JobState.CANCELLED}),
-    JobState.SCHEDULED: frozenset({JobState.DONE, JobState.CANCELLED}),
+    JobState.CONFIRMED: frozenset({JobState.SCHEDULED, *_TERMINAR}),
+    JobState.SCHEDULED: frozenset(_TERMINAR),
     JobState.DONE: frozenset(),
     JobState.CANCELLED: frozenset(),
 }

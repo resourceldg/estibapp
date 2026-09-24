@@ -212,6 +212,23 @@ class Flete:
         return self.nombre or self.telefono
 
     @property
+    def etapa(self) -> str:
+        """En que punto de la venta esta, dicho como lo diria el fletero.
+
+        El estado interno dice "borrador" o "esperando_cliente"; lo que
+        importa de un vistazo es si hay plata en juego y de que lado.
+        """
+        if self.estado == JobState.DONE.value:
+            return "vendido"
+        if self.estado == JobState.CANCELLED.value:
+            return "perdido"
+        if self.estado in (JobState.CONFIRMED.value, JobState.SCHEDULED.value):
+            return "cerrado-falta-hacer"
+        if self.estado in (JobState.QUOTED.value, JobState.WAITING_CUSTOMER.value):
+            return "cotizado"
+        return "sin-cotizar"
+
+    @property
     def cerrado(self) -> bool:
         """El flete termino: realizado o perdido.
 
@@ -388,7 +405,7 @@ def detalle(
         mensajes=mensajes,
         borradores=[borrador(b) for b in borradores],
         otros=otros or [],
-        puede_realizar=ev.job.state is JobState.SCHEDULED,
+        puede_realizar=ev.job.state not in (JobState.DONE, JobState.CANCELLED),
         puede_perder=ev.job.state not in (JobState.DONE, JobState.CANCELLED),
     )
 

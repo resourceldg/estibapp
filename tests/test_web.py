@@ -210,20 +210,27 @@ class TestPaginas:
     def test_bandeja_muestra_una_fila_por_conversacion(self, cliente):
         """La bandeja elige a quien atender; el compositor vive adentro."""
         html = cliente.get("/").text
-        filas = re.findall(r'class="conv(?: pide-atencion)?"', html)
+        filas = re.findall(r'class="conv etapa-[a-z-]+(?: cerrada)?(?: pide-atencion)?"', html)
         assert len(filas) == 4
         assert "Escribí tu respuesta" not in html
         # Lo mas urgente primero: las confirmaciones antes que el seguimiento.
         assert html.index("Confirmar flete") < html.index("Hacer seguimiento")
 
-    def test_la_bandeja_va_por_orden_de_llegada(self, cliente):
-        """Clasificar no puede desordenar el dia: lo ultimo que entro, arriba."""
+    def test_adentro_de_cada_etapa_manda_la_cronologia(self, cliente):
+        """La lista se separa por etapa de la venta, pero el tiempo sigue
+        mandando adentro de cada grupo: lo ultimo que entro, arriba.
+
+        Es un compromiso: agrupar rompe el orden global. Se eligio asi
+        porque mezclar lo ya vendido con lo que falta cotizar esconde el
+        trabajo pendiente.
+        """
         html = cliente.get("/").text
-        # El orden en pantalla, leido por los links a cada conversacion.
-        vistos = re.findall(r'class="conv[^"]*" href="/fletes/([^"]+)"', html)
-        fletes = {f["job_id"]: f for f in cliente.get("/api/fletes").json()["en-curso"]}
-        horas = [fletes[j]["ultimo_at"] for j in vistos if j in fletes]
-        assert horas == sorted(horas, reverse=True)
+        fletes = {f["job_id"]: f for sec in cliente.get("/api/fletes").json().values()
+                  for f in sec}
+        for grupo in html.split('class="grupo-etapa"')[1:]:
+            vistos = re.findall(r'class="conv[^"]*" href="/fletes/([^"?]+)', grupo)
+            horas = [fletes[j]["ultimo_at"] for j in vistos if j in fletes]
+            assert horas == sorted(horas, reverse=True)
 
     def test_los_filtros_acotan_sin_reordenar(self, cliente):
         todos = cliente.get("/?f=todos").text
