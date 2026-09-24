@@ -50,9 +50,18 @@ def _propuesta(conv: Conversation, ahora: datetime = datetime(2026, 9, 15, 11)):
 
 
 class TestRedactor:
-    def test_pregunta_como_una_persona_no_como_un_formulario(self):
+    def test_al_primero_que_escribe_se_lo_engancha_antes_de_pedirle(self):
+        """Un cuestionario de entrada espanta: el que escribio "hola"
+        todavia no decidio nada. Una sola pregunta abierta y listo."""
         p = _propuesta(_chat(("c", "hola, haces fletes?")))
         assert p.kind == "preguntas"
+        assert p.text.count("?") <= 1        # invita, no interroga
+        assert "Contame" in p.text and "foto" in p.text
+
+    def test_una_vez_arrancada_la_charla_vuelve_a_dos_preguntas(self):
+        p = _propuesta(_chat(("c", "hola, haces fletes?"),
+                             ("v", "¡Hola! ¿De dónde a dónde?"),
+                             ("c", "y cuanto me saldria?")))
         assert p.text == "¡Buenas! ¿Desde qué barrio sería? ¿Hasta dónde lo llevamos?"
         assert "•" not in p.text and "\n" not in p.text
 
@@ -459,3 +468,29 @@ class TestBotonera:
 
     def test_la_bandeja_sigue_teniendo_su_navegacion(self, cliente):
         assert 'class="tabbar"' in cliente.get("/").text
+
+
+class TestPestanas:
+    """La pantalla viva es de clientes y leads; el resto, aparte."""
+
+    def test_lo_dudoso_no_se_mezcla_con_los_clientes(self, cliente):
+        todos = cliente.get("/?f=todos").text
+        assert 'href="/?f=dudosas"' in todos and 'href="/?f=personales"' in todos
+
+    def test_un_perdido_no_ocupa_el_trabajo_del_dia(self, cliente):
+        """Existe, pero en su pestaña."""
+        assert cliente.get("/?f=perdidos").status_code == 200
+        assert cliente.get("/?f=spam").status_code == 200
+
+    def test_las_apartadas_dicen_por_que_quedaron_afuera(self, db):
+        from estiba.storage.repositories import ClaseRepository
+
+        # Una correccion humana: lo inferido lo recalcula cada sincronizacion.
+        conn = connect(db)
+        ClaseRepository(conn).corregir("5491122223333", "personal", JUEVES_18)
+        conn.close()
+        with TestClient(create_app(db, ahora=lambda: JUEVES_18)) as c:
+            html = c.get("/?f=personales").text
+            assert "Lo dijiste vos" in html
+            # Y deja de ocupar lugar entre los clientes.
+            assert "5491122223333:job" not in c.get("/?f=todos").text

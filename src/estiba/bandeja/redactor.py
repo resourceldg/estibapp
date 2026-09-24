@@ -40,6 +40,26 @@ def _cosas(items: list[str]) -> str:
     return ", ".join(items[:-1]) + " y " + items[-1]
 
 
+#: Lo primero que se le contesta a alguien que recien escribe.
+#:
+#: Primero engancharlo, despues sacarle los datos. Un cuestionario de
+#: entrada espanta: el que escribio "hola" todavia no decidio nada, y
+#: contestarle con cinco preguntas lo pone a llenar un formulario. Una sola
+#: pregunta abierta deja que cuente lo que tenga, y de ahi Estiba saca lo
+#: que pueda. Los datos que falten se piden despues, de a dos.
+APERTURA = (
+    "🚚 ¡Hola! Gracias por escribir. Contame qué tenés que llevar y te paso "
+    "un precio. Si te resulta más fácil, mandame una foto o un audio 📸"
+)
+
+
+def _primer_contacto(conv: Conversation, ahora: datetime) -> bool:
+    """Si el fletero todavia no le contesto nunca a esta persona."""
+    return not any(
+        not m.from_customer for m in conv.messages if m.sent_at <= ahora
+    )
+
+
 def _reconocer(job) -> str:
     """Lo que ya se entendio, dicho como lo diria una persona.
 
@@ -132,9 +152,11 @@ def proponer(ev: Evaluacion, conv: Conversation, ahora: datetime) -> Propuesta |
 
     # PEDIR_DATOS: reconocer lo entendido y pedir a lo sumo dos cosas. Tres
     # ya es un formulario, y el cliente contesta una sola.
-    pide = ev.preguntas[:2]
     reconocido = _reconocer(job)
-    texto = _juntar([reconocido or "¡Buenas!", *pide])
+    if not reconocido and _primer_contacto(conv, ahora):
+        texto = APERTURA
+    else:
+        texto = _juntar([reconocido or "¡Buenas!", *ev.preguntas[:2]])
     faltan = [ETIQUETAS[campo] for campo in job.missing]
     razon = f"Falta {_cosas(faltan)}" if faltan else d.razon
     return Propuesta(d.accion.value, razon, texto, ultimo.id)

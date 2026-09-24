@@ -32,8 +32,10 @@ from estiba.agenda.caldav import ConfigCalDAV, EspejoCalDAV
 from estiba.agenda.evento import calendario
 from estiba.agenda.local import LocalCalendar
 from estiba.bandeja.servicio import Resultado, sincronizar
+from estiba.conversation.store import ConversationStore
 from estiba.core.models import JobState
 from estiba.crm import embudo
+from estiba.formato import telefono
 from estiba.jobs.engine import PERDIDO, REALIZADO, JobEngine
 from estiba.storage.db import connect
 from estiba.storage.repositories import (
@@ -261,18 +263,32 @@ def create_app(
         return P.detalle(job_id, ev, conv, estado.ahora(), borradores, nombre, otros)
 
     #: Los filtros de la bandeja. (clave, etiqueta, que deja pasar)
+    #: La pantalla viva es solo de clientes y leads. Lo que ya se clasifico
+    #: como ajeno al negocio, y lo que se dio por perdido, vive en sus
+    #: propias pestañas: esta, pero no molesta.
     FILTROS = [
         ("todos", "Todos"), ("hoy", "Hoy"), ("responder", "Responder"),
         ("faltan", "Faltan datos"), ("cotizar", "Cotizar"),
         ("seguimiento", "Seguimiento"), ("confirmados", "Confirmados"),
-        ("dudosas", "¿Cliente?"),
+    ]
+    #: Las de afuera del trabajo del dia.
+    FILTROS_APARTE = [
+        ("dudosas", "¿Cliente?"), ("perdidos", "Perdidos"),
+        ("personales", "Personales"), ("spam", "Spam"),
     ]
 
     def _pasa(filtro: str, b: P.Borrador | None, f: P.Flete, dudosa: bool, hoy: str) -> bool:
-        if filtro == "hoy":
-            return f.ultimo_at[:10] == hoy
+        perdido = f.estado == JobState.CANCELLED.value
         if filtro == "dudosas":
             return dudosa
+        if filtro == "perdidos":
+            return perdido
+        # En las pestañas de trabajo no entra lo que todavia no se sabe que
+        # es, ni lo que ya se dio por perdido.
+        if dudosa or perdido:
+            return False
+        if filtro == "hoy":
+            return f.ultimo_at[:10] == hoy
         if filtro == "confirmados":
             return f.estado in (JobState.CONFIRMED.value, JobState.SCHEDULED.value)
         tipos = {"responder": "respuesta", "faltan": "preguntas",
@@ -280,6 +296,41 @@ def create_app(
         if filtro in tipos:
             return b is not None and b.tipo == tipos[filtro]
         return True
+
+    def _apartadas(clases: tuple[str, ...]) -> list[dict]:
+        """Las que Estiba dejo afuera del embudo: personales y publicidad.
+
+        No pasan por el JobEngine (no son fletes), asi que se arman con lo
+        minimo: quien, que dijo ultimo, cuando y por que quedo afuera. Estan
+        para poder revisarlas y corregir, no para trabajarlas.
+        """
+        ahora = estado.ahora()
+        conn = estado.conectar()
+        try:
+            guardadas = ClaseRepository(conn).todas()
+            store = ConversationStore(conn)
+            filas = []
+            for chat_id, fila in guardadas.items():
+                if fila["clase"] not in clases:
+                    continue
+                conv = store.get(chat_id)
+                mensajes = [m for m in conv.messages if m.sent_at <= ahora]
+                if not mensajes:
+                    continue
+                ultimo = mensajes[-1]
+                filas.append({
+                    "chat_id": chat_id,
+                    "quien": telefono(chat_id),
+                    "ultimo": P.hace(ultimo.sent_at, ahora),
+                    "ultimo_at": ultimo.sent_at.isoformat(),
+                    "texto": conv.text_of(ultimo),
+                    "clase": fila["clase"],
+                    "porque": fila["porque"],
+                    "lo_dijiste_vos": fila["quien"] == "humano",
+                })
+        finally:
+            conn.close()
+        return sorted(filas, key=lambda x: x["ultimo_at"], reverse=True)
 
     def _conversaciones(filtro: str = "todos") -> dict:
         """Una sola lista, por orden de llegada. Los filtros solo acotan.
@@ -325,10 +376,18 @@ def create_app(
                 vistos.add(f.chat_id)
                 pospuestas.append((borradores.get(f.job_id), f, dormidos[f.chat_id]))
 
-        cuentas = {clave: len(elegir(clave)) for clave, _ in FILTROS}
+        cuentas = {clave: len(elegir(clave)) for clave, _ in FILTROS + FILTROS_APARTE}
+        # Personales y spam no llegan a ser fletes: se cuentan aparte.
+        personales = _apartadas(("personal",))
+        spam = _apartadas(("spam",))
+        cuentas["personales"] = len(personales)
+        cuentas["spam"] = len(spam)
+        apartadas = personales if filtro == "personales" else spam if filtro == "spam" else []
         return {
-            "sin_salir": _sin_salir(),
+            "sin_salir": _sin_salir() if filtro in ("todos", "hoy") else [],
             "filas": filas,
+            "apartadas": apartadas,
+            "filtros_aparte": FILTROS_APARTE,
             "pospuestas": sorted(pospuestas, key=lambda x: x[2]),
             "filtros": FILTROS,
             "filtro": filtro,
@@ -407,7 +466,8 @@ def create_app(
 
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
     def pagina_bandeja(request: Request, f: str = "todos"):
-        filtro = f if any(c == f for c, _ in FILTROS) else "todos"
+        validos = [c for c, _ in FILTROS + FILTROS_APARTE]
+        filtro = f if f in validos else "todos"
         return templates.TemplateResponse(
             request, "bandeja.html",
             _contexto(request, **_conversaciones(filtro), titulo="Hoy"),

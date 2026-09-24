@@ -39,6 +39,9 @@ TIPOS_BORRADOR = {
 #: Lo que no es texto ni audio: la burbuja no puede quedar en blanco.
 ETIQUETAS_MEDIO = {"image": "Imagen", "other": "Adjunto"}
 
+#: Mas que esto no se lee de un vistazo: se pliega y se abre si hace falta.
+LARGO_PARA_PLEGAR = 320
+
 #: La proxima accion: una sola por conversacion, la que el contexto pide.
 #: Estiba propone, decide una persona. (etiqueta, icono)
 ACCIONES = {
@@ -138,6 +141,9 @@ class Mensaje:
     texto: str | None
     es_audio: bool
     medio: str | None = None  # "Imagen", "Adjunto"...: para lo que no es texto ni audio
+    #: Un muro de texto pegado o un audio largo tapan la conversacion entera:
+    #: se muestran cortados y se abren si hace falta.
+    largo: bool = False
     datos: list[str] = field(default_factory=list)  # que datos salieron de este mensaje
 
 
@@ -337,6 +343,7 @@ def detalle(
             texto=conv.text_of(m),
             es_audio=m.kind.value == "audio",
             medio=ETIQUETAS_MEDIO.get(m.kind.value),
+            largo=len(conv.text_of(m) or "") > LARGO_PARA_PLEGAR,
             datos=por_mensaje.get(m.id, []),
         ))
 

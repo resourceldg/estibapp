@@ -812,3 +812,18 @@ body:has(.barra-accion) { padding-bottom: calc(var(--tabbar) + 48px + env(safe-a
   color: var(--tenue); font-size: 14px; font-weight: 500;
 }
 .btn.texto:hover { color: var(--mal); }
+
+/* Las pestañas de lo que quedo afuera pesan menos que las del trabajo. */
+.filtros.aparte { margin-top: -6px; margin-bottom: 14px; }
+.filtro.chico { min-height: 32px; padding: 0 11px; font-size: 13px; color: var(--tenue); border-style: dashed; }
+.filtro.chico.activo { color: var(--fondo); border-style: solid; }
+.conv-porque { color: var(--tenue); font-size: 13px; }
+
+/* Un muro de texto pegado o un audio largo tapan la conversacion entera. */
+.msj-largo > summary { cursor: pointer; list-style: none; font-size: 15px; }
+.msj-largo > summary::-webkit-details-marker { display: none; }
+.msj-largo > summary::after {
+  content: "  Leer más"; color: var(--acento); font-weight: 650; font-size: 13px; white-space: nowrap;
+}
+.msj-largo[open] > summary { display: none; }
+.msj-largo p { font-size: 15px; white-space: pre-line; }

@@ -97,7 +97,12 @@
         {% elif m.medio %}
           <span class="audio">{{ icono("adjunto") }}{{ m.medio }}</span>
         {% endif %}
-        {% if m.texto %}<p>{{ m.texto }}</p>{% endif %}
+        {% if m.texto %}
+          {% if m.largo %}
+          {# Un audio largo o un chat pegado tapan la conversacion: se abre si hace falta. #}
+          <details class="msj-largo"><summary>{{ m.texto[:220] }}…</summary><p>{{ m.texto }}</p></details>
+          {% else %}<p>{{ m.texto }}</p>{% endif %}
+        {% endif %}
         <span class="msj-hora">{{ m.hora }}</span>
       </div>
       {% if m.datos %}<div class="msj-datos">{% for x in m.datos %}<span>{{ x }}</span>{% endfor %}</div>{% endif %}

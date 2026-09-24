@@ -5,10 +5,18 @@
   <h1>Hoy</h1>
 </div>
 
-{# El tiempo manda: los filtros acotan, no reordenan. #}
+{# El tiempo manda: los filtros acotan, no reordenan. Arriba el trabajo del
+   dia; abajo, lo que ya se clasifico o se dio por perdido: esta, pero no
+   se mezcla con los clientes. #}
 <nav class="filtros" aria-label="Filtros">
   {% for clave, etiqueta in filtros %}
-  <a class="filtro{% if clave == filtro %} activo{% endif %}{% if clave == 'dudosas' %} filtro-duda{% endif %}"
+  <a class="filtro{% if clave == filtro %} activo{% endif %}"
+     href="/?f={{ clave }}">{{ etiqueta }}{% if cuentas[clave] %} <span>{{ cuentas[clave] }}</span>{% endif %}</a>
+  {% endfor %}
+</nav>
+<nav class="filtros aparte" aria-label="Fuera del trabajo del día">
+  {% for clave, etiqueta in filtros_aparte %}
+  <a class="filtro chico{% if clave == filtro %} activo{% endif %}"
      href="/?f={{ clave }}">{{ etiqueta }}{% if cuentas[clave] %} <span>{{ cuentas[clave] }}</span>{% endif %}</a>
   {% endfor %}
 </nav>
@@ -22,7 +30,25 @@
 </section>
 {% endif %}
 
-{% if filas %}
+{% if apartadas %}
+<p class="ayuda">Estiba las dejó afuera del embudo. Si alguna es un cliente, abrila y corregilo.</p>
+<ul class="lista">
+  {% for a in apartadas %}
+  <li>
+    <a class="conv" href="/fletes/{{ a.chat_id }}:job">
+      <div class="conv-linea1">
+        <span class="conv-quien">{{ a.quien }}</span>
+        <span class="conv-hora">{{ a.ultimo }}</span>
+      </div>
+      <p class="conv-ultimo">{{ a.texto or "Mandó un audio o un archivo" }}</p>
+      <div class="conv-linea3">
+        <span class="conv-porque">{% if a.lo_dijiste_vos %}Lo dijiste vos{% else %}{{ a.porque }}{% endif %}</span>
+      </div>
+    </a>
+  </li>
+  {% endfor %}
+</ul>
+{% elif filas %}
 <ul class="lista">
   {% for b, f, dudosa in filas %}{% include "_conversacion.html" %}{% endfor %}
 </ul>
