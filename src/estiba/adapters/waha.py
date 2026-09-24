@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 import os
 import re
 from dataclasses import dataclass
@@ -27,6 +28,8 @@ from urllib.parse import urlsplit
 import httpx
 
 from estiba.core.models import Message, MessageKind
+
+log = logging.getLogger(__name__)
 
 #: Donde se guardan los audios que se bajan de WAHA. No se versiona.
 MEDIA_DIR = Path("data/audios")
@@ -256,6 +259,9 @@ class WahaClient:
             "GET", f"/api/{self.config.session}/chats/{chat_jid}/messages",
             params={"limit": limite, "downloadMedia": "true", "sortBy": "timestamp", "sortOrder": "asc",
                     "filter.timestamp.gte": int(desde.timestamp())},
+            # Con downloadMedia, WAHA baja fotos y videos del chat antes de
+            # contestar: en un chat cargado tarda bastante mas que 20 s.
+            timeout=180,
         )
         r.raise_for_status()
         return r.json()
@@ -276,5 +282,11 @@ def ingresar(cliente: WahaClient, payload: dict) -> Message | None:
         url = media.get("url") or payload.get("mediaUrl")
         if url and (media.get("mimetype") or "").lower().startswith("audio/"):
             destino = ruta_audio(str(payload["id"]), media.get("mimetype"))
-            media_path = str(cliente.bajar(url, destino))
+            try:
+                media_path = str(cliente.bajar(url, destino))
+            except (httpx.HTTPError, OSError) as e:
+                # WhatsApp caduca los archivos viejos y WAHA contesta 404. Perder
+                # el audio es malo; perder el mensaje entero es peor: sin esto el
+                # webhook devuelve 500 y WAHA lo descarta tras reintentar.
+                log.warning("no se pudo bajar el audio de %s: %s", payload.get("id"), e)
     return normalizar(payload, cliente.telefono_de_lid, media_path)

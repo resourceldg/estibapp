@@ -64,6 +64,46 @@ class TestPuerto:
         assert FasterWhisperTranscriber(model_size="medium").nombre == "faster-whisper/medium"
 
 
+class _Seg:
+    start, end, avg_logprob, text = 0.0, 2.0, -0.1, " somos dos "
+
+
+class _Info:
+    duration = 2.0
+
+
+class _ModeloFalso:
+    def __init__(self, error: str | None) -> None:
+        self.error = error
+
+    def transcribe(self, *a, **k):
+        if self.error:
+            raise RuntimeError(self.error)
+        return iter([_Seg()]), _Info()
+
+
+class TestSinCuda:
+    def test_si_faltan_las_librerias_de_cuda_sigue_en_cpu(self, monkeypatch):
+        w = FasterWhisperTranscriber()
+        cargas = []
+
+        def cargar():
+            cargas.append(w.device)
+            return _ModeloFalso("Library libcublas.so.12 is not found or cannot be loaded"
+                                if w.device != "cpu" else None)
+
+        monkeypatch.setattr(w, "_cargar", cargar)
+        t = w.transcribe("a.ogg", "m1")
+        assert t.text == "somos dos" and cargas == ["auto", "cpu"] and w.device == "cpu"
+
+    def test_otro_error_no_se_tapa(self, monkeypatch):
+        w = FasterWhisperTranscriber()
+        monkeypatch.setattr(w, "_cargar", lambda: _ModeloFalso("archivo roto"))
+        with pytest.raises(RuntimeError, match="archivo roto"):
+            w.transcribe("a.ogg", "m1")
+        assert w.device == "auto"
+
+
 class TestPipeline:
     def test_transcribe_y_el_texto_aparece_en_el_hilo(self, store, audio):
         store.ingest([

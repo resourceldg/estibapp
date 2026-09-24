@@ -94,7 +94,7 @@
       <h2>Otros fletes de {{ f.nombre or "este cliente" }}</h2>
       <ul class="otros">
         {% for o in d.otros %}
-        <li><a href="/fletes/{{ o.job_id }}"><span>{{ o.ruta }}</span><span class="sub">{{ o.fecha or o.ultimo }}</span>{{ chip(o.estado_etiqueta, o.tono) }}</a></li>
+        <li><a href="/fletes/{{ o.job_id }}"><span>{{ o.titulo }}</span><span class="sub">{{ o.fecha or o.ultimo }}</span>{{ chip(o.estado_etiqueta, o.tono) }}</a></li>
         {% endfor %}
       </ul>
     </section>
@@ -128,6 +128,17 @@
       </form>
     </details>
     {% endif %}
+
+    <details class="panel perder">
+      <summary>{{ icono("cruz") }}No es cliente</summary>
+      <p class="ayuda">Para charlas personales, spam o números equivocados. {{ f.quien }} desaparece de la bandeja, Fletes y Clientes para siempre. No se borra ningún mensaje.</p>
+      <form method="post" action="/fletes/{{ f.job_id }}/no-es-cliente" hx-post="/fletes/{{ f.job_id }}/no-es-cliente"
+            hx-confirm="¿{{ f.quien }} no es un cliente? Desaparece de la bandeja, Fletes y Clientes para siempre.">
+        <label for="nota-no-cliente">¿Por qué? <span class="opcional">Opcional</span></label>
+        <input id="nota-no-cliente" name="nota" placeholder="Charla personal, spam, número equivocado…" autocomplete="off">
+        <button class="btn fantasma peligro" type="submit">No es cliente</button>
+      </form>
+    </details>
   </div>
 
   <div class="col-chat">
@@ -139,6 +150,8 @@
           <div class="burbuja">
             {% if m.es_audio %}
               <span class="audio">{{ icono("mic") }}{% if m.texto %}Audio transcripto{% else %}Audio sin transcribir{% endif %}</span>
+            {% elif m.medio %}
+              <span class="audio">{{ icono("adjunto") }}{{ m.medio }}</span>
             {% endif %}
             {% if m.texto %}<p>{{ m.texto }}</p>{% endif %}
             <span class="msj-hora">{{ m.hora }}</span>

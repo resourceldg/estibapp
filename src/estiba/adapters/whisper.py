@@ -48,6 +48,11 @@ def confianza(segmentos: Sequence[_Segmento]) -> float:
     return min(max(total / peso, 0.0), 1.0)
 
 
+def _falta_cuda(e: Exception) -> bool:
+    texto = str(e).lower()
+    return any(p in texto for p in ("cublas", "cudnn", "cuda"))
+
+
 class FasterWhisperTranscriber:
     """Audio a texto con faster-whisper, siempre en la maquina local."""
 
@@ -86,7 +91,7 @@ class FasterWhisperTranscriber:
             )
         return self._modelo
 
-    def transcribe(self, audio_path: str, message_id: str) -> Transcript:
+    def _segmentos(self, audio_path: str):
         segmentos, info = self._cargar().transcribe(
             audio_path,
             language=self.language,
@@ -94,7 +99,19 @@ class FasterWhisperTranscriber:
             initial_prompt=self.initial_prompt,
             vad_filter=True,
         )
-        segmentos = list(segmentos)
+        return list(segmentos), info
+
+    def transcribe(self, audio_path: str, message_id: str) -> Transcript:
+        try:
+            segmentos, info = self._segmentos(audio_path)
+        except RuntimeError as e:
+            # Con "auto", CTranslate2 elige la GPU si ve una, pero las
+            # librerias de CUDA (cuBLAS, cuDNN) pueden no estar: recien falla
+            # al transcribir. Se sigue en CPU, que es mas lento pero anda.
+            if self.device == "cpu" or not _falta_cuda(e):
+                raise
+            self.device, self._modelo = "cpu", None
+            segmentos, info = self._segmentos(audio_path)
         texto = " ".join(s.text.strip() for s in segmentos).strip()
         if not texto:
             # Un texto vacio se leeria como "el cliente no dijo nada".

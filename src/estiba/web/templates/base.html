@@ -17,9 +17,8 @@
   <header class="barra">
     <a class="marca" href="/">{{ marca() }}<span>Estiba</span></a>
     <nav class="nav-escritorio" aria-label="Secciones">
-      <a href="/" {% if ruta == "/" %}aria-current="page"{% endif %}>Bandeja{% if pendientes %}<span class="cuenta">{{ pendientes }}</span>{% endif %}</a>
+      <a href="/" {% if ruta == "/" or ruta.startswith("/fletes") %}aria-current="page"{% endif %}>Hoy{% if pendientes %}<span class="cuenta">{{ pendientes }}</span>{% endif %}</a>
       <a href="/agenda" {% if ruta == "/agenda" %}aria-current="page"{% endif %}>Agenda</a>
-      <a href="/fletes" {% if ruta.startswith("/fletes") %}aria-current="page"{% endif %}>Fletes</a>
       <a href="/numeros" {% if ruta in ("/numeros", "/clientes") %}aria-current="page"{% endif %}>Números</a>
       <a href="/docs">API</a>
     </nav>
@@ -47,21 +46,26 @@
   </main>
 
   <nav class="tabbar" aria-label="Secciones">
-    <a href="/" {% if ruta == "/" %}aria-current="page"{% endif %}>
+    <a href="/" {% if ruta == "/" or ruta.startswith("/fletes") %}aria-current="page"{% endif %}>
       <span class="tab-ico">{{ icono("bandeja") }}{% if pendientes %}<span class="cuenta">{{ pendientes }}</span>{% endif %}</span>
-      Bandeja
+      Hoy
     </a>
     <a href="/agenda" {% if ruta == "/agenda" %}aria-current="page"{% endif %}>
       <span class="tab-ico">{{ icono("agenda") }}</span>
       Agenda
     </a>
-    <a href="/fletes" {% if ruta.startswith("/fletes") %}aria-current="page"{% endif %}>
-      <span class="tab-ico">{{ icono("camion") }}</span>
-      Fletes
-    </a>
     <a href="/numeros" {% if ruta in ("/numeros", "/clientes") %}aria-current="page"{% endif %}>
       <span class="tab-ico">{{ icono("numeros") }}</span>
       Números
+    </a>
+    {# Desde el celular esta era la unica forma de llegar a la conexion, y no
+       existia: arriba solo se ve un punto de color, sin texto. #}
+    <a href="/whatsapp" {% if ruta == "/whatsapp" %}aria-current="page"{% endif %}>
+      <span class="tab-ico">
+        {{ icono("chat") }}
+        {% if whatsapp is none or whatsapp.tono != "ok" %}<span class="punto-tab punto-{{ whatsapp.tono if whatsapp else 'neutro' }}"></span>{% endif %}
+      </span>
+      WhatsApp
     </a>
   </nav>
 </body>

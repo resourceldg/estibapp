@@ -36,6 +36,9 @@ TIPOS_BORRADOR = {
     "seguimiento": "Seguimiento",
 }
 
+#: Lo que no es texto ni audio: la burbuja no puede quedar en blanco.
+ETIQUETAS_MEDIO = {"image": "Imagen", "other": "Adjunto"}
+
 _ORDEN_DATOS = ("origin", "destination", "when", "hour", "daypart", "items",
                 "floors_no_lift", "helpers", "quoted_price")
 
@@ -110,6 +113,7 @@ class Mensaje:
     hora: str
     texto: str | None
     es_audio: bool
+    medio: str | None = None  # "Imagen", "Adjunto"...: para lo que no es texto ni audio
     datos: list[str] = field(default_factory=list)  # que datos salieron de este mensaje
 
 
@@ -163,6 +167,15 @@ class Flete:
     @property
     def quien(self) -> str:
         return self.nombre or self.telefono
+
+    @property
+    def titulo(self) -> str:
+        """Para listas: la ruta si ya se sabe, si no quien escribe.
+
+        "¿? → ¿?" no dice nada de un lead nuevo, y son la mayoria: con
+        varios en la lista, todos se ven iguales.
+        """
+        return self.ruta if (self.origen or self.destino) else self.quien
 
 
 @dataclass
@@ -290,6 +303,7 @@ def detalle(
             hora=f"{fecha_corta(m.sent_at.date())} {m.sent_at:%H:%M}",
             texto=conv.text_of(m),
             es_audio=m.kind.value == "audio",
+            medio=ETIQUETAS_MEDIO.get(m.kind.value),
             datos=por_mensaje.get(m.id, []),
         ))
 

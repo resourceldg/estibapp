@@ -147,6 +147,24 @@ class TestNormalizar:
         m = normalizar(mensaje(hasMedia=True, body="", media={"mimetype": "audio/ogg"}))
         assert m.kind is MessageKind.OTHER
 
+    def test_si_la_descarga_falla_el_mensaje_igual_entra(self):
+        """WhatsApp caduca los audios viejos: WAHA contesta 404.
+
+        Antes la excepcion subia hasta el webhook, que devolvia 500, y WAHA
+        terminaba descartando el mensaje entero despues de reintentar.
+        """
+        def rompe(request):
+            return httpx.Response(404, json={"error": "not found"})
+
+        cliente = WahaClient(
+            ConfigWaha("http://waha:3000", "clave"), transport=httpx.MockTransport(rompe)
+        )
+        m = waha.ingresar(cliente, mensaje(
+            hasMedia=True, body="",
+            media={"url": "http://waha:3000/api/files/default/x.oga", "mimetype": "audio/ogg"},
+        ))
+        assert m is not None and m.kind is MessageKind.OTHER and m.media_path is None
+
     def test_foto_con_epigrafe_se_lee_como_texto(self):
         m = normalizar(mensaje(hasMedia=True, body="esta es la heladera", media={"mimetype": "image/jpeg"}))
         assert m.kind is MessageKind.TEXT and m.text == "esta es la heladera"

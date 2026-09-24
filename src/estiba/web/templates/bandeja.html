@@ -1,19 +1,24 @@
 {% extends "base.html" %}
 {% from "_macros.html" import icono %}
 {% block contenido %}
+{% set total_accion = acciones | map(attribute=1) | map("length") | sum %}
 <div class="encabezado">
-  <h1>Bandeja</h1>
-  {% if items %}
+  <h1>Hoy</h1>
+  {% if total_accion or esperando or confirmados %}
   <p class="bajada">
-    {% if items|length == 1 %}Una conversación espera tu respuesta.
-    {% else %}{{ items|length }} conversaciones esperan tu respuesta.{% endif %}
-    Revisá, corregí si hace falta y aprobá.
+    {%- set partes = [] -%}
+    {%- for etiqueta, items in acciones -%}
+      {%- set _ = partes.append(items|length ~ " " ~ etiqueta|lower) -%}
+    {%- endfor -%}
+    {%- if esperando -%}{%- set _ = partes.append(esperando|length ~ " esperando al cliente") -%}{%- endif -%}
+    {%- if confirmados -%}{%- set _ = partes.append(confirmados|length ~ " confirmado" ~ ("s" if confirmados|length > 1 else "")) -%}{%- endif -%}
+    {{ partes | join(" · ") }}
   </p>
   {% endif %}
 </div>
 
 {% if sin_salir %}
-<section class="seccion">
+<section class="seccion urgente">
   <h2 class="seccion-titulo">No salieron <span class="seccion-cuenta">{{ sin_salir|length }}</span></h2>
   <div class="pila">
     {% for b, f in sin_salir %}{% include "_borrador.html" %}{% endfor %}
@@ -21,18 +26,58 @@
 </section>
 {% endif %}
 
-{% if items %}
-<div class="pila">
-  {% for b, f in items %}
-    {% include "_borrador.html" %}
-  {% endfor %}
-</div>
-{% elif not sin_salir %}
+{% for etiqueta, items in acciones %}
+<section class="seccion">
+  <h2 class="seccion-titulo">{{ etiqueta }} <span class="seccion-cuenta">{{ items|length }}</span></h2>
+  <div class="pila">
+    {% for b, f in items %}{% include "_borrador.html" %}{% endfor %}
+  </div>
+</section>
+{% endfor %}
+
+{% if confirmados %}
+<section class="seccion">
+  <h2 class="seccion-titulo">Confirmados <span class="seccion-cuenta">{{ confirmados|length }}</span></h2>
+  <ul class="lista">
+    {% for f in confirmados %}{% include "_fila.html" %}{% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{% if esperando %}
+<section class="seccion">
+  <h2 class="seccion-titulo">Esperando al cliente <span class="seccion-cuenta">{{ esperando|length }}</span></h2>
+  <p class="ayuda">Ya les escribiste: no hay nada que hacer hasta que contesten.</p>
+  <ul class="lista">
+    {% for f in esperando %}{% include "_fila.html" %}{% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{% if not total_accion and not sin_salir and not esperando and not confirmados and not frios %}
 <div class="vacio">
   <div class="vacio-ico">{{ icono("check") }}</div>
   <h2>Todo al día</h2>
   <p>Cuando a alguien le toque tu respuesta, Estiba te deja el mensaje escrito acá para que lo apruebes.</p>
-  <a class="btn secundario" href="/fletes">Ver fletes</a>
 </div>
+{% endif %}
+
+{% if frios %}
+<details class="seccion cerrada">
+  <summary class="seccion-titulo">Sin noticias hace más de una semana <span class="seccion-cuenta">{{ frios|length }}</span></summary>
+  <p class="ayuda">Escribieron hace rato y no volvieron. Están acá para que no tapen el trabajo de hoy.</p>
+  <div class="pila">
+    {% for b, f in frios %}{% include "_borrador.html" %}{% endfor %}
+  </div>
+</details>
+{% endif %}
+
+{% if cerrados %}
+<details class="seccion cerrada">
+  <summary class="seccion-titulo">Pasados y perdidos <span class="seccion-cuenta">{{ cerrados|length }}</span></summary>
+  <ul class="lista">
+    {% for f in cerrados %}{% include "_fila.html" %}{% endfor %}
+  </ul>
+</details>
 {% endif %}
 {% endblock %}

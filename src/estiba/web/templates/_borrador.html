@@ -4,14 +4,23 @@
   {% if f and not en_detalle %}
   <header class="tarjeta-cab">
     <a class="quien" href="/fletes/{{ f.job_id }}">
-      <span class="ruta">{{ f.ruta }}</span>
-      <span class="sub">{{ f.quien }} · {{ f.ultimo }}</span>
+      <span class="ruta">{{ f.titulo }}</span>
+      <span class="sub">{% if f.origen or f.destino %}{{ f.quien }} · {% endif %}{{ f.ultimo }}</span>
     </a>
-    {{ chip(f.estado_etiqueta, f.tono) }}
+    <div class="tarjeta-cab-acciones">
+      {{ chip(f.estado_etiqueta, f.tono) }}
+      <button type="button" class="btn-icono chico" title="No es cliente: sacar de la bandeja"
+              aria-label="No es cliente: sacar de la bandeja"
+              hx-post="/fletes/{{ f.job_id }}/no-es-cliente" hx-swap="none"
+              hx-confirm="¿{{ f.quien }} no es un cliente? Desaparece de la bandeja, Fletes y Clientes para siempre.">
+        {{ icono("cruz") }}
+      </button>
+    </div>
   </header>
   {% endif %}
 
-  <p class="razon tipo-{{ b.tipo }}"><strong>{{ b.tipo_etiqueta }}</strong> · {{ b.razon }}</p>
+  {# En la lista el titulo del grupo ya dice el tipo: repetirlo tapa la razon. #}
+  <p class="razon tipo-{{ b.tipo }}">{% if en_detalle %}<strong>{{ b.tipo_etiqueta }}</strong> · {% endif %}{{ b.razon }}</p>
 
   {% if f and f.ultimo_del_cliente and f.ultimo_texto %}
   <blockquote class="dijo">
@@ -44,7 +53,7 @@
       {%- elif b.error_envio %}{{ icono("aviso") }} Aprobado, pero no salió
       {%- else %}{{ icono("check") }} Aprobado{% endif -%}
     </span>
-    {% if f %}<a class="sub" href="/fletes/{{ f.job_id }}">{{ f.ruta }}</a>{% endif %}
+    {% if f %}<a class="sub" href="/fletes/{{ f.job_id }}">{{ f.titulo }}</a>{% endif %}
   </header>
   {% if b.texto_final %}
   <p class="final">{{ b.texto_final }}</p>

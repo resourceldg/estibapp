@@ -154,6 +154,16 @@ p { margin: 0; }
   font-size: 11px; font-weight: 700; line-height: 1;
 }
 .tab-ico .cuenta { position: absolute; top: -6px; right: -12px; border: 2px solid var(--superficie); }
+/* Un problema de conexion se ve desde cualquier pantalla, sin entrar a mirar. */
+.punto-tab {
+  position: absolute; top: -2px; right: -4px;
+  width: 10px; height: 10px; border-radius: 50%;
+  border: 2px solid var(--superficie);
+}
+.punto-mal    { background: var(--mal); }
+.punto-aviso  { background: var(--aviso); }
+.punto-info   { background: var(--info); }
+.punto-neutro { background: var(--tenue); }
 
 /* ---------------------------------------------------------- contenido */
 
@@ -206,6 +216,13 @@ p { margin: 0; }
   padding: 16px;
 }
 .tarjeta-cab { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.tarjeta-cab-acciones { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.btn-icono.chico {
+  margin-left: 0; min-height: 28px; min-width: 28px; padding: 0;
+  justify-content: center; border-radius: 8px;
+}
+.btn-icono.chico .ico { width: 15px; height: 15px; }
+.btn-icono.chico:hover { color: var(--mal); border-color: color-mix(in srgb, var(--mal) 35%, transparent); }
 .quien { display: grid; gap: 2px; text-decoration: none; min-width: 0; }
 .quien .ruta { font-weight: 700; font-size: 17px; }
 .sub { color: var(--tenue); font-size: 13px; text-decoration: none; }
@@ -236,7 +253,7 @@ p { margin: 0; }
   field-sizing: content;
   padding: 12px 14px;
   border: 1.5px solid var(--linea-2); border-radius: 12px;
-  background: var(--burbuja-vos);
+  background: var(--superficie);
   color: var(--tinta);
   font: inherit; font-size: 16px; line-height: 1.45;
   resize: vertical;
@@ -279,6 +296,14 @@ p { margin: 0; }
   color: var(--tenue); margin: 0 4px 10px;
 }
 .seccion-cuenta { font-weight: 600; color: var(--tenue); opacity: .8; }
+/* Lo que se intento mandar y no salio: es lo unico que pide atencion ya. */
+.seccion.urgente .seccion-titulo { color: var(--mal); }
+/* Lo cerrado no compite por la atencion: se abre si lo buscas. */
+.seccion.cerrada { margin-bottom: 26px; }
+.seccion.cerrada > summary { cursor: pointer; list-style: none; }
+.seccion.cerrada > summary::-webkit-details-marker { display: none; }
+.seccion.cerrada > summary::after { content: "▾"; margin-left: 2px; }
+.seccion.cerrada[open] > summary::after { content: "▴"; }
 .lista {
   list-style: none; margin: 0; padding: 0;
   background: var(--superficie); border: 1px solid var(--linea);

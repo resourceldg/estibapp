@@ -40,6 +40,7 @@ from estiba.storage.repositories import (
     ActionRepository,
     CRMRepository,
     DraftRepository,
+    ExclusionRepository,
     SettingsRepository,
 )
 from estiba.web import presentacion as P
@@ -49,6 +50,9 @@ AQUI = Path(__file__).parent
 
 #: En la bandeja, lo mas urgente primero.
 _URGENCIA = ["respuesta", "confirmacion", "cotizacion", "preguntas", "seguimiento"]
+
+#: Sin noticias por mas de esto, la conversacion deja de ser trabajo de hoy.
+DIAS_FRIO = 7
 
 PERIODOS = {"7d": "7 días", "30d": "30 días", "mes": "Este mes", "todo": "Todo"}
 
@@ -199,7 +203,12 @@ def create_app(
             conn.close()
         fletes = _fletes()
         items = [(P.borrador(b), fletes[b["job_id"]]) for b in pendientes if b["job_id"] in fletes]
-        return sorted(items, key=lambda x: (_URGENCIA.index(x[0].tipo), x[1].ultimo_at))
+        # Dentro de cada grupo, lo mas reciente primero: el que escribio ayer
+        # es un lead vivo, el que no contesta hace un mes esta frio. Se ordena
+        # en dos pasadas porque el orden de Python es estable.
+        items.sort(key=lambda x: x[1].ultimo_at, reverse=True)
+        items.sort(key=lambda x: _URGENCIA.index(x[0].tipo))
+        return items
 
     def _sin_salir() -> list[tuple[P.Borrador, P.Flete]]:
         """Aprobados que WhatsApp no mando: arriba de todo, hasta que salgan."""
@@ -224,6 +233,53 @@ def create_app(
             conn.close()
         otros = [f for f in _fletes().values() if f.chat_id == conv.chat_id and f.job_id != job_id]
         return P.detalle(job_id, ev, conv, estado.ahora(), borradores, nombre, otros)
+
+    def _trabajo() -> dict:
+        """Todo lo que puede pedir tu atencion, junto y ordenado por que hacer.
+
+        Antes la misma consulta aparecia en Bandeja y en Fletes sin decir cual
+        mirar. Ahora hay una sola lista: primero lo que te toca hacer, agrupado
+        por accion ("Para cotizar", "Falta origen y destino"), despues lo que
+        esta esperando al cliente, despues lo confirmado, y al final lo cerrado.
+        """
+        pendientes = _bandeja()
+        con_borrador = {f.job_id for _, f in pendientes}
+
+        # El que no escribe hace mas de una semana no es el trabajo de hoy:
+        # baja al fondo, plegado, para que arriba quede lo que esta vivo.
+        corte = (estado.ahora() - timedelta(days=DIAS_FRIO)).isoformat()
+        frios = [(b, f) for b, f in pendientes if f.ultimo_at < corte]
+        vivos = [(b, f) for b, f in pendientes if f.ultimo_at >= corte]
+
+        # _bandeja() ya viene ordenada por urgencia: el dict conserva ese orden.
+        acciones: dict[str, list[tuple[P.Borrador, P.Flete]]] = {}
+        for b, f in vivos:
+            acciones.setdefault(b.tipo_etiqueta, []).append((b, f))
+
+        fletes = list(_fletes().values())
+        activos = (JobState.CONFIRMED.value, JobState.SCHEDULED.value)
+        abiertos = (JobState.DRAFT.value, JobState.QUOTED.value, JobState.WAITING_CUSTOMER.value)
+        confirmados = sorted(
+            (f for f in fletes if f.estado in activos and not f.pasado),
+            key=lambda f: f.fecha_iso or "9999",
+        )
+        esperando = sorted(
+            (f for f in fletes if f.estado in abiertos and f.job_id not in con_borrador),
+            key=lambda f: f.ultimo_at, reverse=True,
+        )
+        vistos = con_borrador | {f.job_id for f in confirmados} | {f.job_id for f in esperando}
+        cerrados = sorted(
+            (f for f in fletes if f.job_id not in vistos),
+            key=lambda f: f.fecha_iso or f.ultimo_at, reverse=True,
+        )
+        return {
+            "sin_salir": _sin_salir(),
+            "acciones": list(acciones.items()),
+            "frios": frios,
+            "esperando": esperando,
+            "confirmados": confirmados,
+            "cerrados": cerrados,
+        }
 
     def _secciones(fletes: list[P.Flete]) -> list[tuple[str, str, list[P.Flete]]]:
         activos = (JobState.CONFIRMED.value, JobState.SCHEDULED.value)
@@ -298,8 +354,7 @@ def create_app(
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
     def pagina_bandeja(request: Request):
         return templates.TemplateResponse(
-            request, "bandeja.html",
-            _contexto(request, items=_bandeja(), sin_salir=_sin_salir(), titulo="Bandeja"),
+            request, "bandeja.html", _contexto(request, **_trabajo(), titulo="Bandeja"),
         )
 
     @app.get("/agenda", response_class=HTMLResponse, include_in_schema=False)
@@ -385,6 +440,17 @@ def create_app(
             conn.close()
         estado.sincronizar()
 
+    def _no_es_cliente(job_id: str, nota: str | None) -> None:
+        if job_id not in estado.resultado.fletes:
+            raise HTTPException(404, f"no hay un flete {job_id}")
+        _, conv = estado.resultado.fletes[job_id]
+        conn = estado.conectar()
+        try:
+            ExclusionRepository(conn).excluir(conv.chat_id, nota, estado.ahora())
+        finally:
+            conn.close()
+        estado.sincronizar()
+
     def _volver(request: Request, a: str) -> Response:
         if request.headers.get("HX-Request"):
             return Response(headers={"HX-Refresh": "true"})
@@ -420,6 +486,13 @@ def create_app(
     def perdido_form(request: Request, job_id: str, nota: str = Form("")):
         _accion(job_id, PERDIDO, nota)
         return _volver(request, f"/fletes/{job_id}")
+
+    @app.post("/fletes/{job_id}/no-es-cliente", include_in_schema=False)
+    def no_es_cliente_form(request: Request, job_id: str, nota: str = Form("")):
+        """Charla personal, spam, numero equivocado: se saca para siempre de
+        la bandeja, los fletes y Clientes. Los mensajes no se borran."""
+        _no_es_cliente(job_id, nota)
+        return _volver(request, "/")
 
     @app.post("/clientes/{chat_id}/nombre", include_in_schema=False)
     def nombre_form(request: Request, chat_id: str, nombre: str = Form("")):

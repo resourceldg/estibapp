@@ -112,6 +112,7 @@ tu máquina en Docker. Tus conversaciones no pasan por ningún servicio externo.
 
 ```bash
 cp .env.example .env        # cambiá las claves
+mkdir -p data/audios        # antes que Docker: si la crea él, queda de root y los audios no se guardan
 docker compose up -d        # WAHA, solo en 127.0.0.1:3000
 uv run estiba serve         # y en el dashboard: WhatsApp → Conectar WhatsApp
 ```

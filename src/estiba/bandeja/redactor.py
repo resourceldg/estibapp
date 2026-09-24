@@ -16,6 +16,7 @@ from estiba.core.models import Conversation, JobState
 from estiba.extraction.fechas import hora_legible, nombre_dia
 from estiba.formato import pesos
 from estiba.jobs.engine import Evaluacion
+from estiba.jobs.preguntas import ETIQUETAS
 
 RESPUESTA = "respuesta"
 PREGUNTAS = "preguntas"
@@ -123,7 +124,11 @@ def proponer(ev: Evaluacion, conv: Conversation, ahora: datetime) -> Propuesta |
             texto = "¡Buenas! Para pasarte el precio necesito un par de datos:\n" + _lista(ev.preguntas)
         else:
             texto = "¡Buenas! Me faltan un par de datos:\n" + _lista(ev.preguntas)
-        return propuesta(PREGUNTAS, "Faltan datos para avanzar", texto)
+        # "Falta origen y destino" dice mas que "Faltan datos": ya se sabe
+        # que falta, no hace falta abrir el flete para verlo.
+        faltan = [ETIQUETAS[campo] for campo in job.missing]
+        razon = f"Falta {_cosas(faltan)}" if faltan else "Faltan datos para avanzar"
+        return propuesta(PREGUNTAS, razon, texto)
 
     # El cliente pregunto algo que las reglas no saben contestar.
     return propuesta(RESPUESTA, "Te escribió y espera respuesta", "")

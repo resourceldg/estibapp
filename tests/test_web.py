@@ -54,6 +54,14 @@ class TestRedactor:
         assert p.kind == "preguntas"
         assert p.text.startswith("¡Buenas! Para pasarte el precio necesito un par de datos:\n• ")
 
+    def test_la_razon_dice_que_falta_exactamente(self):
+        p = _propuesta(_chat(("c", "hola, haces fletes?")))
+        assert p.reason == "Falta origen, destino, fecha y qué lleva"
+
+    def test_con_origen_y_destino_la_razon_dice_lo_que_queda(self):
+        p = _propuesta(_chat(("c", "de Almagro a Boedo, che")))
+        assert p.reason == "Falta fecha y qué lleva"
+
     def test_con_todo_para_cotizar_propone_el_precio(self):
         p = _propuesta(_chat(("c", "de Almagro a Boedo una heladera, hay ascensor")))
         assert p.kind == "cotizacion"
@@ -158,10 +166,21 @@ def cliente(db):
 class TestPaginas:
     def test_bandeja_muestra_una_tarjeta_por_conversacion(self, cliente):
         html = cliente.get("/").text
-        assert "4 conversaciones esperan tu respuesta" in html
         assert html.count('class="tarjeta borrador"') == 4
         # Lo mas urgente primero: las confirmaciones antes que el seguimiento.
         assert html.index("Almagro → Barracas") < html.index("Flores → Morón")
+
+    def test_la_bandeja_agrupa_por_que_hacer(self, cliente):
+        html = cliente.get("/").text
+        # Cada grupo es una seccion con su titulo, no una lista plana.
+        assert "Para confirmar" in html and "Seguimiento" in html
+        assert html.index("Para confirmar") < html.index("Seguimiento")
+
+    def test_la_bandeja_junta_lo_que_antes_estaba_en_fletes(self, cliente):
+        """Antes la misma conversacion salia en Bandeja y en Fletes."""
+        html = cliente.get("/").text
+        assert "Confirmados" in html
+        assert "Villa Crespo → Caballito" in html   # confirmado, sin borrador
 
     def test_fletes_por_seccion(self, cliente):
         html = cliente.get("/fletes").text
@@ -240,3 +259,36 @@ class TestServe:
         monkeypatch.delenv("ESTIBA_CLAVE", raising=False)
         assert main(["--db", str(db), "serve", "--host", "0.0.0.0"]) == 2
         assert "clave" in capsys.readouterr().err
+
+
+class TestNavegacion:
+    def test_whatsapp_se_alcanza_desde_la_barra_de_abajo(self, cliente):
+        """Desde el celular era inalcanzable: arriba solo se ve un punto."""
+        html = cliente.get("/").text
+        tabbar = html.split('class="tabbar"')[1].split("</nav>")[0]
+        assert 'href="/whatsapp"' in tabbar
+
+    def test_una_conexion_caida_se_ve_en_la_barra(self, cliente):
+        """Sin WAHA configurado el punto avisa igual, desde cualquier pantalla."""
+        tabbar = cliente.get("/agenda").text.split('class="tabbar"')[1].split("</nav>")[0]
+        assert "punto-tab" in tabbar
+
+
+class TestOrden:
+    def _bandeja(self, cliente):
+        return cliente.get("/api/bandeja").json()
+
+    def test_dentro_del_grupo_lo_mas_nuevo_primero(self, cliente):
+        """Al reves tapaba los leads vivos con hilos de hace semanas."""
+        items = self._bandeja(cliente)
+        por_tipo = {}
+        for x in items:
+            por_tipo.setdefault(x["borrador"]["tipo"], []).append(x["flete"]["ultimo_at"])
+        for tipo, fechas in por_tipo.items():
+            assert fechas == sorted(fechas, reverse=True), f"{tipo} no va de nuevo a viejo"
+
+    def test_lo_frio_no_tapa_el_trabajo_de_hoy(self, cliente):
+        """Sin noticias hace mas de una semana: baja al fondo, plegado."""
+        html = cliente.get("/").text
+        if "Sin noticias hace más de una semana" in html:
+            assert html.index("Sin noticias hace más de una semana") > html.index("seccion-titulo")

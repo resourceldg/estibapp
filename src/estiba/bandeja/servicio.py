@@ -26,6 +26,7 @@ from estiba.storage.repositories import (
     ActionRepository,
     CRMRepository,
     DraftRepository,
+    ExclusionRepository,
     JobRepository,
 )
 
@@ -48,8 +49,11 @@ def sincronizar(conn: sqlite3.Connection, engine: JobEngine, ahora: datetime, es
     crm = CRMRepository(conn)
     agenda = LocalCalendar(conn, reloj=lambda: ahora)
     r = Resultado()
+    excluidos = ExclusionRepository(conn).excluidos()
 
     for chat_id in store.chat_ids():
+        if chat_id in excluidos:
+            continue
         conv = store.get(chat_id)
         if not any(m.sent_at <= ahora for m in conv.messages):
             continue

@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 estiba.db
+estiba-demo.db
 estiba.db-*
 fixtures/audios/*
 !fixtures/audios/.gitkeep

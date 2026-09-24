@@ -7,7 +7,7 @@
 # Probado con WAHA 2026.8.2. Escucha solo en esta maquina (127.0.0.1).
 services:
   waha:
-    image: devlikeapro/waha:latest-2026.8.2
+    image: devlikeapro/waha:latest-2026.9.1
     restart: unless-stopped
     ports:
       - "127.0.0.1:3000:3000"
@@ -17,6 +17,12 @@ services:
     environment:
       WAHA_API_KEY: ${ESTIBA_WAHA_API_KEY:?Defini ESTIBA_WAHA_API_KEY en .env}
       WAHA_BASE_URL: http://localhost:3000
+      # GOWS (Go, whatsmeow) en vez de WEBJS: WEBJS maneja WhatsApp Web dentro
+      # de un Chrome headless, asi que cada vez que WhatsApp cambia su web se
+      # rompe. Paso en 09/2026: "Cmd.refreshQR is not a function" dejaba el QR
+      # sin poder regenerarse y no se podia vincular. GOWS habla el protocolo
+      # directo: no hay navegador ni DOM que se rompa.
+      WHATSAPP_DEFAULT_ENGINE: GOWS
       # Estiba tiene su propio dashboard; el de WAHA no hace falta.
       WAHA_DASHBOARD_ENABLED: "false"
       # Solo se bajan los audios: las fotos no se usan para nada.

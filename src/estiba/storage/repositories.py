@@ -407,6 +407,32 @@ class CRMRepository:
             raise KeyError(f"no existe el contacto {chat_id}")
 
 
+class ExclusionRepository:
+    """Chats marcados 'no es cliente': charla personal, spam, numero equivocado.
+
+    No borra mensajes. `sincronizar()` salta estos chats, y asi desaparecen
+    de la bandeja, los fletes y el CRM sin perder el historial.
+    """
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self.conn = conn
+
+    def excluir(self, chat_id: str, motivo: str | None, ahora: datetime) -> None:
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO excluded_chats (chat_id, motivo, at) VALUES (?, ?, ?) "
+                "ON CONFLICT (chat_id) DO UPDATE SET motivo = excluded.motivo, at = excluded.at",
+                (chat_id, (motivo or "").strip() or None, _a_texto(ahora)),
+            )
+
+    def incluir(self, chat_id: str) -> None:
+        with self.conn:
+            self.conn.execute("DELETE FROM excluded_chats WHERE chat_id = ?", (chat_id,))
+
+    def excluidos(self) -> set[str]:
+        return {f["chat_id"] for f in self.conn.execute("SELECT chat_id FROM excluded_chats")}
+
+
 class SettingsRepository:
     """Ajustes que genera el sistema, como los secretos de las URLs."""
 

@@ -10,35 +10,7 @@
   <h2 class="seccion-titulo">{{ titulo }} <span class="seccion-cuenta">{{ fletes|length }}</span></h2>
   {% if fletes %}
   <ul class="lista">
-    {% for f in fletes %}
-    <li>
-      <a class="fila{% if f.alertas %} con-alerta{% endif %}" href="/fletes/{{ f.job_id }}">
-        <div class="calendario{% if not f.dia %} sin-fecha{% endif %}{% if f.pasado %} pasado{% endif %}">
-          {% if f.dia %}
-          <span class="cal-dsem">{{ f.dia_semana }}</span>
-          <span class="cal-dia">{{ f.dia }}</span>
-          {% else %}
-          <span class="cal-dsem">sin</span><span class="cal-dia">—</span>
-          {% endif %}
-        </div>
-        <div class="fila-cuerpo">
-          <div class="fila-ruta">{{ f.ruta }}</div>
-          <div class="fila-sub">
-            {% if f.nombre %}{{ f.nombre }} · {% endif %}{% if f.hora %}{{ f.hora }} · {% endif %}{{ f.cosas or "sin detalle de la carga" }}
-          </div>
-          <div class="fila-meta">
-            {{ chip(f.estado_etiqueta, f.tono) }}
-            {% if f.alertas %}<span class="alerta-mini">{{ icono("aviso") }}{{ f.alertas|length }}</span>{% endif %}
-          </div>
-        </div>
-        <div class="fila-precio">
-          {% if f.cotizado %}<span class="monto">{{ f.cotizado }}</span>
-          {% elif f.sugerido %}<span class="monto sugerido">{{ f.sugerido }}</span><span class="monto-nota">sugerido</span>
-          {% endif %}
-        </div>
-      </a>
-    </li>
-    {% endfor %}
+    {% for f in fletes %}{% include "_fila.html" %}{% endfor %}
   </ul>
   {% else %}
   <p class="nada">Nada por acá.</p>
