@@ -496,6 +496,34 @@ class ClaseRepository:
     def todas(self) -> dict[str, sqlite3.Row]:
         return {f["chat_id"]: f for f in self.conn.execute("SELECT * FROM chat_clase")}
 
+    def borrar_chat(self, chat_id: str) -> int:
+        """Borra una conversacion entera: mensajes, transcripciones y clase.
+
+        Solo para el spam. Es lo unico de Estiba que borra de verdad, y por
+        eso lo pide una persona a mano: el resto del sistema nunca toca un
+        mensaje una vez guardado.
+        """
+        mensajes = "(SELECT id FROM messages WHERE chat_id = ?)"
+        jobs = "(SELECT id FROM jobs WHERE conversation_id = ?)"
+        with self.conn:
+            # En orden, de lo que depende a lo que sostiene: si no, saltan
+            # las claves foraneas.
+            self.conn.execute(f"DELETE FROM transcripts WHERE message_id IN {mensajes}", (chat_id,))
+            self.conn.execute("DELETE FROM drafts WHERE chat_id = ?", (chat_id,))
+            self.conn.execute(f"DELETE FROM job_slots WHERE job_id IN {jobs}", (chat_id,))
+            self.conn.execute(f"DELETE FROM job_events WHERE job_id IN {jobs}", (chat_id,))
+            self.conn.execute(f"DELETE FROM job_actions WHERE job_id IN {jobs}", (chat_id,))
+            self.conn.execute(
+                "DELETE FROM lead_stage_history WHERE lead_id IN "
+                "(SELECT id FROM leads WHERE contact_id = ?)", (chat_id,))
+            self.conn.execute("DELETE FROM leads WHERE contact_id = ?", (chat_id,))
+            self.conn.execute("DELETE FROM calendar_events WHERE job_id IN " + jobs, (chat_id,))
+            self.conn.execute("DELETE FROM jobs WHERE conversation_id = ?", (chat_id,))
+            self.conn.execute("DELETE FROM contacts WHERE id = ?", (chat_id,))
+            cur = self.conn.execute("DELETE FROM messages WHERE chat_id = ?", (chat_id,))
+            self.conn.execute("DELETE FROM chat_clase WHERE chat_id = ?", (chat_id,))
+        return cur.rowcount
+
     def correcciones(self) -> list[sqlite3.Row]:
         """Donde Estiba se equivoco: para mejorar las reglas mas adelante."""
         return list(self.conn.execute(

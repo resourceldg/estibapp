@@ -832,3 +832,16 @@ body:has(.barra-accion) { padding-bottom: calc(var(--tabbar) + 48px + env(safe-a
 .conv-duda.discreto { padding: 0 12px 8px; justify-content: flex-end; margin-top: -6px; }
 .conv-duda.discreto .btn.texto { min-height: 26px; font-size: 12px; }
 .privado { margin-bottom: 12px; }
+
+/* Suma cero: una sola clase activa, y se ve cual. */
+.clases { display: flex; gap: 0; margin-bottom: 8px; border: 1px solid var(--linea-2); border-radius: 12px; overflow: hidden; }
+.clases form { display: contents; }
+.clase {
+  flex: 1; min-height: 42px; border: 0; border-right: 1px solid var(--linea-2);
+  background: var(--superficie); color: var(--tinta-2);
+  font: inherit; font-size: 14px; font-weight: 650; cursor: pointer;
+}
+.clases form:last-child .clase { border-right: 0; }
+.clase.puesta { background: var(--superficie-3); color: var(--tinta); }
+.clase-porque { margin-bottom: 14px; color: var(--tenue); font-size: 12px; }
+.resumen strong { color: var(--tinta); }

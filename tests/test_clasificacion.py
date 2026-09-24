@@ -31,17 +31,17 @@ def _clase(*lineas: tuple[str, str]):
 class TestEsNegocio:
     def test_pedido_claro_no_pregunta_nada(self):
         r = _clase(("c", "hola, necesito llevar una heladera de Almagro a Boedo"))
-        assert r.clase is Clase.FLETE and not r.pide_decision
+        assert r.clase is Clase.LEAD and not r.pide_decision
 
     def test_alcanza_con_nombrar_el_oficio(self):
         r = _clase(("c", "hacés mudanzas los sábados?"))
-        assert r.clase is Clase.FLETE
+        assert r.clase is Clase.LEAD
 
     def test_un_gracias_mi_amor_no_saca_a_un_cliente_del_embudo(self):
         """El afecto no descalifica: hay clientes que tutean y agradecen así."""
         r = _clase(("c", "necesito un flete para el viernes"), ("v", "dale"),
                    ("c", "gracias mi amor!"))
-        assert r.clase is Clase.FLETE
+        assert r.clase is Clase.LEAD
 
 
 class TestPublicidad:
@@ -71,7 +71,7 @@ class TestPersonal:
     def test_charla_de_familia_queda_afuera(self):
         r = _clase(("c", "hola ma, cómo andás? mañana paso por lo de la abuela"),
                    ("v", "dale hijo"), ("c", "un beso, te quiero"))
-        assert r.clase is Clase.PERSONAL
+        assert r.clase is Clase.PRIVADO
 
 
 class TestCuandoPregunta:
@@ -117,14 +117,14 @@ class TestIdentidad:
                                 MessageKind.TEXT, text="chau"))
         sincronizar(conn, JobEngine(), ahora)
         repo = ClaseRepository(conn)
-        assert repo.de("p")["clase"] == "personal"
+        assert repo.de("p")["clase"] == "privado"
 
         # El fletero dice que no, que es un cliente.
-        repo.corregir("p", "flete", ahora)
+        repo.corregir("p", "lead", ahora)
         sincronizar(conn, JobEngine(), ahora)
         fila = repo.de("p")
-        assert fila["clase"] == "flete" and fila["quien"] == "humano"
-        assert fila["clase_previa"] == "personal"   # queda para mejorar las reglas
+        assert fila["clase"] == "lead" and fila["quien"] == "humano"
+        assert fila["clase_previa"] == "privado"   # queda para mejorar las reglas
 
     def test_las_correcciones_quedan_juntas(self, tmp_path):
         from estiba.storage.repositories import ClaseRepository
@@ -134,10 +134,10 @@ class TestIdentidad:
                                           MessageKind.TEXT, text="hola"))
         repo = ClaseRepository(conn)
         repo.guardar_inferida("q", "spam", "parece publicidad", ahora)
-        repo.corregir("q", "flete", ahora)
+        repo.corregir("q", "lead", ahora)
         correcciones = repo.correcciones()
         assert len(correcciones) == 1
-        assert (correcciones[0]["clase_previa"], correcciones[0]["clase"]) == ("spam", "flete")
+        assert (correcciones[0]["clase_previa"], correcciones[0]["clase"]) == ("spam", "lead")
 
     def test_lo_personal_no_entra_al_embudo(self, tmp_path):
         from estiba.bandeja.servicio import sincronizar
@@ -148,7 +148,7 @@ class TestIdentidad:
                         Message("z:2", "z", False, datetime(2026, 9, 20, 11),
                                 MessageKind.TEXT, text="gracias"))
         r = sincronizar(conn, JobEngine(), datetime(2026, 9, 20, 12))
-        assert r.fuera == {"z": "personal"}
+        assert r.fuera == {"z": "privado"}
         assert not r.fletes and not r.leads
 
     def test_el_cli_muestra_como_viene_clasificando(self, tmp_path, capsys):
@@ -159,7 +159,7 @@ class TestIdentidad:
                                           MessageKind.TEXT, text="hola"))
         repo = ClaseRepository(conn)
         repo.guardar_inferida("w", "spam", "parece publicidad", datetime(2026, 9, 20, 12))
-        repo.corregir("w", "flete", datetime(2026, 9, 20, 13))
+        repo.corregir("w", "lead", datetime(2026, 9, 20, 13))
         conn.close()
         assert main(["--db", str(tmp_path / "c.db"), "clases"]) == 0
         salida = capsys.readouterr().out

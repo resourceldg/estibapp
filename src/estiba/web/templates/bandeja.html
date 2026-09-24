@@ -3,6 +3,12 @@
 {% block contenido %}
 <div class="encabezado">
   <h1>Hoy</h1>
+  {# De primera mano: cuantos hay de cada lado antes de mirar la lista. #}
+  <p class="bajada resumen">
+    <strong>{{ cuentas["leads"] }}</strong> leads ·
+    <strong>{{ cuentas["clientes"] }}</strong> clientes
+    {%- if cuentas["dudosas"] %} · <a href="/?f=dudosas">{{ cuentas["dudosas"] }} sin clasificar</a>{% endif -%}
+  </p>
 </div>
 
 {# El tiempo manda: los filtros acotan, no reordenan. Arriba el trabajo del
@@ -45,6 +51,14 @@
         <span class="conv-porque">{% if a.lo_dijiste_vos %}Lo dijiste vos{% else %}{{ a.porque }}{% endif %}</span>
       </div>
     </a>
+    {% if es_spam %}
+    <div class="conv-duda discreto">
+      <form method="post" action="/clientes/{{ a.chat_id }}/borrar" hx-post="/clientes/{{ a.chat_id }}/borrar"
+            hx-confirm="¿Borrar la conversación con {{ a.quien }}? Se borran los mensajes y no se puede deshacer.">
+        <button class="btn texto" type="submit">Borrar</button>
+      </form>
+    </div>
+    {% endif %}
   </li>
   {% endfor %}
 </ul>

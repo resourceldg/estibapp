@@ -78,9 +78,10 @@ def sincronizar(conn: sqlite3.Connection, engine: JobEngine, ahora: datetime, es
             clases.guardar_inferida(chat_id, cl.clase.value, cl.porque, ahora)
         clase = cl.clase
         r.clases[chat_id] = cl
+        decidida_por_humano = guardada is not None and guardada["quien"] == "humano"
         # Lo que Estiba sabe que no es negocio no entra al embudo ni a las
         # metricas. La duda si entra: perder un cliente en silencio es peor.
-        if clase in (Clase.PERSONAL, Clase.SPAM):
+        if clase in (Clase.PRIVADO, Clase.SPAM):
             r.fuera[chat_id] = clase.value
             continue
         todos = episodios(conv, engine, acciones.for_job)
@@ -111,6 +112,14 @@ def sincronizar(conn: sqlite3.Connection, engine: JobEngine, ahora: datetime, es
             crm.save(lead)
             r.fletes[ep.job_id] = (ev, ep.conversacion)
             r.leads.append(lead)
+            # Dejo de ser un lead: ya hizo un flete. Lo deduce del historial,
+            # no hay que marcarlo a mano.
+            if ev.job.state in (JobState.CONFIRMED, JobState.SCHEDULED, JobState.DONE):
+                clase = Clase.CLIENTE
+
+        if clase is not cl.clase and not decidida_por_humano:
+            clases.guardar_inferida(chat_id, clase.value, "ya hizo un flete", ahora)
+            r.clases[chat_id] = Clasificacion(clase, "ya hizo un flete")
 
     if espejo is not None:
         try:

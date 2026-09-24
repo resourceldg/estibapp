@@ -26,7 +26,7 @@
   <div class="conv-duda discreto">
     <form method="post" action="/clientes/{{ f.chat_id }}/clase" hx-post="/clientes/{{ f.chat_id }}/clase"
           hx-confirm="¿{{ f.quien }} es privado? Sale de la bandeja y de los números.">
-      <input type="hidden" name="clase" value="personal">
+      <input type="hidden" name="clase" value="privado">
       <button class="btn texto" type="submit">Es privado</button>
     </form>
   </div>
@@ -37,11 +37,11 @@
   <div class="conv-duda">
     <span>¿Es un cliente?</span>
     <form method="post" action="/clientes/{{ f.chat_id }}/clase" hx-post="/clientes/{{ f.chat_id }}/clase">
-      <input type="hidden" name="clase" value="flete">
+      <input type="hidden" name="clase" value="lead">
       <button class="btn secundario chico" type="submit">Sí</button>
     </form>
     <form method="post" action="/clientes/{{ f.chat_id }}/clase" hx-post="/clientes/{{ f.chat_id }}/clase">
-      <input type="hidden" name="clase" value="personal">
+      <input type="hidden" name="clase" value="privado">
       <button class="btn fantasma chico" type="submit">No</button>
     </form>
   </div>

@@ -475,7 +475,7 @@ class TestPestanas:
 
     def test_lo_dudoso_no_se_mezcla_con_los_clientes(self, cliente):
         todos = cliente.get("/?f=todos").text
-        assert 'href="/?f=dudosas"' in todos and 'href="/?f=personales"' in todos
+        assert 'href="/?f=dudosas"' in todos and 'href="/?f=privados"' in todos
 
     def test_un_perdido_no_ocupa_el_trabajo_del_dia(self, cliente):
         """Existe, pero en su pestaña."""
@@ -487,10 +487,58 @@ class TestPestanas:
 
         # Una correccion humana: lo inferido lo recalcula cada sincronizacion.
         conn = connect(db)
-        ClaseRepository(conn).corregir("5491122223333", "personal", JUEVES_18)
+        ClaseRepository(conn).corregir("5491122223333", "privado", JUEVES_18)
         conn.close()
         with TestClient(create_app(db, ahora=lambda: JUEVES_18)) as c:
-            html = c.get("/?f=personales").text
+            html = c.get("/?f=privados").text
             assert "Lo dijiste vos" in html
             # Y deja de ocupar lugar entre los clientes.
             assert "5491122223333:job" not in c.get("/?f=todos").text
+
+
+class TestClasesSumaCero:
+    """Una conversacion es lead, cliente o privado: nunca dos a la vez."""
+
+    def _clase(self, conn, chat_id):
+        from estiba.storage.repositories import ClaseRepository
+        return ClaseRepository(conn).de(chat_id)["clase"]
+
+    def test_cambiar_una_apaga_la_otra(self, cliente, db):
+        chat = "5491122223333"
+        cliente.post(f"/clientes/{chat}/clase", data={"clase": "privado"})
+        conn = connect(db)
+        assert self._clase(conn, chat) == "privado"
+        cliente.post(f"/clientes/{chat}/clase", data={"clase": "cliente"})
+        assert self._clase(conn, chat) == "cliente"
+        conn.close()
+
+    def test_el_que_ya_hizo_un_flete_deja_de_ser_lead(self, db):
+        """Lo deduce del historial: no hay que marcarlo a mano."""
+        from estiba.storage.repositories import ClaseRepository
+
+        conn = connect(db)
+        sincronizar(conn, JobEngine(), JUEVES_18)
+        # 5491133334444 tiene un flete agendado en los fixtures.
+        assert ClaseRepository(conn).de("5491133334444")["clase"] == "cliente"
+        conn.close()
+
+    def test_una_clase_inventada_no_pasa(self, cliente):
+        r = cliente.post("/clientes/5491122223333/clase", data={"clase": "amigo"})
+        assert r.status_code == 400
+
+    def test_solo_se_borra_lo_marcado_spam(self, cliente, db):
+        """Lo unico de Estiba que borra de verdad, y lo pide una persona."""
+        from estiba.storage.repositories import ClaseRepository
+
+        chat = "5491122223333"
+        assert cliente.post(f"/clientes/{chat}/borrar").status_code == 409
+
+        conn = connect(db)
+        ClaseRepository(conn).corregir(chat, "spam", JUEVES_18)
+        conn.close()
+        cliente.post(f"/clientes/{chat}/borrar")
+        conn = connect(db)
+        quedan = conn.execute(
+            "SELECT COUNT(*) FROM messages WHERE chat_id = ?", (chat,)).fetchone()[0]
+        conn.close()
+        assert quedan == 0

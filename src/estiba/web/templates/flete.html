@@ -190,14 +190,18 @@
 </details>
 {% endif %}
 
-{# A la vista y de un toque: a veces escribe la pareja. Nivel 3, sin color:
-   esta disponible pero no compite con la accion principal. #}
-<form class="privado" method="post" action="/clientes/{{ f.chat_id }}/clase"
-      hx-post="/clientes/{{ f.chat_id }}/clase"
-      hx-confirm="¿{{ f.quien }} es privado? Sale de la bandeja y de los números. Los mensajes quedan.">
-  <input type="hidden" name="clase" value="personal">
-  <button class="btn secundario ancho" type="submit">{{ icono("clientes") }}<span>Es privado, no es cliente</span></button>
-</form>
+{# Suma cero: una conversacion es lead, cliente o privado, nunca dos. El
+   que esta activo se ve; tocar otro lo cambia y recalcula todo el chat. #}
+<div class="clases" role="group" aria-label="Qué es esta conversación">
+  {% for valor, etiqueta in [("lead", "Lead"), ("cliente", "Cliente"), ("privado", "Privado")] %}
+  <form method="post" action="/clientes/{{ f.chat_id }}/clase" hx-post="/clientes/{{ f.chat_id }}/clase">
+    <input type="hidden" name="clase" value="{{ valor }}">
+    <button class="clase{% if clase == valor %} puesta{% endif %}" type="submit"
+            {% if clase == valor %}aria-pressed="true"{% endif %}>{{ etiqueta }}</button>
+  </form>
+  {% endfor %}
+</div>
+{% if clase_porque %}<p class="clase-porque">{{ clase_porque }}</p>{% endif %}
 
 {# Spam o numero equivocado, con la opcion de contestarle antes. #}
 <details class="panel perder">
@@ -228,11 +232,11 @@
       <span class="accion-pregunta">¿Es un cliente?</span>
       <div class="accion-par">
         <form method="post" action="/clientes/{{ f.chat_id }}/clase" hx-post="/clientes/{{ f.chat_id }}/clase">
-          <input type="hidden" name="clase" value="flete">
+          <input type="hidden" name="clase" value="lead">
           <button class="btn primario" type="submit">Sí</button>
         </form>
         <form method="post" action="/clientes/{{ f.chat_id }}/clase" hx-post="/clientes/{{ f.chat_id }}/clase">
-          <input type="hidden" name="clase" value="personal">
+          <input type="hidden" name="clase" value="privado">
           <button class="btn secundario" type="submit">No</button>
         </form>
       </div>

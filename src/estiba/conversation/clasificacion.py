@@ -55,14 +55,27 @@ _PERSONAL = re.compile(
 
 
 class Clase(Enum):
-    #: Es una consulta de flete: se trabaja sin preguntar nada.
-    FLETE = "flete"
-    #: Charla que no es del negocio.
-    PERSONAL = "personal"
+    """Suma cero: una conversacion es una sola de estas, nunca dos.
+
+    Lead y cliente no son lo mismo. El que pregunta es un lead; el que ya
+    hizo un flete es un cliente, y se trata distinto. La diferencia la
+    deduce Estiba del historial, no hace falta marcarla a mano.
+    """
+
+    #: Pregunto por un flete y todavia no hizo ninguno.
+    LEAD = "lead"
+    #: Ya hizo al menos un flete: no es un desconocido.
+    CLIENTE = "cliente"
+    #: Charla que no es del negocio: familia, amigos, la pareja.
+    PRIVADO = "privado"
     #: Publicidad, cadenas, promociones.
     SPAM = "spam"
     #: No se puede determinar: la unica que pide una decision humana.
     DUDOSA = "dudosa"
+
+    @property
+    def es_negocio(self) -> bool:
+        return self in (Clase.LEAD, Clase.CLIENTE)
 
 
 #: Menos que esto dicho por el cliente es "todavia no hablaron", no una duda.
@@ -79,7 +92,7 @@ class Clasificacion:
 
     @property
     def es_negocio(self) -> bool:
-        return self.clase is Clase.FLETE
+        return self.clase.es_negocio
 
     @property
     def pide_decision(self) -> bool:
@@ -125,9 +138,9 @@ def clasificar(conv: Conversation, ex: Extraccion) -> Clasificacion:
 
     fuertes = [c for c in _CAMPOS_FUERTES if c in ex.ganadores]
     if fuertes:
-        return Clasificacion(Clase.FLETE, f"se entendió {', '.join(fuertes)} del chat")
+        return Clasificacion(Clase.LEAD, f"se entendió {', '.join(fuertes)} del chat")
     if _OFICIO.search(texto):
-        return Clasificacion(Clase.FLETE, "habla del oficio")
+        return Clasificacion(Clase.LEAD, "habla del oficio")
 
     # Publicidad antes que las senales debiles: si no, una promo con fecha
     # entra al embudo como si fuera un cliente. Pero un link solo no alcanza,
@@ -141,11 +154,11 @@ def clasificar(conv: Conversation, ex: Extraccion) -> Clasificacion:
     # publicidad: "manana paso por lo de la abuela" deja una fecha, y una
     # fecha suelta no es un pedido de flete.
     if _PERSONAL.search(texto) and nuestros:
-        return Clasificacion(Clase.PERSONAL, "charla personal, no del trabajo")
+        return Clasificacion(Clase.PRIVADO, "charla personal, no del trabajo")
 
     debiles = [c for c in _CAMPOS_DEBILES if c in ex.ganadores]
     if debiles or any(i.intencion is Intencion.CONSULTA for i in ex.intenciones):
-        return Clasificacion(Clase.FLETE, "parece una consulta, pero dijo poco")
+        return Clasificacion(Clase.LEAD, "parece una consulta, pero dijo poco")
 
     # Una charla larga y de ida y vuelta sin una sola palabra del oficio no
     # parece un cliente, pero tampoco hay con que afirmarlo.

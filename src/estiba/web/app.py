@@ -273,12 +273,15 @@ def create_app(
     ]
     #: Las de afuera del trabajo del dia.
     FILTROS_APARTE = [
-        ("dudosas", "¿Cliente?"), ("perdidos", "Perdidos"),
-        ("personales", "Personales"), ("spam", "Spam"),
+        ("leads", "Leads"), ("clientes", "Clientes"), ("dudosas", "¿Cliente?"),
+        ("perdidos", "Perdidos"), ("privados", "Privados"), ("spam", "Spam"),
     ]
 
-    def _pasa(filtro: str, b: P.Borrador | None, f: P.Flete, dudosa: bool, hoy: str) -> bool:
+    def _pasa(filtro: str, b: P.Borrador | None, f: P.Flete, dudosa: bool, hoy: str,
+              clase: str | None = None) -> bool:
         perdido = f.estado == JobState.CANCELLED.value
+        if filtro in ("leads", "clientes"):
+            return clase == filtro[:-1] and not perdido
         if filtro == "dudosas":
             return dudosa
         if filtro == "perdidos":
@@ -349,6 +352,9 @@ def create_app(
         dudosas = {
             chat_id for chat_id, cl in estado.resultado.clases.items() if cl.pide_decision
         }
+        clases_por_chat = {
+            chat_id: cl.clase.value for chat_id, cl in estado.resultado.clases.items()
+        }
         # Un cliente puede tener varios fletes: uno agendado y una consulta
         # nueva. Se muestra una fila por conversacion, pero la del flete que
         # el filtro esta pidiendo; si no, un agendado se pierde detras de una
@@ -360,7 +366,8 @@ def create_app(
             for f in _fletes().values():
                 if f.chat_id in dormidos:
                     continue
-                if not _pasa(clave, borradores.get(f.job_id), f, f.chat_id in dudosas, hoy):
+                if not _pasa(clave, borradores.get(f.job_id), f, f.chat_id in dudosas, hoy,
+                             clases_por_chat.get(f.chat_id)):
                     continue
                 if f.chat_id not in por_chat or f.ultimo_at > por_chat[f.chat_id].ultimo_at:
                     por_chat[f.chat_id] = f
@@ -378,16 +385,17 @@ def create_app(
 
         cuentas = {clave: len(elegir(clave)) for clave, _ in FILTROS + FILTROS_APARTE}
         # Personales y spam no llegan a ser fletes: se cuentan aparte.
-        personales = _apartadas(("personal",))
+        privados = _apartadas(("privado",))
         spam = _apartadas(("spam",))
-        cuentas["personales"] = len(personales)
+        cuentas["privados"] = len(privados)
         cuentas["spam"] = len(spam)
-        apartadas = personales if filtro == "personales" else spam if filtro == "spam" else []
+        apartadas = privados if filtro == "privados" else spam if filtro == "spam" else []
         return {
             "sin_salir": _sin_salir() if filtro in ("todos", "hoy") else [],
             "filas": filas,
             "apartadas": apartadas,
             "filtros_aparte": FILTROS_APARTE,
+            "es_spam": filtro == "spam",
             "pospuestas": sorted(pospuestas, key=lambda x: x[2]),
             "filtros": FILTROS,
             "filtro": filtro,
@@ -497,11 +505,18 @@ def create_app(
         filtro = f if any(c == f for c, _ in FILTROS) else "todos"
         anterior, siguiente = _vecinos(job_id, filtro)
         clase = estado.resultado.clases.get(d.flete.chat_id)
+        conn2 = estado.conectar()
+        try:
+            guardada = ClaseRepository(conn2).de(d.flete.chat_id)
+        finally:
+            conn2.close()
         return templates.TemplateResponse(
             request, "flete.html",
             _contexto(
                 request, d=d, anterior=anterior, siguiente=siguiente, filtro=filtro,
                 plazos=PLAZOS, dudosa=bool(clase and clase.pide_decision),
+                clase=guardada["clase"] if guardada else None,
+                clase_porque=(guardada["porque"] if guardada else None),
                 pospuesta_hasta=P.cuando_vuelve(dormida, estado.ahora()) if dormida else None,
                 titulo=d.flete.quien,
             ),
@@ -649,7 +664,7 @@ def create_app(
     def clase_form(request: Request, chat_id: str, clase: str = Form(...)):
         """Un toque para resolver una dudosa. Queda guardado que dijo Estiba
         y que dijiste vos: con eso se afinan las reglas mas adelante."""
-        if clase not in ("flete", "personal", "spam"):
+        if clase not in ("lead", "cliente", "privado", "spam"):
             raise HTTPException(400, f"no se que clase es {clase!r}")
         conn = estado.conectar()
         try:
@@ -658,6 +673,21 @@ def create_app(
             conn.close()
         estado.sincronizar()
         return _volver(request, "/")
+
+    @app.post("/clientes/{chat_id}/borrar", include_in_schema=False)
+    def borrar_chat_form(request: Request, chat_id: str):
+        """Borra una conversacion de spam, con todo lo suyo. No se deshace."""
+        conn = estado.conectar()
+        try:
+            repo = ClaseRepository(conn)
+            fila = repo.de(chat_id)
+            if fila is None or fila["clase"] != "spam":
+                raise HTTPException(409, "solo se borra lo marcado como spam")
+            repo.borrar_chat(chat_id)
+        finally:
+            conn.close()
+        estado.sincronizar()
+        return _volver(request, "/?f=spam")
 
     @app.post("/fletes/{job_id}/posponer", include_in_schema=False)
     def posponer_form(request: Request, job_id: str, cuando: str = Form("manana"),
