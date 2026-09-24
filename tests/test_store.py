@@ -89,3 +89,48 @@ class TestTextoPlano:
         )
         texto = store.get("chat1").as_plain_text()
         assert texto == "cliente: haces fletes?\nvos: si, contame"
+
+
+class TestDosProcesos:
+    """Dos escritores a la vez: el webhook y el dashboard, o una consola."""
+
+    def test_espera_en_vez_de_fallar_al_instante(self, tmp_path):
+        """Sin busy_timeout SQLite tira "database is locked" de una, y en el
+        navegador eso aparece como un error de red sin explicacion."""
+        from estiba.storage.db import connect
+
+        conn = connect(tmp_path / "x.db")
+        espera = conn.execute("PRAGMA busy_timeout").fetchone()[0]
+        conn.close()
+        assert espera >= 5000
+
+    def test_un_segundo_escritor_no_se_cae(self, tmp_path):
+        import threading
+        from datetime import datetime
+
+        from estiba.core.models import Message, MessageKind
+        from estiba.conversation.store import ConversationStore
+        from estiba.storage.db import connect
+
+        ruta = tmp_path / "y.db"
+        connect(ruta).close()
+        errores = []
+
+        def escribir(n):
+            try:
+                conn = connect(ruta)
+                ConversationStore(conn).ingest([
+                    Message(f"m{n}:{i}", f"c{n}", True, datetime(2026, 9, 20, 10),
+                            MessageKind.TEXT, text="hola")
+                    for i in range(40)
+                ])
+                conn.close()
+            except Exception as e:  # noqa: BLE001
+                errores.append(e)
+
+        hilos = [threading.Thread(target=escribir, args=(n,)) for n in range(4)]
+        for h in hilos:
+            h.start()
+        for h in hilos:
+            h.join()
+        assert not errores, errores
