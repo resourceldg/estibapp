@@ -320,3 +320,44 @@ class TestDireccionesDeVerdad:
         from estiba.extraction.reglas import lugares
         h = lugares("desde chile y alvarado hasta mario bravo y de la maza")
         assert h[0].confianza < 0.7 and h[0].duda
+
+
+class TestComoSeDiceUnPrecio:
+    """Salen de mensajes reales del fletero.
+
+    La regla anterior solo agarraba "sale 45 mil": de 58 conversaciones
+    reconocia un precio en una sola. El fletero escribe "esta 35 mil el
+    flete", "son 40 mil", "desde 35mil".
+    """
+
+    def _precio(self, texto):
+        from estiba.extraction.reglas import precio
+        h = precio(texto)
+        return h[0].valor if h else None
+
+    def test_como_lo_escribe_de_verdad(self):
+        assert self._precio("Genial, sin ayudante esta 35 mil el flete") == 35000
+        assert self._precio("Perfecto son 40 mil el flete") == 40000
+        assert self._precio("Desde 35mil") == 35000
+        assert self._precio("el total es 170.000") == 170000
+
+    def test_un_numero_pelado_no_es_un_precio(self):
+        """Al aceptar "es" y "son" se colaban años: $2.017, $2.026.
+
+        Un precio se escribe de una de tres formas: "$45.000", "45.000" o
+        "45 mil". "es 2026" no es ninguna.
+        """
+        assert self._precio("es 2026") is None
+        assert self._precio("fue en 2017") is None
+        assert self._precio("son 4708 pesos") is None
+
+    def test_lo_que_sale_el_ayudante_no_es_el_flete(self):
+        assert self._precio("15 mil sale el ayudante") is None
+        assert self._precio("el ayudante son 15 mil") is None
+        # Pero si el mensaje habla del flete, ese es el precio.
+        assert self._precio("sin ayudante el flete esta 35 mil") == 35000
+
+    def test_no_confunde_cantidades_con_plata(self):
+        assert self._precio("son 2 cajas") is None
+        assert self._precio("es un segundo piso") is None
+        assert self._precio("quedan 3 sillas") is None

@@ -286,10 +286,18 @@ def ayudantes(texto: str) -> list[Hallazgo]:
 # Precio: solo lo dice el fletero
 # --------------------------------------------------------------------------
 
+#: Como se dice un precio de verdad. La lista corta de antes solo agarraba
+#: "sale 45 mil"; el fletero escribe "esta 35 mil el flete", "son 40 mil",
+#: "desde 35mil". El verbo va siempre antes del numero, a proposito: asi
+#: "15 mil sale el ayudante" no se lee como el precio del flete.
 _PRECIO = re.compile(
-    r"\b(?:sale|salen|seria|serian|cuesta|cuestan|cobro|precio|total)\b"
-    r"[^\d$]{0,12}\$?\s*(\d{1,3}(?:[.,]\d{3})+|\d+)\s*(mil|k|lucas)?\b"
+    r"\b(?:sale|salen|seria|serian|cuesta|cuestan|cobro|cobrarian|precio|total"
+    r"|esta|estan|es|son|queda|quedan|desde|arranca|te\s+lo\s+dejo\s+en|te\s+hago)\b"
+    r"[^\d$]{0,12}(\$)?\s*(\d{1,3}(?:[.,]\d{3})+|\d+)\s*(mil|k|lucas)?\b"
 )
+
+#: Si el numero es lo que sale el ayudante, no es el precio del flete.
+_ES_DEL_AYUDANTE = re.compile(r"\bayudante")
 
 
 def precio(texto: str) -> list[Hallazgo]:
@@ -297,9 +305,18 @@ def precio(texto: str) -> list[Hallazgo]:
     m = _PRECIO.search(p)
     if not m:
         return []
-    valor = int(re.sub(r"[.,]", "", m.group(1)))
-    if m.group(2):
+    signo, numero, escala = m.group(1), m.group(2), m.group(3)
+    # Un precio se escribe de una de tres formas: "$45.000", "45.000" o
+    # "45 mil". Un numero pelado de cuatro cifras es un año, un codigo o
+    # cualquier cosa: "es 2026" no es un precio de flete.
+    if not (signo or escala or re.search(r"[.,]", numero)):
+        return []
+    valor = int(re.sub(r"[.,]", "", numero))
+    if escala:
         valor *= 1000
     if valor < 1000:  # "salen 2 viajes" no es un precio
+        return []
+    # "el ayudante son 15 mil" es un extra, no lo que sale el flete.
+    if _ES_DEL_AYUDANTE.search(p) and "flete" not in p:
         return []
     return [Hallazgo("quoted_price", valor, 0.95, cita(texto, m))]
