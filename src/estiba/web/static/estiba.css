@@ -741,3 +741,33 @@ ul.sin-contar { margin: 4px 0 0; padding-left: 18px; color: var(--tinta-2); }
   border-radius: 12px; background: var(--superficie); color: var(--tinta); font: inherit;
 }
 .posponer > summary .ico { width: 17px; height: 17px; }
+
+/* ----------------------------------------------------------- filtros */
+/* Deslizar, tocar y listo: acotan la lista, nunca la reordenan. */
+.filtros {
+  display: flex; gap: 8px; overflow-x: auto; margin: 0 -16px 16px; padding: 0 16px 4px;
+  scrollbar-width: none; -webkit-overflow-scrolling: touch;
+}
+.filtros::-webkit-scrollbar { display: none; }
+.filtro {
+  flex: none; display: inline-flex; align-items: center; gap: 6px;
+  min-height: 38px; padding: 0 14px; border-radius: 999px;
+  border: 1px solid var(--linea); background: var(--superficie);
+  color: var(--tinta-2); font-size: 14px; font-weight: 600; text-decoration: none;
+}
+.filtro span { color: var(--tenue); font-size: 12px; }
+.filtro.activo {
+  background: var(--tinta); border-color: var(--tinta); color: var(--fondo);
+}
+.filtro.activo span { color: var(--fondo); opacity: .7; }
+.filtro-duda { border-style: dashed; }
+
+/* Una dudosa se resuelve con un toque, sin entrar a la conversacion. */
+.conv-duda {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 0 14px 12px; font-size: 14px; color: var(--tinta-2);
+}
+.conv-duda form { display: contents; }
+.conv-duda .btn { min-height: 36px; padding: 0 16px; font-size: 14px; }
+.conv-fecha { display: inline-flex; align-items: center; gap: 5px; color: var(--tinta-2); font-size: 13px; font-weight: 600; }
+.conv-fecha .ico { width: 14px; height: 14px; }

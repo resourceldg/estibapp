@@ -1,21 +1,17 @@
 {% extends "base.html" %}
 {% from "_macros.html" import icono %}
 {% block contenido %}
-{% set total_accion = acciones | map(attribute=1) | map("length") | sum %}
 <div class="encabezado">
   <h1>Hoy</h1>
-  {% if total_accion or esperando or confirmados %}
-  <p class="bajada">
-    {%- set partes = [] -%}
-    {%- for etiqueta, items in acciones -%}
-      {%- set _ = partes.append(items|length ~ " " ~ etiqueta|lower) -%}
-    {%- endfor -%}
-    {%- if esperando -%}{%- set _ = partes.append(esperando|length ~ " esperando al cliente") -%}{%- endif -%}
-    {%- if confirmados -%}{%- set _ = partes.append(confirmados|length ~ " confirmado" ~ ("s" if confirmados|length > 1 else "")) -%}{%- endif -%}
-    {{ partes | join(" · ") }}
-  </p>
-  {% endif %}
 </div>
+
+{# El tiempo manda: los filtros acotan, no reordenan. #}
+<nav class="filtros" aria-label="Filtros">
+  {% for clave, etiqueta in filtros %}
+  <a class="filtro{% if clave == filtro %} activo{% endif %}{% if clave == 'dudosas' %} filtro-duda{% endif %}"
+     href="/?f={{ clave }}">{{ etiqueta }}{% if cuentas[clave] %} <span>{{ cuentas[clave] }}</span>{% endif %}</a>
+  {% endfor %}
+</nav>
 
 {% if sin_salir %}
 <section class="seccion urgente">
@@ -26,39 +22,21 @@
 </section>
 {% endif %}
 
-{% for etiqueta, items in acciones %}
-<section class="seccion">
-  <h2 class="seccion-titulo">{{ etiqueta }} <span class="seccion-cuenta">{{ items|length }}</span></h2>
-  <ul class="lista">
-    {% for b, f in items %}{% include "_conversacion.html" %}{% endfor %}
-  </ul>
-</section>
-{% endfor %}
-
-{% if confirmados %}
-<section class="seccion">
-  <h2 class="seccion-titulo">Confirmados <span class="seccion-cuenta">{{ confirmados|length }}</span></h2>
-  <ul class="lista">
-    {% for f in confirmados %}{% include "_fila.html" %}{% endfor %}
-  </ul>
-</section>
-{% endif %}
-
-{% if esperando %}
-<section class="seccion">
-  <h2 class="seccion-titulo">Esperando al cliente <span class="seccion-cuenta">{{ esperando|length }}</span></h2>
-  <p class="ayuda">Ya les escribiste: no hay nada que hacer hasta que contesten.</p>
-  <ul class="lista">
-    {% for f in esperando %}{% set b = none %}{% include "_conversacion.html" %}{% endfor %}
-  </ul>
-</section>
-{% endif %}
-
-{% if not total_accion and not sin_salir and not esperando and not confirmados and not frios %}
+{% if filas %}
+<ul class="lista">
+  {% for b, f, dudosa in filas %}{% include "_conversacion.html" %}{% endfor %}
+</ul>
+{% else %}
 <div class="vacio">
   <div class="vacio-ico">{{ icono("check") }}</div>
-  <h2>Todo al día</h2>
-  <p>Cuando a alguien le toque tu respuesta, Estiba te deja el mensaje escrito acá para que lo apruebes.</p>
+  <h2>{% if filtro == "todos" %}Todo al día{% else %}Nada acá{% endif %}</h2>
+  <p>
+    {%- if filtro == "todos" -%}
+      Cuando a alguien le toque tu respuesta, Estiba te deja el mensaje escrito acá para que lo apruebes.
+    {%- else -%}
+      Probá con <a href="/?f=todos">Todos</a>.
+    {%- endif -%}
+  </p>
 </div>
 {% endif %}
 
@@ -67,26 +45,7 @@
   <summary class="seccion-titulo">Pospuestas <span class="seccion-cuenta">{{ pospuestas|length }}</span></summary>
   <p class="ayuda">Vuelven solas cuando corresponda. No están cerradas.</p>
   <ul class="lista">
-    {% for b, f, vuelve in pospuestas %}{% include "_conversacion.html" %}{% endfor %}
-  </ul>
-</details>
-{% endif %}
-
-{% if frios %}
-<details class="seccion cerrada">
-  <summary class="seccion-titulo">Sin noticias hace más de una semana <span class="seccion-cuenta">{{ frios|length }}</span></summary>
-  <p class="ayuda">Escribieron hace rato y no volvieron. Están acá para que no tapen el trabajo de hoy.</p>
-  <ul class="lista">
-    {% for b, f in frios %}{% include "_conversacion.html" %}{% endfor %}
-  </ul>
-</details>
-{% endif %}
-
-{% if cerrados %}
-<details class="seccion cerrada">
-  <summary class="seccion-titulo">Pasados y perdidos <span class="seccion-cuenta">{{ cerrados|length }}</span></summary>
-  <ul class="lista">
-    {% for f in cerrados %}{% include "_fila.html" %}{% endfor %}
+    {% for b, f, vuelve in pospuestas %}{% set dudosa = false %}{% include "_conversacion.html" %}{% endfor %}
   </ul>
 </details>
 {% endif %}

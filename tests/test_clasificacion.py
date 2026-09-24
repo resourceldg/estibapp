@@ -150,3 +150,17 @@ class TestIdentidad:
         r = sincronizar(conn, JobEngine(), datetime(2026, 9, 20, 12))
         assert r.fuera == {"z": "personal"}
         assert not r.fletes and not r.leads
+
+    def test_el_cli_muestra_como_viene_clasificando(self, tmp_path, capsys):
+        from estiba.cli import main
+        from estiba.storage.repositories import ClaseRepository
+
+        conn = self._db(tmp_path, Message("w:1", "w", True, datetime(2026, 9, 20, 10),
+                                          MessageKind.TEXT, text="hola"))
+        repo = ClaseRepository(conn)
+        repo.guardar_inferida("w", "spam", "parece publicidad", datetime(2026, 9, 20, 12))
+        repo.corregir("w", "flete", datetime(2026, 9, 20, 13))
+        conn.close()
+        assert main(["--db", str(tmp_path / "c.db"), "clases"]) == 0
+        salida = capsys.readouterr().out
+        assert "creyó spam" in salida.replace("creyo", "creyó") or "spam" in salida

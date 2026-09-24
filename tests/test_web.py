@@ -174,17 +174,39 @@ class TestPaginas:
         # Lo mas urgente primero: las confirmaciones antes que el seguimiento.
         assert html.index("Confirmar flete") < html.index("Hacer seguimiento")
 
-    def test_la_bandeja_agrupa_por_que_hacer(self, cliente):
+    def test_la_bandeja_va_por_orden_de_llegada(self, cliente):
+        """Clasificar no puede desordenar el dia: lo ultimo que entro, arriba."""
         html = cliente.get("/").text
-        # Cada grupo es una seccion con su titulo, no una lista plana.
-        assert "Para confirmar" in html and "Seguimiento" in html
-        assert html.index("Para confirmar") < html.index("Seguimiento")
+        # El orden en pantalla, leido por los links a cada conversacion.
+        vistos = re.findall(r'class="conv[^"]*" href="/fletes/([^"]+)"', html)
+        fletes = {f["job_id"]: f for f in cliente.get("/api/fletes").json()["en-curso"]}
+        horas = [fletes[j]["ultimo_at"] for j in vistos if j in fletes]
+        assert horas == sorted(horas, reverse=True)
 
-    def test_la_bandeja_junta_lo_que_antes_estaba_en_fletes(self, cliente):
-        """Antes la misma conversacion salia en Bandeja y en Fletes."""
-        html = cliente.get("/").text
-        assert "Confirmados" in html
-        assert "Villa Crespo → Caballito" in html   # confirmado, sin borrador
+    def test_los_filtros_acotan_sin_reordenar(self, cliente):
+        todos = cliente.get("/?f=todos").text
+        assert 'href="/?f=responder"' in todos      # los filtros estan siempre
+        confirmado = "5491177778888:job"            # un flete agendado
+        seguimiento = "5491155556666:job"           # el que espera respuesta
+        assert confirmado in todos and seguimiento in todos
+
+        solo = cliente.get("/?f=confirmados").text
+        assert confirmado in solo and seguimiento not in solo
+
+    def test_un_agendado_no_se_pierde_detras_de_una_consulta_nueva(self, cliente):
+        """Un cliente con un flete agendado y una consulta nueva.
+
+        La fila es una por conversacion, pero la del flete que el filtro
+        pide: si no, el trabajo ya vendido desaparece de Confirmados.
+        """
+        chat = "5491122223333"          # tiene :job agendado y :job2 nuevo
+        todos = cliente.get("/?f=todos").text
+        assert f"{chat}:job2" in todos          # lo ultimo que hablaron
+        confirmados = cliente.get("/?f=confirmados").text
+        assert f"{chat}:job" in confirmados and f"{chat}:job2" not in confirmados
+
+    def test_un_filtro_inventado_no_rompe(self, cliente):
+        assert cliente.get("/?f=cualquiera").status_code == 200
 
     def test_fletes_por_seccion(self, cliente):
         html = cliente.get("/fletes").text

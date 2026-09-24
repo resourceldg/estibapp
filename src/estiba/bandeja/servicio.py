@@ -17,7 +17,7 @@ from datetime import datetime
 
 from estiba.agenda.local import LocalCalendar
 from estiba.bandeja.redactor import proponer
-from estiba.conversation.clasificacion import Clase, clasificar
+from estiba.conversation.clasificacion import Clase, Clasificacion, clasificar
 from estiba.conversation.store import ConversationStore
 from estiba.core.models import Conversation, JobState
 from estiba.crm.leads import LeadInfo, lead_de
@@ -42,6 +42,8 @@ class Resultado:
     agenda: list[tuple[str, str]] = field(default_factory=list)
     #: chat_id -> por que quedo afuera del embudo ("personal", "spam").
     fuera: dict[str, str] = field(default_factory=dict)
+    #: chat_id -> como quedo clasificada la conversacion que si entro.
+    clases: dict[str, Clasificacion] = field(default_factory=dict)
     espejo_error: str | None = None
 
 
@@ -69,11 +71,13 @@ def sincronizar(conn: sqlite3.Connection, engine: JobEngine, ahora: datetime, es
         # puede ser un pedido de flete hoy.
         guardada = guardadas.get(chat_id)
         if guardada is not None and guardada["quien"] == "humano":
-            clase = Clase(guardada["clase"])
+            # Lo que decidio una persona no vuelve a preguntarse nunca.
+            cl = Clasificacion(Clase(guardada["clase"]), "lo dijiste vos", hay_con_que=True)
         else:
-            inferida = clasificar(conv, engine.extractor.extract(conv))
-            clases.guardar_inferida(chat_id, inferida.clase.value, inferida.porque, ahora)
-            clase = inferida.clase
+            cl = clasificar(conv, engine.extractor.extract(conv))
+            clases.guardar_inferida(chat_id, cl.clase.value, cl.porque, ahora)
+        clase = cl.clase
+        r.clases[chat_id] = cl
         # Lo que Estiba sabe que no es negocio no entra al embudo ni a las
         # metricas. La duda si entra: perder un cliente en silencio es peor.
         if clase in (Clase.PERSONAL, Clase.SPAM):

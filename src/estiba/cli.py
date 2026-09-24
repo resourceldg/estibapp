@@ -25,8 +25,8 @@ from estiba.formato import pesos
 from estiba.jobs.engine import JobEngine
 from estiba.jobs.preguntas import ETIQUETAS
 from estiba.jobs.pricing import TARIFA_DEFAULT, PricingEngine, Tarifa
-from estiba.storage.repositories import JobRepository
 from estiba.storage.db import DEFAULT_DB, connect
+from estiba.storage.repositories import ClaseRepository, JobRepository
 
 
 def cmd_ingest(args: argparse.Namespace) -> int:
@@ -110,6 +110,39 @@ def cmd_transcribe(args: argparse.Namespace) -> int:
         f"{len(reporte.sin_archivo)} sin archivo, {len(reporte.fallidos)} fallidos"
     )
     return 1 if reporte.fallidos else 0
+
+
+def cmd_clases(args: argparse.Namespace) -> int:
+    """Como viene clasificando Estiba, y donde la corregiste.
+
+    Las correcciones son el material para afinar las reglas: cada una dice
+    que creyo Estiba y que resulto ser en realidad.
+    """
+    conn = connect(args.db)
+    try:
+        repo = ClaseRepository(conn)
+        todas = repo.todas()
+        if not todas:
+            print("todavia no hay nada clasificado: corre `estiba serve` una vez")
+            return 0
+        cuenta: dict[tuple[str, str], int] = {}
+        for fila in todas.values():
+            cuenta[(fila["clase"], fila["quien"])] = cuenta.get((fila["clase"], fila["quien"]), 0) + 1
+        print(f"{len(todas)} conversaciones clasificadas")
+        for (clase, quien), n in sorted(cuenta.items(), key=lambda x: -x[1]):
+            print(f"  {clase:9} {n:4}  ({'lo dijiste vos' if quien == 'humano' else 'lo dedujo Estiba'})")
+
+        correcciones = repo.correcciones()
+        print()
+        if not correcciones:
+            print("sin correcciones todavia: Estiba no se equivoco, o no la corregiste")
+            return 0
+        print(f"{len(correcciones)} veces que Estiba se equivoco:")
+        for fila in correcciones:
+            print(f"  {fila['chat_id']:18} creyo {fila['clase_previa']:9} -> era {fila['clase']}")
+    finally:
+        conn.close()
+    return 0
 
 
 def cmd_wer(args: argparse.Namespace) -> int:
@@ -406,6 +439,9 @@ def build_parser() -> argparse.ArgumentParser:
     k.add_argument("accion", choices=["estado", "conectar", "importar"])
     k.add_argument("--dias", type=int, default=30, help="para importar: cuantos dias para atras")
     k.set_defaults(func=cmd_waha)
+
+    cl = sub.add_parser("clases", help="como viene clasificando y donde la corregiste")
+    cl.set_defaults(func=cmd_clases)
 
     w = sub.add_parser("wer", help="tasa de error contra la transcripcion esperada")
     w.add_argument("--fixtures", default=str(FIXTURES_DIR))

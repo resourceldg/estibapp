@@ -40,6 +40,7 @@ from estiba.storage.repositories import (
     ActionRepository,
     CRMRepository,
     DraftRepository,
+    ClaseRepository,
     ExclusionRepository,
     SettingsRepository,
     SnoozeRepository,
@@ -259,61 +260,79 @@ def create_app(
         otros = [f for f in _fletes().values() if f.chat_id == conv.chat_id and f.job_id != job_id]
         return P.detalle(job_id, ev, conv, estado.ahora(), borradores, nombre, otros)
 
-    def _trabajo() -> dict:
-        """Todo lo que puede pedir tu atencion, junto y ordenado por que hacer.
+    #: Los filtros de la bandeja. (clave, etiqueta, que deja pasar)
+    FILTROS = [
+        ("todos", "Todos"), ("hoy", "Hoy"), ("responder", "Responder"),
+        ("faltan", "Faltan datos"), ("cotizar", "Cotizar"),
+        ("seguimiento", "Seguimiento"), ("confirmados", "Confirmados"),
+        ("dudosas", "¿Cliente?"),
+    ]
 
-        Antes la misma consulta aparecia en Bandeja y en Fletes sin decir cual
-        mirar. Ahora hay una sola lista: primero lo que te toca hacer, agrupado
-        por accion ("Para cotizar", "Falta origen y destino"), despues lo que
-        esta esperando al cliente, despues lo confirmado, y al final lo cerrado.
+    def _pasa(filtro: str, b: P.Borrador | None, f: P.Flete, dudosa: bool, hoy: str) -> bool:
+        if filtro == "hoy":
+            return f.ultimo_at[:10] == hoy
+        if filtro == "dudosas":
+            return dudosa
+        if filtro == "confirmados":
+            return f.estado in (JobState.CONFIRMED.value, JobState.SCHEDULED.value)
+        tipos = {"responder": "respuesta", "faltan": "preguntas",
+                 "cotizar": "cotizacion", "seguimiento": "seguimiento"}
+        if filtro in tipos:
+            return b is not None and b.tipo == tipos[filtro]
+        return True
+
+    def _conversaciones(filtro: str = "todos") -> dict:
+        """Una sola lista, por orden de llegada. Los filtros solo acotan.
+
+        La cronologia manda: clasificar no puede desordenar el dia. Lo que
+        llego recien va arriba, se llame como se llame.
         """
-        pendientes = _bandeja()
-        con_borrador = {f.job_id for _, f in pendientes}
-
-        # Lo pospuesto no esta entre lo urgente, pero no se cierra: vuelve solo.
+        ahora = estado.ahora()
+        borradores = {f.job_id: b for b, f in _bandeja()}
         conn = estado.conectar()
         try:
-            dormidos = SnoozeRepository(conn).vigentes(estado.ahora())
+            dormidos = SnoozeRepository(conn).vigentes(ahora)
         finally:
             conn.close()
-        pospuestas = [(b, f, dormidos[f.chat_id]) for b, f in pendientes if f.chat_id in dormidos]
-        pendientes = [(b, f) for b, f in pendientes if f.chat_id not in dormidos]
 
-        # El que no escribe hace mas de una semana no es el trabajo de hoy:
-        # baja al fondo, plegado, para que arriba quede lo que esta vivo.
-        corte = (estado.ahora() - timedelta(days=DIAS_FRIO)).isoformat()
-        frios = [(b, f) for b, f in pendientes if f.ultimo_at < corte]
-        vivos = [(b, f) for b, f in pendientes if f.ultimo_at >= corte]
+        dudosas = {
+            chat_id for chat_id, cl in estado.resultado.clases.items() if cl.pide_decision
+        }
+        # Un cliente puede tener varios fletes: uno agendado y una consulta
+        # nueva. Se muestra una fila por conversacion, pero la del flete que
+        # el filtro esta pidiendo; si no, un agendado se pierde detras de una
+        # consulta mas reciente y te quedas sin ver trabajo que ya vendiste.
+        hoy = ahora.date().isoformat()
 
-        # _bandeja() ya viene ordenada por urgencia: el dict conserva ese orden.
-        acciones: dict[str, list[tuple[P.Borrador, P.Flete]]] = {}
-        for b, f in vivos:
-            acciones.setdefault(b.tipo_etiqueta, []).append((b, f))
+        def elegir(clave: str) -> list[tuple[P.Borrador | None, P.Flete, bool]]:
+            por_chat: dict[str, P.Flete] = {}
+            for f in _fletes().values():
+                if f.chat_id in dormidos:
+                    continue
+                if not _pasa(clave, borradores.get(f.job_id), f, f.chat_id in dudosas, hoy):
+                    continue
+                if f.chat_id not in por_chat or f.ultimo_at > por_chat[f.chat_id].ultimo_at:
+                    por_chat[f.chat_id] = f
+            return [
+                (borradores.get(f.job_id), f, f.chat_id in dudosas)
+                for f in sorted(por_chat.values(), key=lambda x: x.ultimo_at, reverse=True)
+            ]
 
-        fletes = list(_fletes().values())
-        activos = (JobState.CONFIRMED.value, JobState.SCHEDULED.value)
-        abiertos = (JobState.DRAFT.value, JobState.QUOTED.value, JobState.WAITING_CUSTOMER.value)
-        confirmados = sorted(
-            (f for f in fletes if f.estado in activos and not f.pasado),
-            key=lambda f: f.fecha_iso or "9999",
-        )
-        esperando = sorted(
-            (f for f in fletes if f.estado in abiertos and f.job_id not in con_borrador),
-            key=lambda f: f.ultimo_at, reverse=True,
-        )
-        vistos = con_borrador | {f.job_id for f in confirmados} | {f.job_id for f in esperando}
-        cerrados = sorted(
-            (f for f in fletes if f.job_id not in vistos),
-            key=lambda f: f.fecha_iso or f.ultimo_at, reverse=True,
-        )
+        filas = elegir(filtro)
+        pospuestas, vistos = [], set()
+        for f in sorted(_fletes().values(), key=lambda x: x.ultimo_at, reverse=True):
+            if f.chat_id in dormidos and f.chat_id not in vistos:
+                vistos.add(f.chat_id)
+                pospuestas.append((borradores.get(f.job_id), f, dormidos[f.chat_id]))
+
+        cuentas = {clave: len(elegir(clave)) for clave, _ in FILTROS}
         return {
             "sin_salir": _sin_salir(),
-            "acciones": list(acciones.items()),
-            "frios": frios,
+            "filas": filas,
             "pospuestas": sorted(pospuestas, key=lambda x: x[2]),
-            "esperando": esperando,
-            "confirmados": confirmados,
-            "cerrados": cerrados,
+            "filtros": FILTROS,
+            "filtro": filtro,
+            "cuentas": cuentas,
         }
 
     def _secciones(fletes: list[P.Flete]) -> list[tuple[str, str, list[P.Flete]]]:
@@ -387,9 +406,11 @@ def create_app(
     # ------------------------------------------------------------------
 
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
-    def pagina_bandeja(request: Request):
+    def pagina_bandeja(request: Request, f: str = "todos"):
+        filtro = f if any(c == f for c, _ in FILTROS) else "todos"
         return templates.TemplateResponse(
-            request, "bandeja.html", _contexto(request, **_trabajo(), titulo="Bandeja"),
+            request, "bandeja.html",
+            _contexto(request, **_conversaciones(filtro), titulo="Hoy"),
         )
 
     @app.get("/agenda", response_class=HTMLResponse, include_in_schema=False)
@@ -551,6 +572,20 @@ def create_app(
     def perdido_form(request: Request, job_id: str, nota: str = Form("")):
         _accion(job_id, PERDIDO, nota)
         return _volver(request, f"/fletes/{job_id}")
+
+    @app.post("/clientes/{chat_id}/clase", include_in_schema=False)
+    def clase_form(request: Request, chat_id: str, clase: str = Form(...)):
+        """Un toque para resolver una dudosa. Queda guardado que dijo Estiba
+        y que dijiste vos: con eso se afinan las reglas mas adelante."""
+        if clase not in ("flete", "personal", "spam"):
+            raise HTTPException(400, f"no se que clase es {clase!r}")
+        conn = estado.conectar()
+        try:
+            ClaseRepository(conn).corregir(chat_id, clase, estado.ahora())
+        finally:
+            conn.close()
+        estado.sincronizar()
+        return _volver(request, "/")
 
     @app.post("/fletes/{job_id}/posponer", include_in_schema=False)
     def posponer_form(request: Request, job_id: str, cuando: str = Form("manana"),

@@ -15,7 +15,23 @@
     <div class="conv-linea3">
       {% if b %}<span class="conv-accion">{{ icono(b.accion_icono) }}{{ b.accion }}</span>{% endif %}
       {{ chip(f.estado_etiqueta, f.tono) }}
+      {# Si ya tiene fecha, es trabajo agendado: se ve sin entrar. #}
+      {% if f.fecha %}<span class="conv-fecha">{{ icono("agenda") }}{{ f.fecha }}{% if f.hora %} · {{ f.hora }}{% endif %}</span>{% endif %}
       {% if f.alertas %}<span class="alerta-mini">{{ icono("aviso") }}{{ f.alertas|length }}</span>{% endif %}
     </div>
   </a>
+  {# Estiba no pudo determinar si es del negocio: un toque y sigue. #}
+  {% if dudosa %}
+  <div class="conv-duda">
+    <span>¿Es un cliente?</span>
+    <form method="post" action="/clientes/{{ f.chat_id }}/clase" hx-post="/clientes/{{ f.chat_id }}/clase">
+      <input type="hidden" name="clase" value="flete">
+      <button class="btn secundario chico" type="submit">Sí</button>
+    </form>
+    <form method="post" action="/clientes/{{ f.chat_id }}/clase" hx-post="/clientes/{{ f.chat_id }}/clase">
+      <input type="hidden" name="clase" value="personal">
+      <button class="btn fantasma chico" type="submit">No</button>
+    </form>
+  </div>
+  {% endif %}
 </li>
