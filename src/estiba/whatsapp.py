@@ -12,11 +12,18 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import datetime
 
-from estiba.adapters.waha import ErrorWaha, WahaClient, es_persona, ingresar, normalizar
+from estiba.adapters.waha import (
+    ErrorWaha,
+    WahaClient,
+    es_persona,
+    ingresar,
+    normalizar,
+    telefono_de,
+)
 from estiba.audio.pipeline import AudioPipeline, ReporteAudio
 from estiba.conversation.store import ConversationStore
 from estiba.core.models import Message
-from estiba.storage.repositories import DraftRepository
+from estiba.storage.repositories import CRMRepository, DraftRepository
 
 EVENTOS_DE_MENSAJE = ("message", "message.any")
 
@@ -55,7 +62,28 @@ class WhatsApp:
                 continue
             mensajes = [m for p in self.cliente.mensajes(jid, desde) if (m := ingresar(self.cliente, p))]
             nuevos += store.ingest(mensajes)
+            self._guardar_nombre(conn, jid, chat.get("name"))
         return nuevos
+
+    def nombres(self, conn: sqlite3.Connection, limite_chats: int = 300) -> int:
+        """Trae de WhatsApp como se llama cada contacto. Sin historial ni audios.
+
+        Una lista de telefonos no dice nada: con el nombre se reconoce de un
+        vistazo quien escribio.
+        """
+        traidos = 0
+        for chat in self.cliente.chats(limite_chats):
+            jid = chat["id"] if isinstance(chat["id"], str) else chat["id"].get("_serialized", "")
+            if es_persona(jid):
+                traidos += int(self._guardar_nombre(conn, jid, chat.get("name")))
+        return traidos
+
+    def _guardar_nombre(self, conn: sqlite3.Connection, jid: str, nombre: str | None) -> bool:
+        if not (nombre or "").strip():
+            return False
+        chat_id = telefono_de(jid) or self.cliente.telefono_de_lid(jid) or jid
+        CRMRepository(conn).set_wa_name(chat_id, nombre, datetime.now())
+        return True
 
     def transcribir(self, conn: sqlite3.Connection) -> ReporteAudio | None:
         """Los audios pendientes, si Whisper esta instalado. Si no, quedan en espera."""

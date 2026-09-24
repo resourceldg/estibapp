@@ -392,12 +392,30 @@ class CRMRepository:
                 previa = paso.etapa.value
 
     def name(self, chat_id: str) -> str | None:
-        fila = self.conn.execute("SELECT display_name FROM contacts WHERE id = ?", (chat_id,)).fetchone()
-        return fila["display_name"] if fila else None
+        """El nombre a mostrar: manda el que puso el fletero, si puso uno."""
+        fila = self.conn.execute(
+            "SELECT display_name, wa_name FROM contacts WHERE id = ?", (chat_id,)
+        ).fetchone()
+        return (fila["display_name"] or fila["wa_name"]) if fila else None
 
     def names(self) -> dict[str, str]:
-        filas = self.conn.execute("SELECT id, display_name FROM contacts WHERE display_name IS NOT NULL")
-        return {f["id"]: f["display_name"] for f in filas}
+        filas = self.conn.execute(
+            "SELECT id, display_name, wa_name FROM contacts "
+            "WHERE display_name IS NOT NULL OR wa_name IS NOT NULL"
+        )
+        return {f["id"]: f["display_name"] or f["wa_name"] for f in filas}
+
+    def set_wa_name(self, chat_id: str, nombre: str | None, ahora: datetime) -> None:
+        """El nombre que viene de WhatsApp. Crea el contacto si no existia."""
+        nombre = (nombre or "").strip() or None
+        if nombre is None:
+            return
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO contacts (id, chat_id, first_seen, wa_name) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT (id) DO UPDATE SET wa_name = excluded.wa_name",
+                (chat_id, chat_id, _a_texto(ahora), nombre),
+            )
 
     def set_name(self, chat_id: str, nombre: str | None) -> None:
         nombre = (nombre or "").strip() or None

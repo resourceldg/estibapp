@@ -827,3 +827,8 @@ body:has(.barra-accion) { padding-bottom: calc(var(--tabbar) + 48px + env(safe-a
 }
 .msj-largo[open] > summary { display: none; }
 .msj-largo p { font-size: 15px; white-space: pre-line; }
+/* Disponible pero casi invisible: no puede costarle una linea entera a
+   cada fila de la lista. */
+.conv-duda.discreto { padding: 0 12px 8px; justify-content: flex-end; margin-top: -6px; }
+.conv-duda.discreto .btn.texto { min-height: 26px; font-size: 12px; }
+.privado { margin-bottom: 12px; }

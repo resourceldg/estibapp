@@ -52,6 +52,7 @@ class WahaFalso:
         self.pedidos: list[tuple[str, str]] = []
         self.lids = {"99887766@lid": "5491122223333@c.us"}
         self.historial = {f"{CLIENTE}@c.us": [mensaje()]}
+        self.nombres = {f"{CLIENTE}@c.us": "Cliente de prueba"}
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         ruta, metodo = request.url.path, request.method
@@ -89,7 +90,10 @@ class WahaFalso:
         if ruta.startswith("/api/files/"):
             return httpx.Response(200, content=b"OggS audio")
         if ruta == "/api/default/chats":
-            return httpx.Response(200, json=[{"id": jid} for jid in [*self.historial, "12036@g.us"]])
+            return httpx.Response(200, json=[
+                {"id": jid, "name": self.nombres.get(jid, "")}
+                for jid in [*self.historial, "12036@g.us"]
+            ])
         if ruta.startswith("/api/default/chats/") and ruta.endswith("/messages"):
             return httpx.Response(200, json=self.historial.get(ruta.split("/")[4], []))
         return httpx.Response(404, json={"ruta": ruta})
@@ -458,3 +462,30 @@ class TestMotores:
         m = normalizar(mensaje(fromMe=True, **{"from": f"{CLIENTE}@c.us", "to": None}))
         assert m is not None
         assert m.chat_id == CLIENTE and not m.from_customer
+
+
+class TestNombres:
+    """Una lista de telefonos no dice nada: con el nombre se reconoce."""
+
+    def test_trae_como_se_llama_cada_contacto(self, cliente_waha, falso, tmp_path):
+        from estiba.storage.db import connect
+        from estiba.storage.repositories import CRMRepository
+
+        falso.sesion = {"name": "default", "status": "WORKING", "config": {}, "me": None}
+        conn = connect(tmp_path / "n.db")
+        WhatsApp(cliente_waha).nombres(conn)
+        assert CRMRepository(conn).name(CLIENTE) == "Cliente de prueba"
+
+    def test_el_nombre_que_pusiste_vos_no_se_pisa(self, cliente_waha, tmp_path):
+        """Si escribiste "Sabi (vecina)", una importacion no te lo cambia."""
+        from datetime import datetime as dt
+
+        from estiba.storage.db import connect
+        from estiba.storage.repositories import CRMRepository
+
+        conn = connect(tmp_path / "n.db")
+        repo = CRMRepository(conn)
+        repo.set_wa_name(CLIENTE, "Como figura en WhatsApp", dt(2026, 9, 24, 10))
+        repo.set_name(CLIENTE, "Sabi (vecina)")
+        repo.set_wa_name(CLIENTE, "Otro nombre", dt(2026, 9, 24, 11))
+        assert repo.name(CLIENTE) == "Sabi (vecina)"

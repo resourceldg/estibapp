@@ -190,9 +190,18 @@
 </details>
 {% endif %}
 
-{# No todo mensaje es un cliente: se le contesta algo y sale del circuito. #}
+{# A la vista y de un toque: a veces escribe la pareja. Nivel 3, sin color:
+   esta disponible pero no compite con la accion principal. #}
+<form class="privado" method="post" action="/clientes/{{ f.chat_id }}/clase"
+      hx-post="/clientes/{{ f.chat_id }}/clase"
+      hx-confirm="¿{{ f.quien }} es privado? Sale de la bandeja y de los números. Los mensajes quedan.">
+  <input type="hidden" name="clase" value="personal">
+  <button class="btn secundario ancho" type="submit">{{ icono("clientes") }}<span>Es privado, no es cliente</span></button>
+</form>
+
+{# Spam o numero equivocado, con la opcion de contestarle antes. #}
 <details class="panel perder">
-  <summary>{{ icono("cruz") }}No es cliente</summary>
+  <summary>{{ icono("cruz") }}Spam o número equivocado</summary>
   <p class="ayuda">Charla personal, spam o número equivocado. {{ f.quien }} sale de Hoy, Fletes y Clientes para siempre. No se borra ningún mensaje.</p>
   <form method="post" action="/fletes/{{ f.job_id }}/no-es-cliente" hx-post="/fletes/{{ f.job_id }}/no-es-cliente">
     <label for="despedida">Contestarle antes <span class="opcional">Opcional</span></label>

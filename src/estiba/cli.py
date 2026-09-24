@@ -366,6 +366,10 @@ def cmd_waha(args: argparse.Namespace) -> int:
             info = w.cliente.conectar(secreto)
             print(f"Sesion {info.get('status')}. Escanea el QR desde el dashboard: /whatsapp")
             return 0
+        if args.accion == "nombres":
+            traidos = w.nombres(conn)
+            print(f"{traidos} contactos con nombre")
+            return 0
         if args.accion == "importar":
             desde = datetime.now() - timedelta(days=args.dias)
             nuevos = w.importar(conn, desde)
@@ -436,7 +440,7 @@ def build_parser() -> argparse.ArgumentParser:
     v.set_defaults(func=cmd_serve)
 
     k = sub.add_parser("waha", help="WhatsApp por WAHA: estado, conectar, importar historial")
-    k.add_argument("accion", choices=["estado", "conectar", "importar"])
+    k.add_argument("accion", choices=["estado", "conectar", "importar", "nombres"])
     k.add_argument("--dias", type=int, default=30, help="para importar: cuantos dias para atras")
     k.set_defaults(func=cmd_waha)
 

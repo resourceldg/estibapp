@@ -20,6 +20,18 @@
       {% if f.alertas %}<span class="alerta-mini">{{ icono("aviso") }}{{ f.alertas|length }}</span>{% endif %}
     </div>
   </a>
+  {# Siempre a mano: a veces escribe la pareja y hay que poder sacarla sin
+     entrar a buscar el boton adentro de un desplegable. #}
+  {% if not dudosa %}
+  <div class="conv-duda discreto">
+    <form method="post" action="/clientes/{{ f.chat_id }}/clase" hx-post="/clientes/{{ f.chat_id }}/clase"
+          hx-confirm="¿{{ f.quien }} es privado? Sale de la bandeja y de los números.">
+      <input type="hidden" name="clase" value="personal">
+      <button class="btn texto" type="submit">Es privado</button>
+    </form>
+  </div>
+  {% endif %}
+
   {# Estiba no pudo determinar si es del negocio: un toque y sigue. #}
   {% if dudosa %}
   <div class="conv-duda">
