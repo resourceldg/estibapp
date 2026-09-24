@@ -11,6 +11,7 @@ from estiba.core.models import JobState
 from estiba.extraction.extractor import Extraccion
 from estiba.extraction.fechas import nombre_dia
 from estiba.extraction.reglas import leer_item
+from estiba.extraction.texto import plano
 
 ETIQUETAS = {
     "origin": "origen", "destination": "destino", "items": "qué lleva",
@@ -30,6 +31,24 @@ _SI_FALTA = {
     "when": "¿Para qué día lo necesitás?",
     "hour": "¿A qué hora te queda bien?",
 }
+#: Cargas donde el tamano cambia el flete. No se pregunta para todo: por una
+#: caja de ropa no importa, por una heladera si.
+_VOLUMINOSAS = (
+    "heladera", "freezer", "lavarropas", "cama", "colchon", "sommier", "placard",
+    "ropero", "sillon", "sofa", "mesa", "escritorio", "comoda", "biblioteca",
+    "modular", "mueble", "cocina", "estufa",
+)
+
+def _voluminosa(items: list[str]) -> str | None:
+    """La primera carga donde el tamano cambia el flete, si hay alguna."""
+    for texto in items:
+        liso = plano(texto)
+        for cosa in _VOLUMINOSAS:
+            if cosa in liso:
+                return cosa
+    return None
+
+
 _SI_HAY_DUDA = {
     "origin": "¿Me pasás bien el barrio de donde sale?",
     "destination": "¿Me pasás bien el barrio a donde va?",
@@ -65,6 +84,13 @@ def preguntas(ex: Extraccion, estado: JobState) -> list[str]:
                 cosa = leer_item(texto)
                 if cosa is not None and cosa.en_plural and cosa.cantidad is None:
                     salida.append(f"¿Cuántas {cosa.plural} son, más o menos?")
+
+    # Las medidas van al final: son utiles, no obligatorias. Solo mientras se
+    # esta cotizando; despues de confirmar el flete ya no cambian nada.
+    if estado is JobState.DRAFT and (ganador := ex.ganadores.get("items")) is not None:
+        if cosa := _voluminosa(ganador.slot.value):
+            articulo = "de la" if cosa.endswith("a") else "del"
+            salida.append(f"¿Sabés más o menos las medidas {articulo} {cosa}?")
 
     # "no hay ascensor" sin piso no llena el campo, pero hay que preguntarlo.
     if "floors_no_lift" in campos and "floors_no_lift" not in ex.ganadores:

@@ -50,10 +50,42 @@ def _propuesta(conv: Conversation, ahora: datetime = datetime(2026, 9, 15, 11)):
 
 
 class TestRedactor:
-    def test_faltan_datos_pregunta_todo_junto(self):
+    def test_pregunta_como_una_persona_no_como_un_formulario(self):
         p = _propuesta(_chat(("c", "hola, haces fletes?")))
         assert p.kind == "preguntas"
-        assert p.text.startswith("¡Buenas! Para pasarte el precio necesito un par de datos:\n• ")
+        assert p.text == "¡Buenas! ¿Desde qué barrio sería? ¿Hasta dónde lo llevamos?"
+        assert "•" not in p.text and "\n" not in p.text
+
+    def test_nunca_mas_de_dos_preguntas(self):
+        """Tres ya es un formulario: el cliente contesta una sola."""
+        p = _propuesta(_chat(("c", "hola")))
+        assert p.text.count("?") <= 2
+
+    def test_primero_reconoce_lo_que_entendio(self):
+        """Repreguntar lo que ya dijo es la forma mas rapida de perderlo."""
+        p = _propuesta(_chat(("c", "tengo que llevar una heladera de Almagro a Boedo")))
+        assert p.text.startswith("Perfecto, heladera de Almagro a Boedo.")
+        assert "barrio" not in p.text          # no vuelve a preguntar el origen
+
+    def test_las_medidas_se_preguntan_solo_si_el_tamano_importa(self):
+        """Por una heladera importan; por unas cajas, no.
+
+        Van ultimas: primero lo que hace falta para cotizar. Con el tope de
+        dos preguntas, muchas veces quedan para el mensaje siguiente.
+        """
+        def pendientes(texto):
+            conv = _chat(("c", texto))
+            return JobEngine().evaluar(conv, datetime(2026, 9, 15, 11)).preguntas
+
+        assert "¿Sabés más o menos las medidas de la heladera?" in pendientes(
+            "llevo una heladera de Almagro a Boedo")
+        assert not [p for p in pendientes("llevo unas cajas de Almagro a Boedo")
+                    if "medidas" in p]
+
+    def test_con_datos_para_cotizar_no_pregunta_de_mas(self):
+        """Tu regla: si alcanza para cotizar, se cotiza."""
+        p = _propuesta(_chat(("c", "llevo una heladera de Almagro a Boedo, hay ascensor")))
+        assert p.kind == "cotizacion" and "medidas" not in p.text
 
     def test_la_razon_dice_que_falta_exactamente(self):
         p = _propuesta(_chat(("c", "hola, haces fletes?")))

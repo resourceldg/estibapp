@@ -39,8 +39,34 @@ def _cosas(items: list[str]) -> str:
     return ", ".join(items[:-1]) + " y " + items[-1]
 
 
-def _lista(preguntas: list[str]) -> str:
-    return "\n".join(f"• {p}" for p in preguntas)
+def _reconocer(job) -> str:
+    """Lo que ya se entendio, dicho como lo diria una persona.
+
+    Repreguntar algo que el cliente ya dijo es la forma mas rapida de que
+    piense que no lo leyeron. Primero se le muestra que si.
+    """
+    if job.origin and job.destination:
+        donde = f"de {job.origin.value} a {job.destination.value}"
+    elif job.origin:
+        donde = f"desde {job.origin.value}"
+    elif job.destination:
+        donde = f"hasta {job.destination.value}"
+    else:
+        donde = ""
+    que = _cosas(job.items.value) if job.items else ""
+    if que and donde:
+        return f"Perfecto, {que} {donde}."
+    if donde:
+        return f"Perfecto, {donde}."
+    if que:
+        return f"Perfecto, {que}."
+    return ""
+
+
+def _juntar(frases: list[str]) -> str:
+    """Un mensaje de WhatsApp, no un formulario: frases seguidas y corto."""
+    return " ".join(f for f in frases if f).strip()
+
 
 
 def proponer(ev: Evaluacion, conv: Conversation, ahora: datetime) -> Propuesta | None:
@@ -118,12 +144,15 @@ def proponer(ev: Evaluacion, conv: Conversation, ahora: datetime) -> Propuesta |
         return propuesta(COTIZACION, "Tiene todos los datos para cotizar", texto)
 
     if ev.preguntas:
-        if len(ev.preguntas) == 1:
-            texto = f"¡Buenas! {ev.preguntas[0]}"
-        elif estado is JobState.DRAFT:
-            texto = "¡Buenas! Para pasarte el precio necesito un par de datos:\n" + _lista(ev.preguntas)
+        # Como maximo dos preguntas: tres ya es un formulario, y el cliente
+        # contesta una sola. Las que quedan se preguntan en el mensaje que
+        # viene, cuando conteste estas.
+        pide = ev.preguntas[:2]
+        reconocido = _reconocer(job)
+        if reconocido:
+            texto = _juntar([reconocido, *pide])
         else:
-            texto = "¡Buenas! Me faltan un par de datos:\n" + _lista(ev.preguntas)
+            texto = _juntar(["¡Buenas!", *pide])
         # "Falta origen y destino" dice mas que "Faltan datos": ya se sabe
         # que falta, no hace falta abrir el flete para verlo.
         faltan = [ETIQUETAS[campo] for campo in job.missing]
