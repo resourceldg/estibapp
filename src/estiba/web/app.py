@@ -47,6 +47,7 @@ from estiba.conversation.store import ConversationStore
 from estiba.core.models import JobState
 from estiba.crm import embudo
 from estiba.formato import telefono
+from estiba.jobs import aprendido
 from estiba.jobs.engine import (
     COTIZADO,
     MOTIVOS_PERDIDA,
@@ -199,6 +200,7 @@ def create_app(
         estaticos = (AQUI / "static").glob("*.[cj]s*")
         return str(int(max((f.stat().st_mtime for f in estaticos), default=0)))
     templates = Jinja2Templates(directory=AQUI / "templates")
+    templates.env.filters["pesos"] = lambda v: P.pesos(Decimal(v))
 
     # ------------------------------------------------------------------
     # Clave: obligatoria si el dashboard se abre a la red
@@ -538,6 +540,7 @@ def create_app(
         filtro = f if any(c == f for c, _ in FILTROS) else "todos"
         anterior, siguiente = _vecinos(job_id, filtro)
         clase = estado.resultado.clases.get(d.flete.chat_id)
+        sugerido = _precio_aprendido(job_id)
         conn2 = estado.conectar()
         try:
             guardada = ClaseRepository(conn2).de(d.flete.chat_id)
@@ -550,6 +553,7 @@ def create_app(
                 plazos=PLAZOS, dudosa=bool(clase and clase.pide_decision),
                 motivos=MOTIVOS_PERDIDA,
                 clase=guardada["clase"] if guardada else None,
+                sugerido=sugerido,
                 clase_porque=(guardada["porque"] if guardada else None),
                 pospuesta_hasta=P.cuando_vuelve(dormida, estado.ahora()) if dormida else None,
                 titulo=d.flete.quien,
@@ -733,6 +737,29 @@ def create_app(
         finally:
             conn.close()
         estado.sincronizar()
+
+    def _precio_aprendido(job_id: str):
+        """Que cobrar, segun lo que este fletero cobro antes.
+
+        La tarifa de fabrica supone una ciudad y unos precios que pueden no
+        ser los de este negocio. Esto no supone nada: son sus numeros.
+        """
+        par = estado.resultado.fletes.get(job_id)
+        if par is None:
+            return None
+        ev, _ = par
+        conn = estado.conectar()
+        try:
+            filas = PanelRepository(conn).cotizaciones_pasadas()
+        finally:
+            conn.close()
+        historial = []
+        for fila in filas:
+            otro = estado.resultado.fletes.get(fila["job_id"])
+            if otro is None or fila["job_id"] == job_id:
+                continue
+            historial.append((aprendido.categoria(otro[0].job), Decimal(fila["monto"])))
+        return aprendido.sugerir(ev.job, historial)
 
     def _vecinos(job_id: str, filtro: str) -> tuple[str | None, str | None]:
         """La anterior y la siguiente, en el orden del filtro que estas usando.

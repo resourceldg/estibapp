@@ -8,6 +8,14 @@ document.addEventListener("click", (e) => {
   if (!boton) return;
   const area = boton.form.querySelector("textarea");
   const texto = area.value.trim();
+  // Un mensaje con el hueco del precio sin completar no puede salir.
+  if (/\$_+/.test(texto)) {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    const campo = boton.form.querySelector("[data-monto]");
+    if (campo) { campo.classList.add("vacio-error"); campo.focus(); }
+    return;
+  }
   if (!texto) {
     e.preventDefault();
     e.stopImmediatePropagation();
@@ -129,14 +137,16 @@ const PASO_PRECIO = 1000;
 
 const conPuntos = (n) => n.toLocaleString("es-AR");
 
+// El precio del mensaje es el primer "$..." que aparece, sea un numero o el
+// hueco "$___" que deja Estiba cuando no sabe cuanto cobrar.
+const PRECIO_EN_TEXTO = /\$\s?[\d.]+|\$_+/;
+
 const escribirPrecio = (campo) => {
   const area = document.getElementById(campo.dataset.destino);
   if (!area) return;
   const valor = parseInt(campo.value.replace(/\D/g, ""), 10);
   if (!valor) return;
-  const anterior = parseInt(campo.dataset.enTexto || campo.dataset.original, 10);
-  area.value = area.value.replace(`$${conPuntos(anterior)}`, `$${conPuntos(valor)}`);
-  campo.dataset.enTexto = String(valor);
+  area.value = area.value.replace(PRECIO_EN_TEXTO, `$${conPuntos(valor)}`);
 };
 
 document.addEventListener("click", (e) => {
@@ -151,4 +161,16 @@ document.addEventListener("click", (e) => {
 
 document.addEventListener("input", (e) => {
   if (e.target.matches("[data-monto]")) escribirPrecio(e.target);
+});
+
+// "Usar" lo que se cobro antes: llena el campo y reescribe el mensaje, sin
+// que haya que copiar un numero a mano.
+document.addEventListener("click", (e) => {
+  const boton = e.target.closest("[data-usar]");
+  if (!boton) return;
+  const campo = document.querySelector("[data-monto]");
+  if (!campo) return;
+  campo.value = conPuntos(parseInt(boton.dataset.usar, 10));
+  campo.classList.remove("vacio-error");
+  escribirPrecio(campo);
 });

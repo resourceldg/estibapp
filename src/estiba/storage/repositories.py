@@ -613,6 +613,18 @@ class PanelRepository:
         )
         return [dict(f) for f in filas if f["sugerido"] or f["cotizado"] or f["cobrado"]]
 
+    def cotizaciones_pasadas(self, limite: int = 60) -> list[sqlite3.Row]:
+        """Lo que se cotizo antes, de lo mas nuevo a lo mas viejo.
+
+        Es el material con el que Estiba aprende a cobrar: no una tarifa
+        de fabrica, sino lo que este fletero cobra de verdad.
+        """
+        return list(self.conn.execute(
+            "SELECT a.job_id, a.monto, a.at FROM job_actions a "
+            "WHERE a.action = 'cotizado' AND a.monto IS NOT NULL "
+            "ORDER BY a.at DESC LIMIT ?", (limite,)
+        ))
+
     def correcciones_de_clase(self) -> list[sqlite3.Row]:
         return list(self.conn.execute(
             "SELECT * FROM clase_historia WHERE quien = 'humano' "

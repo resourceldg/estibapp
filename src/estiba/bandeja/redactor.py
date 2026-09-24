@@ -19,6 +19,10 @@ from estiba.formato import pesos
 from estiba.jobs.engine import Evaluacion
 from estiba.jobs.preguntas import ETIQUETAS
 
+#: El hueco del precio cuando Estiba no puede calcularlo. Se completa desde
+#: el campo de precio; el mensaje no sale con esto adentro.
+SIN_PRECIO = "$___"
+
 RESPUESTA = "respuesta"
 PREGUNTAS = "preguntas"
 COTIZACION = "cotizacion"
@@ -142,8 +146,11 @@ def proponer(ev: Evaluacion, conv: Conversation, ahora: datetime) -> Propuesta |
 
     if d.accion is Accion.COTIZAR:
         p = ev.presupuesto
+        # Sin tarifa no hay numero, pero el mensaje se arma igual: el hueco
+        # se completa con el campo de precio, no editando el texto.
+        cuanto = pesos(p.total) if p is not None and p.completo else SIN_PRECIO
         texto = (
-            f"Te sale {pesos(p.total)}, de {job.origin.value} a {job.destination.value}, "
+            f"Te sale {cuanto}, de {job.origin.value} a {job.destination.value}, "
             f"con carga y descarga de {_cosas(job.items.value)}."
         )
         if job.when is None:

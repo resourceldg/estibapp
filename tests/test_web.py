@@ -771,3 +771,38 @@ class TestPanel:
         """El nombre se valida contra el esquema real."""
         assert cliente.get("/panel/exportar/sqlite_master.csv").status_code == 404
         assert cliente.get("/panel/exportar/no_existe.csv").status_code == 404
+
+
+class TestCotizarAMano:
+    """La tarifa puede no estar definida y el flete igual esta listo."""
+
+    def _sin_tarifa(self):
+        """Un motor que no sabe cobrar: le falta la zona, como en Mar del Plata."""
+        return JobEngine()
+
+    def test_con_los_datos_se_puede_cotizar_aunque_no_haya_precio(self):
+        conv = _chat(("c", "necesito llevar una heladera desde b.goñi 836 "
+                           "hasta Colón 10955, hay ascensor"))
+        p = proponer(self._sin_tarifa().evaluar(conv, datetime(2026, 9, 15, 11)),
+                     conv, datetime(2026, 9, 15, 11))
+        assert p.kind == "cotizacion"
+        assert "b.goñi 836" in p.text and "Colón 10955" in p.text
+
+    def test_deja_el_hueco_del_precio_para_completar(self):
+        from estiba.bandeja.redactor import SIN_PRECIO
+
+        conv = _chat(("c", "necesito llevar una heladera desde b.goñi 836 "
+                           "hasta Colón 10955, hay ascensor"))
+        p = proponer(self._sin_tarifa().evaluar(conv, datetime(2026, 9, 15, 11)),
+                     conv, datetime(2026, 9, 15, 11))
+        assert SIN_PRECIO in p.text
+
+    def test_el_campo_de_precio_esta_aunque_no_haya_sugerencia(self, cliente, db):
+        conn = connect(db)
+        ConversationStore(conn).ingest([Message(
+            "m:1", "m", True, datetime(2026, 9, 18, 10), MessageKind.TEXT,
+            text="necesito llevar una heladera desde b.goñi 836 hasta Colón 10955, hay ascensor")])
+        conn.close()
+        with TestClient(create_app(db, ahora=lambda: JUEVES_18)) as c:
+            html = c.get("/fletes/m:job").text
+            assert "data-monto" in html and "Poné el precio" in html

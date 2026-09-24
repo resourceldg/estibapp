@@ -18,6 +18,7 @@ from enum import Enum
 from estiba.core.models import Conversation, JobState
 from estiba.extraction.intencion import Intencion
 from estiba.jobs.engine import Evaluacion
+from estiba.jobs.preguntas import PARA_COTIZAR
 
 
 class Accion(Enum):
@@ -98,8 +99,12 @@ def decidir(ev: Evaluacion, conv: Conversation, ahora: datetime) -> Decision:
         return Decision(Accion.CONFIRMAR, "Aceptó: falta confirmarle los detalles")
 
     # Escribio el cliente, y el flete sigue abierto.
-    p = ev.presupuesto
-    if estado is JobState.DRAFT and p is not None and p.completo:
+    #
+    # Cotizar depende de tener los datos, no de que Estiba sepa el precio.
+    # La tarifa puede no estar definida —pasa cuando el negocio no es donde
+    # el sistema supone— y aun asi el trabajo esta listo para cotizarse: los
+    # datos estan, el precio lo pone una persona.
+    if estado is JobState.DRAFT and not [c for c in PARA_COTIZAR if c not in ev.extraccion.ganadores]:
         return Decision(Accion.COTIZAR, "Tiene todos los datos para cotizar")
 
     texto_ultimo = (conv.text_of(ultimo) or "").rstrip()

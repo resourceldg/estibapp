@@ -950,3 +950,19 @@ summary::-webkit-details-marker { display: none; }
 .tabla .num { text-align: right; font-variant-numeric: tabular-nums; }
 .descargas { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
 .descargas-csv { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.monto-campo.vacio-error { border-color: var(--mal); animation: sacudir .3s; }
+
+/* Lo que cobraste antes. Es informacion con un atajo, no una accion. */
+.aprendido {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 12px; padding: 10px 12px;
+  background: var(--superficie-2); border: 1px dashed var(--linea-2);
+  border-radius: var(--radio-chico);
+}
+.usar-precio {
+  border: 1px solid var(--linea-2); border-radius: 999px; background: var(--superficie);
+  color: var(--tinta); font: inherit; font-size: 14px; font-weight: 650;
+  min-height: 34px; padding: 0 14px; cursor: pointer; white-space: nowrap;
+}
+.usar-precio:hover { border-color: var(--tinta-2); }
+.aprendido-porque { color: var(--tenue); font-size: 13px; }

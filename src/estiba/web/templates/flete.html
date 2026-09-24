@@ -61,6 +61,19 @@
 </div>
 {% endif %}
 
+{# Lo que cobraste antes por algo parecido. No es una tarifa: son tus
+   numeros. Con pocos casos no aparece, porque seria inventar. #}
+{% if sugerido and pendiente and pendiente.tipo == "cotizacion" %}
+<div class="aprendido">
+  <button type="button" class="usar-precio" data-usar="{{ sugerido.valor }}">
+    Usar {{ sugerido.valor | int | pesos }}
+  </button>
+  <span class="aprendido-porque">
+    {{ sugerido.porque }}{% if not sugerido.firme %} · varía entre {{ sugerido.minimo | int | pesos }} y {{ sugerido.maximo | int | pesos }}{% endif %}
+  </span>
+</div>
+{% endif %}
+
 {# Que sigue: el borrador ya escrito, listo para aprobar. #}
 {% set en_detalle = true %}
 {% for b in d.borradores if b.estado == "pendiente" or (b.estado == "aprobado" and b.error_envio and not b.enviado) %}

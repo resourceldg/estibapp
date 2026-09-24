@@ -36,13 +36,13 @@
     <p class="sugiere">{{ icono("chat") }}Estiba sugiere</p>
     {# El precio se toca acá, no editando el texto a mano. Lo que quede es lo
        que sale y lo que queda registrado como cotizado. #}
-    {% if b.tipo == "cotizacion" and b.monto %}
+    {% if b.tipo == "cotizacion" %}
     <div class="precio-manda">
       <button type="button" class="paso-precio" data-precio="-" aria-label="Bajar">−</button>
       <label class="sr" for="monto-{{ b.id }}">Precio</label>
       <input id="monto-{{ b.id }}" name="monto" class="monto-campo" inputmode="numeric"
-             value="{{ b.monto }}" data-monto data-original="{{ b.monto }}"
-             data-destino="t-{{ b.id }}">
+             value="{{ b.monto or '' }}" placeholder="Poné el precio"
+             data-monto data-destino="t-{{ b.id }}">
       <button type="button" class="paso-precio" data-precio="+" aria-label="Subir">+</button>
     </div>
     {% endif %}
