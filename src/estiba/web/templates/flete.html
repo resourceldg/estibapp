@@ -68,9 +68,13 @@
 {% endfor %}
 
 {% if d.puede_realizar %}
+{# Cerrarlo y anotar lo cobrado de una vez: despues nadie vuelve a cargarlo. #}
 <form class="cerrar" method="post" action="/fletes/{{ f.job_id }}/realizado"
-      hx-post="/fletes/{{ f.job_id }}/realizado" hx-confirm="¿Marcar el flete como realizado?">
-  <button class="btn primario" type="submit">{{ icono("hecho") }}<span>Marcar realizado</span></button>
+      hx-post="/fletes/{{ f.job_id }}/realizado">
+  <label for="cobrado">¿Cuánto cobraste? <span class="opcional">Se puede dejar vacío</span></label>
+  <input id="cobrado" name="cobrado" inputmode="numeric" autocomplete="off"
+         placeholder="{{ f.cotizado or 'Ej: 45.000' }}">
+  <button class="btn primario ancho" type="submit">{{ icono("hecho") }}<span>Marcar realizado</span></button>
 </form>
 {% endif %}
 
@@ -205,8 +209,17 @@
 <details class="panel perder">
   <summary>{{ icono("cruz") }}Dar por perdido</summary>
   <form method="post" action="/fletes/{{ f.job_id }}/perdido" hx-post="/fletes/{{ f.job_id }}/perdido">
-    <label for="nota-perdido">¿Por qué? <span class="opcional">Opcional, para los números</span></label>
-    <input id="nota-perdido" name="nota" placeholder="Consiguió más barato, se arrepintió…" autocomplete="off">
+    <label>¿Por qué? <span class="opcional">Para los números</span></label>
+    {# De la lista y listo: escrito a mano cada vez, despues no se puede contar. #}
+    <div class="motivos">
+      {% for valor, etiqueta in motivos %}
+      <label class="motivo">
+        <input type="radio" name="motivo" value="{{ valor }}"{% if loop.first %} checked{% endif %}>
+        <span>{{ etiqueta }}</span>
+      </label>
+      {% endfor %}
+    </div>
+    <input id="nota-perdido" name="nota" placeholder="Algo más, si hace falta" autocomplete="off">
     <button class="btn fantasma peligro" type="submit">Dar por perdido</button>
   </form>
 </details>

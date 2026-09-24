@@ -121,3 +121,34 @@ document.addEventListener("dblclick", (e) => {
   const hilo = e.target.closest(".chat .mensajes");
   if (hilo) agrandar(hilo.closest(".chat"));
 });
+
+// El precio se toca con + y - o escribiendolo, y el mensaje se reescribe
+// solo. Editar el texto a mano para cambiar un numero es pedir que se
+// escape un cero.
+const PASO_PRECIO = 1000;
+
+const conPuntos = (n) => n.toLocaleString("es-AR");
+
+const escribirPrecio = (campo) => {
+  const area = document.getElementById(campo.dataset.destino);
+  if (!area) return;
+  const valor = parseInt(campo.value.replace(/\D/g, ""), 10);
+  if (!valor) return;
+  const anterior = parseInt(campo.dataset.enTexto || campo.dataset.original, 10);
+  area.value = area.value.replace(`$${conPuntos(anterior)}`, `$${conPuntos(valor)}`);
+  campo.dataset.enTexto = String(valor);
+};
+
+document.addEventListener("click", (e) => {
+  const boton = e.target.closest("[data-precio]");
+  if (!boton) return;
+  const campo = boton.parentElement.querySelector("[data-monto]");
+  const valor = parseInt(campo.value.replace(/\D/g, ""), 10) || 0;
+  const paso = boton.dataset.precio === "+" ? PASO_PRECIO : -PASO_PRECIO;
+  campo.value = conPuntos(Math.max(valor + paso, 0));
+  escribirPrecio(campo);
+});
+
+document.addEventListener("input", (e) => {
+  if (e.target.matches("[data-monto]")) escribirPrecio(e.target);
+});

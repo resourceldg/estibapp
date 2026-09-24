@@ -340,11 +340,13 @@ class ActionRepository:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self.conn = conn
 
-    def add(self, job_id: str, tipo: str, at: datetime, actor: str = "humano", nota: str | None = None) -> None:
+    def add(self, job_id: str, tipo: str, at: datetime, actor: str = "humano",
+            nota: str | None = None, monto: Decimal | None = None) -> None:
         with self.conn:
             self.conn.execute(
-                "INSERT INTO job_actions (job_id, action, at, actor, note) VALUES (?, ?, ?, ?, ?)",
-                (job_id, tipo, _a_texto(at), actor, nota),
+                "INSERT INTO job_actions (job_id, action, at, actor, note, monto) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (job_id, tipo, _a_texto(at), actor, nota, str(monto) if monto is not None else None),
             )
 
     def for_job(self, job_id: str) -> list:
@@ -353,7 +355,11 @@ class ActionRepository:
         filas = self.conn.execute(
             "SELECT * FROM job_actions WHERE job_id = ? ORDER BY at, id", (job_id,)
         )
-        return [Accion(_a_fecha(f["at"]), f["action"], f["actor"], f["note"]) for f in filas]
+        return [
+            Accion(_a_fecha(f["at"]), f["action"], f["actor"], f["note"],
+                   Decimal(f["monto"]) if f["monto"] else None)
+            for f in filas
+        ]
 
     def has(self, job_id: str, tipo: str) -> bool:
         return self.conn.execute(

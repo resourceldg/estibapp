@@ -14,6 +14,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from decimal import Decimal
 
 from estiba.core.models import (
     REQUIRED_FOR_CONFIRMATION,
@@ -53,6 +54,20 @@ class Evento:
 AGENDADO = "agendado"
 REALIZADO = "realizado"
 PERDIDO = "perdido"
+#: El precio que se le mando al cliente, tal cual salio.
+COTIZADO = "cotizado"
+
+#: Por que no se concreto. Se elige de la lista, no se escribe.
+MOTIVOS_PERDIDA = [
+    ("precio", "Por precio"),
+    ("no-respondio", "No respondió"),
+    ("otro-flete", "Consiguió otro"),
+    ("fecha", "Por la fecha"),
+    ("zona", "Fuera de zona"),
+    ("cancelo", "Canceló"),
+    ("consultaba", "Solo consultaba"),
+    ("otro", "Otro"),
+]
 
 
 @dataclass(frozen=True)
@@ -60,9 +75,11 @@ class Accion:
     """Algo que paso con el flete fuera de la conversacion."""
 
     at: datetime
-    tipo: str  # agendado | realizado | perdido
+    tipo: str  # agendado | realizado | perdido | cotizado
     actor: str = "humano"  # humano | calendario
     nota: str | None = None
+    #: Lo cotizado o lo cobrado, segun la accion. No siempre coinciden.
+    monto: Decimal | None = None
 
 
 @dataclass

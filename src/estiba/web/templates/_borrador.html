@@ -34,6 +34,18 @@
     {# Nivel 2: una propuesta, no algo ya decidido. Por eso se anuncia y se
        apoya en su propia superficie, separada del fondo. #}
     <p class="sugiere">{{ icono("chat") }}Estiba sugiere</p>
+    {# El precio se toca acá, no editando el texto a mano. Lo que quede es lo
+       que sale y lo que queda registrado como cotizado. #}
+    {% if b.tipo == "cotizacion" and b.monto %}
+    <div class="precio-manda">
+      <button type="button" class="paso-precio" data-precio="-" aria-label="Bajar">−</button>
+      <label class="sr" for="monto-{{ b.id }}">Precio</label>
+      <input id="monto-{{ b.id }}" name="monto" class="monto-campo" inputmode="numeric"
+             value="{{ b.monto }}" data-monto data-original="{{ b.monto }}"
+             data-destino="t-{{ b.id }}">
+      <button type="button" class="paso-precio" data-precio="+" aria-label="Subir">+</button>
+    </div>
+    {% endif %}
     <label class="sr" for="t-{{ b.id }}">Mensaje para el cliente</label>
     <textarea id="t-{{ b.id }}" name="texto" rows="3" data-chat="{{ b.chat_id }}"
               placeholder="Escribí tu respuesta…" {% if en_detalle %}readonly{% endif %}>{{ b.texto }}</textarea>

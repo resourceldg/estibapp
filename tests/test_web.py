@@ -625,3 +625,52 @@ class TestCacheDelNavegador:
             assert despues != antes
         finally:
             os.utime(css, (stat.st_atime, stat.st_mtime))
+
+
+class TestPlata:
+    """Cotizar, cerrar y perder: un solo circuito con la plata adentro."""
+
+    def _acciones(self, conn, job_id):
+        from estiba.storage.repositories import ActionRepository
+        return ActionRepository(conn).for_job(job_id)
+
+    def test_aprobar_una_cotizacion_deja_registrado_el_precio(self, cliente, db):
+        from decimal import Decimal
+
+        bandeja = cliente.get("/api/bandeja").json()
+        cot = next(x for x in bandeja if x["borrador"]["tipo"] == "cotizacion")
+        cliente.post(f"/borradores/{cot['borrador']['id']}/aprobar",
+                     data={"texto": "Te sale $52.000", "monto": "52.000"})
+        conn = connect(db)
+        montos = [a.monto for a in self._acciones(conn, cot["borrador"]["job_id"])
+                  if a.tipo == "cotizado"]
+        conn.close()
+        assert montos == [Decimal("52000")]
+
+    def test_cerrar_el_flete_anota_lo_cobrado(self, cliente, db):
+        from decimal import Decimal
+
+        job = "5491133334444:job"      # agendado y ya pasó
+        cliente.post(f"/fletes/{job}/realizado", data={"cobrado": "48.500"})
+        conn = connect(db)
+        hechos = [a for a in self._acciones(conn, job) if a.tipo == "realizado"]
+        conn.close()
+        assert hechos and hechos[0].monto == Decimal("48500")
+
+    def test_el_motivo_de_perdida_sale_de_la_lista(self, cliente, db):
+        job = "5491155556666:job"
+        cliente.post(f"/fletes/{job}/perdido", data={"motivo": "precio"})
+        conn = connect(db)
+        perdidos = [a for a in self._acciones(conn, job) if a.tipo == "perdido"]
+        conn.close()
+        assert perdidos and perdidos[0].nota == "Por precio"
+
+    def test_un_precio_escrito_como_sea_se_entiende(self, cliente, db):
+        from decimal import Decimal
+
+        job = "5491133334444:job"
+        cliente.post(f"/fletes/{job}/realizado", data={"cobrado": "$ 48.500 "})
+        conn = connect(db)
+        hechos = [a for a in self._acciones(conn, job) if a.tipo == "realizado"]
+        conn.close()
+        assert hechos[0].monto == Decimal("48500")

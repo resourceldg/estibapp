@@ -14,9 +14,11 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import re
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from decimal import Decimal
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Literal
@@ -42,7 +44,13 @@ from estiba.conversation.store import ConversationStore
 from estiba.core.models import JobState
 from estiba.crm import embudo
 from estiba.formato import telefono
-from estiba.jobs.engine import PERDIDO, REALIZADO, JobEngine
+from estiba.jobs.engine import (
+    COTIZADO,
+    MOTIVOS_PERDIDA,
+    PERDIDO,
+    REALIZADO,
+    JobEngine,
+)
 from estiba.storage.db import connect
 from estiba.storage.repositories import (
     ActionRepository,
@@ -536,6 +544,7 @@ def create_app(
             _contexto(
                 request, d=d, anterior=anterior, siguiente=siguiente, filtro=filtro,
                 plazos=PLAZOS, dudosa=bool(clase and clase.pide_decision),
+                motivos=MOTIVOS_PERDIDA,
                 clase=guardada["clase"] if guardada else None,
                 clase_porque=(guardada["porque"] if guardada else None),
                 pospuesta_hasta=P.cuando_vuelve(dormida, estado.ahora()) if dormida else None,
@@ -591,19 +600,32 @@ def create_app(
             )
         return RedirectResponse(request.headers.get("referer", "/"), status_code=303)
 
-    def _accion(job_id: str, tipo: str, nota: str | None) -> None:
+    def _monto(texto: str | None) -> Decimal | None:
+        """Un precio escrito como se escribe: "45.000", "45000", "$45 mil"."""
+        limpio = re.sub(r"[^\d]", "", (texto or ""))
+        if not limpio:
+            return None
+        valor = Decimal(limpio)
+        if "mil" in (texto or "").lower() and valor < 1000:
+            valor *= 1000
+        return valor
+
+    def _accion(job_id: str, tipo: str, nota: str | None, monto: Decimal | None = None) -> None:
         if job_id not in estado.resultado.fletes:
             raise HTTPException(404, f"no hay un flete {job_id}")
         ev, _ = estado.resultado.fletes[job_id]
         permitido = {
             REALIZADO: ev.job.state is JobState.SCHEDULED,
             PERDIDO: ev.job.state not in (JobState.DONE, JobState.CANCELLED),
+            COTIZADO: True,
         }[tipo]
         if not permitido:
             raise HTTPException(409, f"un flete {ev.job.state.value} no se puede marcar {tipo}")
         conn = estado.conectar()
         try:
-            ActionRepository(conn).add(job_id, tipo, estado.ahora(), "humano", (nota or "").strip() or None)
+            ActionRepository(conn).add(
+                job_id, tipo, estado.ahora(), "humano", (nota or "").strip() or None, monto
+            )
         finally:
             conn.close()
         estado.sincronizar()
@@ -655,8 +677,17 @@ def create_app(
         return _enviar(draft_id) if estado.whatsapp is not None else b
 
     @app.post("/borradores/{draft_id}/aprobar", include_in_schema=False)
-    def aprobar_form(request: Request, draft_id: int, texto: str = Form("")):
-        return _tarjeta(request, _aprobar(draft_id, texto))
+    def aprobar_form(request: Request, draft_id: int, texto: str = Form(""),
+                     monto: str = Form("")):
+        """Aprobar una cotizacion deja registrado el precio que salio.
+
+        No se deduce del texto despues: lo que se mando es lo que se cotizo,
+        y con eso se puede comparar contra lo que se termino cobrando.
+        """
+        b = _aprobar(draft_id, texto)
+        if b.tipo == "cotizacion" and (valor := _monto(monto)):
+            _accion(b.job_id, COTIZADO, None, valor)
+        return _tarjeta(request, b)
 
     @app.post("/borradores/{draft_id}/reenviar", include_in_schema=False)
     def reenviar_form(request: Request, draft_id: int):
@@ -672,13 +703,19 @@ def create_app(
         return _tarjeta(request, _decidir(draft_id, False, None))
 
     @app.post("/fletes/{job_id}/realizado", include_in_schema=False)
-    def realizado_form(request: Request, job_id: str):
-        _accion(job_id, REALIZADO, None)
+    def realizado_form(request: Request, job_id: str, cobrado: str = Form("")):
+        """Cerrarlo y anotar lo que se cobro, que no siempre es lo cotizado."""
+        _accion(job_id, REALIZADO, None, _monto(cobrado))
         return _volver(request, f"/fletes/{job_id}")
 
     @app.post("/fletes/{job_id}/perdido", include_in_schema=False)
-    def perdido_form(request: Request, job_id: str, nota: str = Form("")):
-        _accion(job_id, PERDIDO, nota)
+    def perdido_form(request: Request, job_id: str, motivo: str = Form(""), nota: str = Form("")):
+        """El motivo se elige de la lista: sirve para los numeros despues."""
+        etiquetas = dict(MOTIVOS_PERDIDA)
+        texto = etiquetas.get(motivo, "")
+        if nota.strip():
+            texto = f"{texto}: {nota.strip()}" if texto else nota.strip()
+        _accion(job_id, PERDIDO, texto)
         return _volver(request, f"/fletes/{job_id}")
 
     @app.post("/clientes/{chat_id}/clase", include_in_schema=False)

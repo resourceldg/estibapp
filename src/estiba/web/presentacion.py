@@ -163,6 +163,8 @@ class Borrador:
     whatsapp: str | None
     enviado: bool = False
     error_envio: str | None = None
+    #: Lo que dice el mensaje que sale, para poder tocarlo sin editar texto.
+    monto: int | None = None
 
     @property
     def accion(self) -> str:
@@ -284,6 +286,19 @@ def flete(job_id: str, ev: Evaluacion, conv: Conversation, ahora: datetime, nomb
     )
 
 
+def monto_del_texto(texto: str | None) -> int | None:
+    """El precio que dice el mensaje, para poder tocarlo sin editar texto."""
+    if not texto:
+        return None
+    m = re.search(r"\$\s?([\d.]+)", texto)
+    if not m:
+        return None
+    try:
+        return int(m.group(1).replace(".", ""))
+    except ValueError:
+        return None
+
+
 def borrador(fila: sqlite3.Row) -> Borrador:
     texto_final = fila["final_text"]
     return Borrador(
@@ -299,6 +314,7 @@ def borrador(fila: sqlite3.Row) -> Borrador:
         whatsapp=whatsapp(fila["chat_id"], texto_final) if texto_final else None,
         enviado=bool(fila["sent_at"]),
         error_envio=fila["send_error"],
+        monto=monto_del_texto(fila["text"]),
     )
 
 

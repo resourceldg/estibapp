@@ -886,3 +886,33 @@ summary::-webkit-details-marker { display: none; }
 .conv.cerrada .conv-quien { color: var(--tinta-2); font-weight: 600; }
 .conv.cerrada .conv-ultimo { color: var(--tenue); }
 .conv.cerrada .etq, .conv.cerrada .chip { opacity: .65; }
+
+/* El precio se toca acá, no editando el texto a mano. */
+.precio-manda { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.paso-precio {
+  width: 42px; height: 42px; flex: none; border-radius: 12px;
+  border: 1px solid var(--linea-2); background: var(--superficie);
+  color: var(--tinta); font-size: 20px; font-weight: 700; cursor: pointer;
+}
+.paso-precio:hover { border-color: var(--tinta-2); }
+.monto-campo {
+  flex: 1; min-width: 0; min-height: 42px; padding: 0 12px;
+  border: 1.5px solid var(--linea-2); border-radius: 12px;
+  background: var(--superficie); color: var(--tinta);
+  font: inherit; font-size: 17px; font-weight: 700; text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.motivos { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 4px; }
+.motivo input { position: absolute; opacity: 0; pointer-events: none; }
+.motivo span {
+  display: inline-flex; align-items: center; min-height: 36px; padding: 0 12px;
+  border: 1px solid var(--linea-2); border-radius: 999px;
+  color: var(--tinta-2); font-size: 14px; cursor: pointer;
+}
+.motivo input:checked + span { background: var(--superficie-3); color: var(--tinta); border-color: var(--tinta-2); }
+.cerrar { display: grid; gap: 8px; margin-bottom: 16px; }
+.cerrar label { font-size: 14px; font-weight: 600; }
+.cerrar input {
+  min-height: 46px; padding: 0 12px; border: 1.5px solid var(--linea-2);
+  border-radius: 12px; background: var(--superficie); color: var(--tinta); font: inherit;
+}
