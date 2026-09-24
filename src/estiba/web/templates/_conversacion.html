@@ -3,7 +3,10 @@
    conversacion. Por eso aca no hay compositor: quien, que dijo, cuando,
    como viene y que haria Estiba. #}
 <li>
-  <a class="conv{% if b and b.tipo == 'respuesta' %} pide-atencion{% endif %}" href="/fletes/{{ f.job_id }}{% if filtro and filtro != 'todos' %}?f={{ filtro }}{% endif %}">
+  {# Un flete cerrado se apaga: sigue ahi, pero no compite con lo que falta
+     hacer. Si el mismo cliente vuelve a escribir, eso abre otro flete y esa
+     fila aparece encendida. #}
+  <a class="conv{% if f.cerrado %} cerrada{% endif %}{% if b and b.tipo == 'respuesta' %} pide-atencion{% endif %}" href="/fletes/{{ f.job_id }}{% if filtro and filtro != 'todos' %}?f={{ filtro }}{% endif %}">
     <div class="conv-linea1">
       <span class="conv-quien">{{ f.quien }}</span>
       <span class="conv-hora">{{ f.ultimo }}</span>

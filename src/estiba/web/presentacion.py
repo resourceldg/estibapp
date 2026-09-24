@@ -210,6 +210,15 @@ class Flete:
         return self.nombre or self.telefono
 
     @property
+    def cerrado(self) -> bool:
+        """El flete termino: realizado o perdido.
+
+        La conversacion sigue existiendo y el cliente puede volver, pero
+        esto ya no es trabajo pendiente y no tiene que pesar en la lista.
+        """
+        return self.estado in (JobState.DONE.value, JobState.CANCELLED.value)
+
+    @property
     def titulo(self) -> str:
         """Para listas: la ruta si ya se sabe, si no quien escribe.
 

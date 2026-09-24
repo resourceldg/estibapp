@@ -17,12 +17,28 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from estiba.core.models import Conversation, JobState
+from estiba.core.models import Conversation, FreightJob, JobState
 from estiba.extraction.intencion import Intencion, intencion
 from estiba.jobs.engine import Accion, JobEngine
 
 #: Sin mensajes durante esto, una consulta nueva es otro flete aunque el anterior no se haya cerrado.
 PAUSA_LARGA = timedelta(days=30)
+
+
+def _termino(job: FreightJob, cuando: datetime) -> bool:
+    """Si ese flete ya es cosa juzgada para cuando llega la consulta nueva.
+
+    No alcanza con mirar si esta marcado realizado: en la practica nadie
+    marca nada. Un flete agendado cuya fecha ya paso tambien termino, y el
+    cliente que vuelve despues esta pidiendo otro, no retomando aquel.
+    """
+    if job.state in (JobState.DONE, JobState.CANCELLED):
+        return True
+    return bool(
+        job.state in (JobState.CONFIRMED, JobState.SCHEDULED)
+        and job.when
+        and job.when.value < cuando.date()
+    )
 
 
 @dataclass(frozen=True)
@@ -54,8 +70,8 @@ def episodios(
         if pausa < PAUSA_LARGA:
             anterior = Conversation(conv.chat_id, mensajes[cortes[-1] : i], conv.transcripts)
             previo = job_id(conv.chat_id, len(cortes))
-            estado = engine.evaluar(anterior, _justo_antes(m.sent_at), acciones(previo)).job.state
-            if estado not in (JobState.DONE, JobState.CANCELLED):
+            job = engine.evaluar(anterior, _justo_antes(m.sent_at), acciones(previo)).job
+            if not _termino(job, m.sent_at):
                 continue
         cortes.append(i)
 

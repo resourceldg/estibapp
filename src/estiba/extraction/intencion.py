@@ -54,7 +54,12 @@ _PATRONES: list[tuple[Intencion, re.Pattern]] = [
         r"\b(?:hace(?:s)?\s+(?:fletes?|mudanzas?)"
         r"|cuanto\s+(?:me\s+)?(?:sale|saldria|cobras|cobrarias|cuesta|seria)"
         r"|que\s+(?:precio|valor)|el\s+valor|precio|presupuesto|presupuestar"
-        r"|necesito\s+(?:mudar|llevar|trasladar|un\s+flete|una\s+mudanza))"
+        # "necesito mover un placard" es una consulta igual que "necesito un
+        # flete": sin esto, el cliente que vuelve por otra cosa quedaba
+        # pegado al flete anterior en vez de abrir uno nuevo.
+        r"|(?<!no\s)(?:necesito|tengo\s+que|queria|quiero|hay\s+que)\s+"
+        r"(?:mudar|mudarme|mover|llevar|trasladar|transportar|retirar"
+        r"|un\s+flete|una\s+mudanza))"
     )),
 ]
 

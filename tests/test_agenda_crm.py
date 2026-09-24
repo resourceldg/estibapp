@@ -112,6 +112,33 @@ class TestEpisodios:
         assert job.floors_no_lift.value == 2
         assert job.when is None  # el sabado de agosto no es de este flete
 
+    def test_el_que_ya_viajo_y_vuelve_abre_un_flete_nuevo(self):
+        """En la practica nadie marca un flete como realizado.
+
+        Si solo se mirara el estado "realizado", el cliente que vuelve a los
+        quince dias quedaba pegado al flete anterior y heredaba su direccion.
+        Un agendado cuya fecha ya paso tambien termino.
+        """
+        inicio = datetime(2026, 9, 1, 10)
+        conv = _chat(
+            ("c", "necesito un flete de Almagro a Boedo, una heladera, "
+                  "hay ascensor, el 5/9", inicio),
+            ("v", "te sale 40 mil", inicio + timedelta(minutes=5)),
+            ("c", "dale, cerramos", inicio + timedelta(minutes=10)),
+            ("c", "hola de nuevo! ahora necesito mover un placard a Flores",
+             inicio + timedelta(days=15)),
+        )
+        eps = episodios(conv, JobEngine(), lambda _: [])
+        assert len(eps) == 2
+        segundo = JobEngine().evaluar(eps[1].conversacion, inicio + timedelta(days=16)).job
+        assert segundo.origin is None      # no hereda Almagro
+
+    def test_necesito_mover_algo_tambien_es_una_consulta(self):
+        from estiba.extraction.intencion import Intencion, intencion
+
+        assert intencion("necesito mover un placard")[0] is Intencion.CONSULTA
+        assert intencion("no quiero mover nada") is None
+
     def test_retomar_un_flete_abierto_no_abre_otro(self):
         inicio = datetime(2026, 9, 1, 10)
         conv = _chat(

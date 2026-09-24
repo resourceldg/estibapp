@@ -881,3 +881,8 @@ summary::-webkit-details-marker { display: none; }
   cursor: pointer; padding: 4px;
 }
 .agrandar:hover { color: var(--tinta-2); }
+
+/* Lo cerrado se apaga: esta, se lee, pero no pide nada. */
+.conv.cerrada .conv-quien { color: var(--tinta-2); font-weight: 600; }
+.conv.cerrada .conv-ultimo { color: var(--tenue); }
+.conv.cerrada .etq, .conv.cerrada .chip { opacity: .65; }
