@@ -82,10 +82,42 @@ if (!CSS.supports("field-sizing", "content")) {
 
 // El hilo abre en el ultimo mensaje, como WhatsApp: lo que acaba de llegar
 // esta a la vista y lo viejo queda arriba, a un scroll de distancia.
+//
+// Se hace varias veces a proposito: el alto cambia despues del primer
+// pintado (fuentes, audios, un "Leer mas" que se abre) y una sola pasada
+// dejaba el hilo parado en mensajes viejos.
 const alFinal = () => {
   document.querySelectorAll("[data-al-final]").forEach((hilo) => {
     hilo.scrollTop = hilo.scrollHeight;
   });
 };
-document.addEventListener("DOMContentLoaded", alFinal);
-document.addEventListener("htmx:afterSwap", alFinal);
+const alFinalInsistiendo = () => {
+  alFinal();
+  requestAnimationFrame(alFinal);
+  setTimeout(alFinal, 120);
+  setTimeout(alFinal, 500);
+};
+document.addEventListener("DOMContentLoaded", alFinalInsistiendo);
+window.addEventListener("load", alFinalInsistiendo);
+document.addEventListener("htmx:afterSwap", alFinalInsistiendo);
+// Abrir un mensaje largo cambia el alto: vuelve al final.
+document.addEventListener("toggle", (e) => {
+  if (e.target.classList?.contains("msj-largo")) alFinal();
+}, true);
+
+// El chat ocupa poco y se agranda cuando hace falta: con el boton o con
+// doble toque en el hilo, que es el gesto de siempre para "mostrame mas".
+const agrandar = (panel) => {
+  const grande = panel.classList.toggle("grande");
+  const boton = panel.querySelector("[data-agrandar]");
+  if (boton) boton.textContent = grande ? "Achicar" : "Agrandar";
+  alFinal();
+};
+document.addEventListener("click", (e) => {
+  const boton = e.target.closest("[data-agrandar]");
+  if (boton) agrandar(boton.closest(".chat"));
+});
+document.addEventListener("dblclick", (e) => {
+  const hilo = e.target.closest(".chat .mensajes");
+  if (hilo) agrandar(hilo.closest(".chat"));
+});

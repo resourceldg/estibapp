@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -588,3 +589,16 @@ class TestAudioOriginal:
         html = cliente.get("/fletes/5491122223333:job2").text
         # La etiqueta y los cuatro botones, antes del chat.
         assert html.index("clase-puesta") < html.index('class="panel chat"')
+
+
+class TestChatCompacto:
+    def test_el_chat_ocupa_poco_y_se_puede_agrandar(self, cliente):
+        html = cliente.get("/fletes/5491177778888:job").text
+        assert "data-agrandar" in html and "data-al-final" in html
+
+    def test_el_hilo_no_atrapa_el_scroll_de_la_pagina(self):
+        """`overscroll-behavior: contain` dejaba los botones de abajo
+        inalcanzables: al llegar al final del hilo la pagina no seguia."""
+        css = (Path(__file__).parents[1] / "src/estiba/web/static/estiba.css").read_text()
+        bloque = css[css.index(".mensajes {"):css.index("}", css.index(".mensajes {"))]
+        assert "overscroll-behavior" not in bloque

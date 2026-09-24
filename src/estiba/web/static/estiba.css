@@ -405,7 +405,11 @@ ul.sin-contar { margin: 4px 0 0; padding-left: 18px; color: var(--tinta-2); }
 .mensajes {
   list-style: none; margin: 12px 0 0; padding: 0 2px; display: grid; gap: 8px; min-width: 0;
   /* El hilo se lee como en WhatsApp: abre abajo, lo viejo queda arriba. */
-  max-height: 62vh; overflow-y: auto; overscroll-behavior: contain;
+  /* Chico por defecto: el chat es contexto, no el trabajo. Se agranda con
+     doble toque o con el boton. `contain` frenaba el scroll de la pagina al
+     llegar al final del hilo y dejaba los botones de abajo inalcanzables. */
+  max-height: 34vh; overflow-y: auto;
+  transition: max-height .18s ease;
 }
 .msj { display: grid; max-width: 86%; scroll-margin-top: 90px; }
 .msj.cliente { justify-self: start; }
@@ -866,3 +870,11 @@ body:has(.barra-accion) { padding-bottom: calc(var(--tabbar) + 48px + env(safe-a
 .cambiar { margin-left: auto; color: var(--tenue); font-size: 13px; }
 .clase-puesta[open] > summary { margin-bottom: 8px; }
 .oir { width: 100%; max-width: 230px; height: 34px; margin: 4px 0 2px; }
+.chat.grande .mensajes { max-height: 78vh; }
+.chat-cab { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.chat-cab h2 { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--tenue); }
+.agrandar {
+  border: 0; background: none; color: var(--tenue); font: inherit; font-size: 13px;
+  cursor: pointer; padding: 4px;
+}
+.agrandar:hover { color: var(--tinta-2); }
