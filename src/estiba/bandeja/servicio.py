@@ -17,6 +17,7 @@ from datetime import datetime
 
 from estiba.agenda.local import LocalCalendar
 from estiba.bandeja.redactor import proponer
+from estiba.conversation.clasificacion import Clase, clasificar
 from estiba.conversation.store import ConversationStore
 from estiba.core.models import Conversation, JobState
 from estiba.crm.leads import LeadInfo, lead_de
@@ -25,6 +26,7 @@ from estiba.jobs.episodios import episodios
 from estiba.storage.repositories import (
     ActionRepository,
     CRMRepository,
+    ClaseRepository,
     DraftRepository,
     ExclusionRepository,
     JobRepository,
@@ -38,6 +40,8 @@ class Resultado:
     leads: list[LeadInfo] = field(default_factory=list)
     #: Que paso con la agenda: (job_id, "creado" | "movido" | "cancelado" | ...)
     agenda: list[tuple[str, str]] = field(default_factory=list)
+    #: chat_id -> por que quedo afuera del embudo ("personal", "spam").
+    fuera: dict[str, str] = field(default_factory=dict)
     espejo_error: str | None = None
 
 
@@ -50,12 +54,30 @@ def sincronizar(conn: sqlite3.Connection, engine: JobEngine, ahora: datetime, es
     agenda = LocalCalendar(conn, reloj=lambda: ahora)
     r = Resultado()
     excluidos = ExclusionRepository(conn).excluidos()
+    clases = ClaseRepository(conn)
+    guardadas = clases.todas()
 
     for chat_id in store.chat_ids():
         if chat_id in excluidos:
             continue
         conv = store.get(chat_id)
         if not any(m.sent_at <= ahora for m in conv.messages):
+            continue
+
+        # Que es esta conversacion. Lo que decidio una persona no se toca;
+        # lo demas se vuelve a mirar cada vez, porque un "hola" de ayer
+        # puede ser un pedido de flete hoy.
+        guardada = guardadas.get(chat_id)
+        if guardada is not None and guardada["quien"] == "humano":
+            clase = Clase(guardada["clase"])
+        else:
+            inferida = clasificar(conv, engine.extractor.extract(conv))
+            clases.guardar_inferida(chat_id, inferida.clase.value, inferida.porque, ahora)
+            clase = inferida.clase
+        # Lo que Estiba sabe que no es negocio no entra al embudo ni a las
+        # metricas. La duda si entra: perder un cliente en silencio es peor.
+        if clase in (Clase.PERSONAL, Clase.SPAM):
+            r.fuera[chat_id] = clase.value
             continue
         todos = episodios(conv, engine, acciones.for_job)
         for n, ep in enumerate(todos, start=1):

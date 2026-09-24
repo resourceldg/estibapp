@@ -433,6 +433,59 @@ class ExclusionRepository:
         return {f["chat_id"] for f in self.conn.execute("SELECT chat_id FROM excluded_chats")}
 
 
+class ClaseRepository:
+    """Que es cada conversacion, y quien lo decidio.
+
+    Una correccion humana no se pisa nunca: si el fletero dijo que esto es
+    un cliente, Estiba no vuelve a opinar por mas que las reglas cambien.
+    Guarda ademas lo que Estiba habia inferido, para poder mejorar despues.
+    """
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self.conn = conn
+
+    def guardar_inferida(self, chat_id: str, clase: str, porque: str, ahora: datetime) -> None:
+        """Lo que dedujo Estiba. No toca lo que ya decidio una persona."""
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO chat_clase (chat_id, clase, porque, quien, at) "
+                "VALUES (?, ?, ?, 'estiba', ?) "
+                "ON CONFLICT (chat_id) DO UPDATE SET clase = excluded.clase, "
+                "porque = excluded.porque, at = excluded.at WHERE chat_clase.quien = 'estiba'",
+                (chat_id, clase, porque, _a_texto(ahora)),
+            )
+
+    def corregir(self, chat_id: str, clase: str, ahora: datetime) -> None:
+        """Lo que dijo una persona. Se queda con lo que Estiba habia dicho."""
+        previa = self.conn.execute(
+            "SELECT clase FROM chat_clase WHERE chat_id = ?", (chat_id,)
+        ).fetchone()
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO chat_clase (chat_id, clase, porque, quien, clase_previa, at) "
+                "VALUES (?, ?, 'lo dijiste vos', 'humano', ?, ?) "
+                "ON CONFLICT (chat_id) DO UPDATE SET clase = excluded.clase, "
+                "porque = excluded.porque, quien = 'humano', "
+                "clase_previa = excluded.clase_previa, at = excluded.at",
+                (chat_id, clase, previa["clase"] if previa else None, _a_texto(ahora)),
+            )
+
+    def de(self, chat_id: str) -> sqlite3.Row | None:
+        return self.conn.execute(
+            "SELECT * FROM chat_clase WHERE chat_id = ?", (chat_id,)
+        ).fetchone()
+
+    def todas(self) -> dict[str, sqlite3.Row]:
+        return {f["chat_id"]: f for f in self.conn.execute("SELECT * FROM chat_clase")}
+
+    def correcciones(self) -> list[sqlite3.Row]:
+        """Donde Estiba se equivoco: para mejorar las reglas mas adelante."""
+        return list(self.conn.execute(
+            "SELECT * FROM chat_clase WHERE quien = 'humano' AND clase_previa IS NOT NULL "
+            "AND clase_previa != clase ORDER BY at DESC"
+        ))
+
+
 class SnoozeRepository:
     """Conversaciones pospuestas: vuelven solas cuando se cumple la fecha.
 
