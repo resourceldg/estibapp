@@ -109,6 +109,12 @@
   <p class="ayuda">Si hiciste otro viaje para esta persona y se arregló por
   teléfono o en persona, marcá desde qué mensaje empieza.</p>
   {% endif %}
+  {% if cortado_a_mano %}
+  <form method="post" action="/fletes/{{ f.job_id }}/unir" hx-post="/fletes/{{ f.job_id }}/unir"
+        hx-confirm="¿Volver a unirlo con el flete anterior?">
+    <button type="submit" class="btn texto">Era el mismo flete: volver a unirlos</button>
+  </form>
+  {% endif %}
   <ul class="elegir-mensaje">
     {% for m in mensajes_recientes %}
     <li>

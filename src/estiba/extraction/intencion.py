@@ -57,9 +57,11 @@ _PATRONES: list[tuple[Intencion, re.Pattern]] = [
         # "necesito mover un placard" es una consulta igual que "necesito un
         # flete": sin esto, el cliente que vuelve por otra cosa quedaba
         # pegado al flete anterior en vez de abrir uno nuevo.
-        r"|(?<!no\s)(?:necesito|tengo\s+que|queria|quiero|hay\s+que)\s+"
+        # "necesito otro flete" es la frase del cliente que vuelve, y quedaba
+        # afuera porque el patron pedia el sustantivo pegado al verbo.
+        r"|(?<!no\s)(?:necesito|tengo\s+que(?:\s+hacer)?|queria|quiero|hay\s+que)\s+"
         r"(?:mudar|mudarme|mover|llevar|trasladar|transportar|retirar"
-        r"|un\s+flete|una\s+mudanza))"
+        r"|(?:un|otro|un\s+par\s+de)\s+flete|(?:una|otra)\s+mudanza))"
     )),
 ]
 

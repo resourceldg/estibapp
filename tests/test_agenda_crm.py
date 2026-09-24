@@ -506,3 +506,35 @@ class TestNumeroDeFlete:
         filas = [f["numero"] for f in conn.execute(
             "SELECT numero FROM jobs WHERE numero IS NOT NULL")]
         assert len(filas) == len(set(filas))
+
+
+class TestDespuesDeCerrarUnFlete:
+    """Que pasa con los mensajes que llegan despues de cerrarlo."""
+
+    def _eps(self, ultimo):
+        from estiba.jobs.engine import Accion, REALIZADO
+        from estiba.jobs.episodios import episodios
+
+        inicio = datetime(2026, 9, 20, 10)
+        conv = _chat(
+            ("c", "necesito un flete de Alberti a Colon", inicio),
+            ("v", "te sale 35 mil", inicio + timedelta(minutes=5)),
+            ("c", "dale", inicio + timedelta(minutes=10)),
+            ("c", ultimo, inicio + timedelta(days=1)),
+        )
+        hecho = [Accion(inicio + timedelta(minutes=30), REALIZADO)]
+        return episodios(conv, JobEngine(), lambda _: hecho)
+
+    def test_lo_que_sigue_hablando_del_mismo_queda_ahi(self):
+        """Un gracias o una factura no son otro flete."""
+        assert len(self._eps("gracias, llegó todo bien")) == 1
+        assert len(self._eps("me pasás la factura?")) == 1
+
+    def test_pedir_otro_flete_si_abre_uno_nuevo(self):
+        """Real: "necesito otro flete" quedaba afuera porque el patron pedia
+        el sustantivo pegado al verbo, y el cliente que vuelve dice "otro"."""
+        assert len(self._eps("necesito otro flete para el viernes")) == 2
+        assert len(self._eps("tengo que hacer otro flete")) == 2
+
+    def test_la_negacion_no_abre_nada(self):
+        assert len(self._eps("no necesito otro flete, gracias")) == 1

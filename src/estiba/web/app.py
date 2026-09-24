@@ -569,6 +569,14 @@ def create_app(
         sugerido = _precio_aprendido(job_id)
         _, conv_det = estado.resultado.fletes[job_id]
         pistas = episodios.sospechas(conv_det, estado.engine, estado.ahora())
+        conn3 = estado.conectar()
+        try:
+            cortado = bool(
+                conv_det.messages
+                and conv_det.messages[0].id in CorteRepository(conn3).de(d.flete.chat_id)
+            )
+        finally:
+            conn3.close()
         conn2 = estado.conectar()
         try:
             guardada = ClaseRepository(conn2).de(d.flete.chat_id)
@@ -583,6 +591,7 @@ def create_app(
                 clase=guardada["clase"] if guardada else None,
                 sugerido=sugerido,
                 pistas=pistas,
+                cortado_a_mano=cortado,
                 mensajes_recientes=list(reversed(d.mensajes[-12:])),
                 clase_porque=(guardada["porque"] if guardada else None),
                 pospuesta_hasta=P.cuando_vuelve(dormida, estado.ahora()) if dormida else None,
@@ -900,6 +909,29 @@ def create_app(
         conn = estado.conectar()
         try:
             CorteRepository(conn).cortar(conv.chat_id, desde, estado.ahora())
+        finally:
+            conn.close()
+        estado.sincronizar()
+        return _volver(request, "/")
+
+    @app.post("/fletes/{job_id}/unir", include_in_schema=False)
+    def unir_flete_form(request: Request, job_id: str):
+        """Deshacer un corte: esto era el mismo flete que el anterior.
+
+        Partir mal es tan facil como no partir, y sin vuelta atras nadie se
+        anima a usar el boton.
+        """
+        par = estado.resultado.fletes.get(job_id)
+        if par is None:
+            raise HTTPException(404, f"no hay un flete {job_id}")
+        _, conv = par
+        primero = conv.messages[0].id if conv.messages else None
+        conn = estado.conectar()
+        try:
+            repo = CorteRepository(conn)
+            if primero is None or primero not in repo.de(conv.chat_id):
+                raise HTTPException(409, "este flete no empieza en un corte a mano")
+            repo.deshacer(conv.chat_id, primero)
         finally:
             conn.close()
         estado.sincronizar()
