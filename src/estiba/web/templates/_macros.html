@@ -55,3 +55,17 @@
   <rect x="10" y="3" width="12" height="10" rx="2.5" fill="var(--acento)"/>
 </svg>
 {%- endmacro %}
+
+{# Los cuatro, una sola vez: cuando todavia no se sabe que es. Suma cero.
+   Una vez decidida, no se muestran mas: queda la etiqueta y listo. #}
+{% macro clases(chat_id, puesta=none) -%}
+<div class="clases" role="group" aria-label="Qué es esta conversación">
+  {% for valor, etiqueta in [("lead", "Lead"), ("cliente", "Cliente"),
+                             ("privado", "Privado"), ("spam", "Spam")] %}
+  <form method="post" action="/clientes/{{ chat_id }}/clase" hx-post="/clientes/{{ chat_id }}/clase">
+    <input type="hidden" name="clase" value="{{ valor }}">
+    <button class="clase{% if puesta == valor %} puesta{% endif %}" type="submit">{{ etiqueta }}</button>
+  </form>
+  {% endfor %}
+</div>
+{%- endmacro %}

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import icono, chip %}
+{% from "_macros.html" import icono, chip, clases %}
 {% set f = d.flete %}
 {% set pendiente = (d.borradores | selectattr("estado", "equalto", "pendiente") | list | first) %}
 {% block contenido %}
@@ -22,6 +22,21 @@
   </div>
   {{ chip(f.estado_etiqueta, f.tono) }}
 </section>
+
+{# Sin categorizar: los cuatro, una sola vez. Ya decidida: la etiqueta, y
+   cambiarla es un paso aparte para no volver a preguntar lo resuelto. #}
+{% if not clase or clase == "dudosa" %}
+{{ clases(f.chat_id) }}
+{% else %}
+<details class="clase-puesta">
+  <summary>
+    <span class="etq etq-{{ clase }}">{{ {"lead": "Lead", "cliente": "Cliente", "privado": "Privado", "spam": "Spam"}.get(clase, clase) }}</span>
+    {% if clase_porque %}<span class="clase-porque">{{ clase_porque }}</span>{% endif %}
+    <span class="cambiar">Cambiar</span>
+  </summary>
+  {{ clases(f.chat_id, clase) }}
+</details>
+{% endif %}
 
 {# Lo que Estiba entendio, en una linea: el flete, no un formulario. #}
 {# Lo que dijo el cliente se escapa siempre: el origen sale de un WhatsApp. #}
@@ -88,12 +103,16 @@
 {# La conversacion: lo que de verdad mirás. #}
 <section class="panel chat">
   <h2 class="sr">Conversación</h2>
-  <ol class="mensajes">
+  {# Como WhatsApp: lo ultimo abajo y a la vista, lo viejo scrolleando para
+     arriba. Antes habia que bajar media pantalla para ver que dijo recien. #}
+  <ol class="mensajes" data-al-final>
     {% for m in d.mensajes %}
     <li class="msj {{ 'cliente' if m.del_cliente else 'vos' }}" id="{{ m.ancla }}">
       <div class="burbuja">
         {% if m.es_audio %}
           <span class="audio">{{ icono("mic") }}{% if m.texto %}Audio transcripto{% else %}Audio sin transcribir{% endif %}</span>
+          {# Transcribir se equivoca: si algo no cierra, se escucha el original. #}
+          {% if m.escuchable %}<audio class="oir" controls preload="none" src="/audios/{{ m.id }}"></audio>{% endif %}
         {% elif m.medio %}
           <span class="audio">{{ icono("adjunto") }}{{ m.medio }}</span>
         {% endif %}
@@ -190,18 +209,6 @@
 </details>
 {% endif %}
 
-{# Suma cero: una conversacion es lead, cliente o privado, nunca dos. El
-   que esta activo se ve; tocar otro lo cambia y recalcula todo el chat. #}
-<div class="clases" role="group" aria-label="Qué es esta conversación">
-  {% for valor, etiqueta in [("lead", "Lead"), ("cliente", "Cliente"), ("privado", "Privado")] %}
-  <form method="post" action="/clientes/{{ f.chat_id }}/clase" hx-post="/clientes/{{ f.chat_id }}/clase">
-    <input type="hidden" name="clase" value="{{ valor }}">
-    <button class="clase{% if clase == valor %} puesta{% endif %}" type="submit"
-            {% if clase == valor %}aria-pressed="true"{% endif %}>{{ etiqueta }}</button>
-  </form>
-  {% endfor %}
-</div>
-{% if clase_porque %}<p class="clase-porque">{{ clase_porque }}</p>{% endif %}
 
 {# Spam o numero equivocado, con la opcion de contestarle antes. #}
 <details class="panel perder">

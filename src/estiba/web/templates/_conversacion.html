@@ -1,4 +1,4 @@
-{% from "_macros.html" import icono, chip %}
+{% from "_macros.html" import icono, chip, clases %}
 {# La bandeja es para elegir a quien atender; se trabaja adentro de la
    conversacion. Por eso aca no hay compositor: quien, que dijo, cuando,
    como viene y que haria Estiba. #}
@@ -14,36 +14,14 @@
     </p>
     <div class="conv-linea3">
       {% if b %}<span class="conv-accion">{{ icono(b.accion_icono) }}{{ b.accion }}</span>{% endif %}
+      {% if clase and clase != "dudosa" %}<span class="etq etq-{{ clase }}">{{ {"lead": "Lead", "cliente": "Cliente", "privado": "Privado", "spam": "Spam"}.get(clase, clase) }}</span>{% endif %}
       {{ chip(f.estado_etiqueta, f.tono) }}
       {# Si ya tiene fecha, es trabajo agendado: se ve sin entrar. #}
       {% if f.fecha %}<span class="conv-fecha">{{ icono("agenda") }}{{ f.fecha }}{% if f.hora %} · {{ f.hora }}{% endif %}</span>{% endif %}
       {% if f.alertas %}<span class="alerta-mini">{{ icono("aviso") }}{{ f.alertas|length }}</span>{% endif %}
     </div>
   </a>
-  {# Siempre a mano: a veces escribe la pareja y hay que poder sacarla sin
-     entrar a buscar el boton adentro de un desplegable. #}
-  {% if not dudosa %}
-  <div class="conv-duda discreto">
-    <form method="post" action="/clientes/{{ f.chat_id }}/clase" hx-post="/clientes/{{ f.chat_id }}/clase"
-          hx-confirm="¿{{ f.quien }} es privado? Sale de la bandeja y de los números.">
-      <input type="hidden" name="clase" value="privado">
-      <button class="btn texto" type="submit">Es privado</button>
-    </form>
-  </div>
-  {% endif %}
-
-  {# Estiba no pudo determinar si es del negocio: un toque y sigue. #}
-  {% if dudosa %}
-  <div class="conv-duda">
-    <span>¿Es un cliente?</span>
-    <form method="post" action="/clientes/{{ f.chat_id }}/clase" hx-post="/clientes/{{ f.chat_id }}/clase">
-      <input type="hidden" name="clase" value="lead">
-      <button class="btn secundario chico" type="submit">Sí</button>
-    </form>
-    <form method="post" action="/clientes/{{ f.chat_id }}/clase" hx-post="/clientes/{{ f.chat_id }}/clase">
-      <input type="hidden" name="clase" value="privado">
-      <button class="btn fantasma chico" type="submit">No</button>
-    </form>
-  </div>
-  {% endif %}
+  {# Sin categorizar: se decide de una vez, aca mismo. Ya decidida, no
+     vuelve a preguntar: la etiqueta de arriba lo dice. #}
+  {% if dudosa %}{{ clases(f.chat_id) }}{% endif %}
 </li>

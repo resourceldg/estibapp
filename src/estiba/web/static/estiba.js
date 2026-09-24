@@ -79,3 +79,13 @@ if (!CSS.supports("field-sizing", "content")) {
   document.addEventListener("DOMContentLoaded", todas);
   document.addEventListener("htmx:afterSwap", todas);
 }
+
+// El hilo abre en el ultimo mensaje, como WhatsApp: lo que acaba de llegar
+// esta a la vista y lo viejo queda arriba, a un scroll de distancia.
+const alFinal = () => {
+  document.querySelectorAll("[data-al-final]").forEach((hilo) => {
+    hilo.scrollTop = hilo.scrollHeight;
+  });
+};
+document.addEventListener("DOMContentLoaded", alFinal);
+document.addEventListener("htmx:afterSwap", alFinal);

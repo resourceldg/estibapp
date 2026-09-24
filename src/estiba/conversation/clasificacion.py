@@ -23,8 +23,12 @@ from estiba.extraction.extractor import Extraccion
 from estiba.extraction.intencion import Intencion
 from estiba.extraction.texto import plano
 
-#: Senales fuertes: esto no aparece por casualidad en una publicidad.
-_CAMPOS_FUERTES = ("origin", "destination", "items")
+#: Una ruta solo la dice quien pide un flete: "de Almagro a Boedo" no
+#: aparece en una charla de pareja ni en una publicidad.
+_CAMPOS_DE_RUTA = ("origin", "destination")
+
+#: Una cosa suelta es mas flojo: la pareja tambien habla del lavarropas.
+_CAMPOS_FUERTES = ("items",)
 
 #: Senales debiles: solas no dicen nada. Una promo con "VALIDO SOLO POR HOY"
 #: deja una fecha, y "el precio del plan" parece una consulta de precio.
@@ -166,16 +170,33 @@ def clasificar(conv: Conversation, ex: Extraccion, nombre: str | None = None) ->
     nuestros = [m for m in conv.messages if not m.from_customer]
     de_ellos = [m for m in conv.messages if m.from_customer]
 
-    fuertes = [c for c in _CAMPOS_FUERTES if c in ex.ganadores]
-    if fuertes:
-        return Clasificacion(Clase.LEAD, f"se entendió {', '.join(fuertes)} del chat")
-    # Como se llama ya lo dice, sin leer nada. Va antes que el oficio porque
-    # una publicidad de transporte tambien lo nombra, y despues de los datos
-    # concretos porque si dijo de donde a donde, es un pedido igual.
+    # Una ruta gana sobre todo lo demas: es lo unico que solo dice alguien
+    # que quiere mover algo de un lado a otro.
+    ruta = [c for c in _CAMPOS_DE_RUTA if c in ex.ganadores]
+    if ruta:
+        return Clasificacion(Clase.LEAD, f"se entendió {', '.join(ruta)} del chat")
+
+    # Como se llama: un usuario no es una persona, y una publicidad de
+    # transporte tambien nombra el oficio.
     liso = plano(nombre or "")
     if liso and (_NOMBRE_COMERCIAL.search(liso) or _ES_HANDLE.match(liso)):
         return Clasificacion(Clase.SPAM, f"el contacto se llama “{nombre}”")
 
+    # Pidio el servicio con todas las letras: eso le gana al afecto. Hay
+    # clientes que cierran con "gracias mi amor" y no por eso dejan de serlo.
+    if _OFICIO.search(texto):
+        return Clasificacion(Clase.LEAD, "habla del oficio")
+
+    # El afecto, en cambio, le gana a lo inferido: si la pareja pregunta por
+    # el lavarropas, el lavarropas no la convierte en clienta.
+    if nuestros and _PERSONAL.search(texto):
+        return Clasificacion(Clase.PRIVADO, "te habla como alguien de confianza")
+    if _PERSONAL.search(_texto_del_fletero(conv)):
+        return Clasificacion(Clase.PRIVADO, "le hablás como a alguien de confianza")
+
+    fuertes = [c for c in _CAMPOS_FUERTES if c in ex.ganadores]
+    if fuertes:
+        return Clasificacion(Clase.LEAD, f"se entendió {', '.join(fuertes)} del chat")
     if _OFICIO.search(texto):
         return Clasificacion(Clase.LEAD, "habla del oficio")
 
@@ -194,11 +215,6 @@ def clasificar(conv: Conversation, ex: Extraccion, nombre: str | None = None) ->
     # Lo personal tambien va antes que lo debil, por lo mismo que la
     # publicidad: "manana paso por lo de la abuela" deja una fecha, y una
     # fecha suelta no es un pedido de flete.
-    if _PERSONAL.search(texto) and nuestros:
-        return Clasificacion(Clase.PRIVADO, "charla personal, no del trabajo")
-    # Como le hablas vos vale tanto como lo que diga el otro.
-    if _PERSONAL.search(_texto_del_fletero(conv)):
-        return Clasificacion(Clase.PRIVADO, "le hablás como a alguien de confianza")
 
     debiles = [c for c in _CAMPOS_DEBILES if c in ex.ganadores]
     if debiles or any(i.intencion is Intencion.CONSULTA for i in ex.intenciones):

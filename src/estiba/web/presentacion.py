@@ -144,6 +144,8 @@ class Mensaje:
     #: Un muro de texto pegado o un audio largo tapan la conversacion entera:
     #: se muestran cortados y se abren si hace falta.
     largo: bool = False
+    #: Hay archivo de audio guardado: se puede escuchar el original.
+    escuchable: bool = False
     datos: list[str] = field(default_factory=list)  # que datos salieron de este mensaje
 
 
@@ -344,6 +346,7 @@ def detalle(
             es_audio=m.kind.value == "audio",
             medio=ETIQUETAS_MEDIO.get(m.kind.value),
             largo=len(conv.text_of(m) or "") > LARGO_PARA_PLEGAR,
+            escuchable=bool(m.media_path),
             datos=por_mensaje.get(m.id, []),
         ))
 

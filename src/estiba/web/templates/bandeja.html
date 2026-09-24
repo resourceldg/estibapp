@@ -4,10 +4,10 @@
 <div class="encabezado">
   <h1>Hoy</h1>
   {# De primera mano: cuantos hay de cada lado antes de mirar la lista. #}
+  {# Leads y clientes juntos: lo que hay que atender hoy, sin separar. #}
   <p class="bajada resumen">
-    <strong>{{ cuentas["leads"] }}</strong> leads ·
-    <strong>{{ cuentas["clientes"] }}</strong> clientes
-    {%- if cuentas["dudosas"] %} · <a href="/?f=dudosas">{{ cuentas["dudosas"] }} sin clasificar</a>{% endif -%}
+    <strong>{{ cuentas["todos"] }}</strong> para atender
+    {%- if cuentas["sin-clasificar"] %} · <a href="/?f=sin-clasificar">{{ cuentas["sin-clasificar"] }} sin clasificar</a>{% endif -%}
   </p>
 </div>
 
@@ -64,7 +64,7 @@
 </ul>
 {% elif filas %}
 <ul class="lista">
-  {% for b, f, dudosa in filas %}{% include "_conversacion.html" %}{% endfor %}
+  {% for b, f, dudosa, clase in filas %}{% include "_conversacion.html" %}{% endfor %}
 </ul>
 {% else %}
 <div class="vacio">
@@ -85,7 +85,7 @@
   <summary class="seccion-titulo">Pospuestas <span class="seccion-cuenta">{{ pospuestas|length }}</span></summary>
   <p class="ayuda">Vuelven solas cuando corresponda. No están cerradas.</p>
   <ul class="lista">
-    {% for b, f, vuelve in pospuestas %}{% set dudosa = false %}{% include "_conversacion.html" %}{% endfor %}
+    {% for b, f, vuelve, clase in pospuestas %}{% set dudosa = false %}{% include "_conversacion.html" %}{% endfor %}
   </ul>
 </details>
 {% endif %}

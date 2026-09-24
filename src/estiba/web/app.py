@@ -22,12 +22,18 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import BackgroundTasks, FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    RedirectResponse,
+    Response,
+)
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
-from estiba.adapters.waha import ConfigWaha, ErrorWaha, WahaClient, firma_valida
+from estiba.adapters.waha import MEDIA_DIR, ConfigWaha, ErrorWaha, WahaClient, firma_valida
 from estiba.agenda.caldav import ConfigCalDAV, EspejoCalDAV
 from estiba.agenda.evento import calendario
 from estiba.agenda.local import LocalCalendar
@@ -272,17 +278,17 @@ def create_app(
         ("seguimiento", "Seguimiento"), ("confirmados", "Confirmados"),
     ]
     #: Las de afuera del trabajo del dia.
+    #: Leads y clientes NO se separan: van juntos en el hilo principal, que
+    #: es de lo que se trata la app. Separarlos es logica de CRM y va despues.
     FILTROS_APARTE = [
-        ("leads", "Leads"), ("clientes", "Clientes"), ("dudosas", "¿Cliente?"),
-        ("perdidos", "Perdidos"), ("privados", "Privados"), ("spam", "Spam"),
+        ("sin-clasificar", "Sin clasificar"), ("perdidos", "Perdidos"),
+        ("privados", "Privados"), ("spam", "Spam"),
     ]
 
     def _pasa(filtro: str, b: P.Borrador | None, f: P.Flete, dudosa: bool, hoy: str,
               clase: str | None = None) -> bool:
         perdido = f.estado == JobState.CANCELLED.value
-        if filtro in ("leads", "clientes"):
-            return clase == filtro[:-1] and not perdido
-        if filtro == "dudosas":
+        if filtro == "sin-clasificar":
             return dudosa
         if filtro == "perdidos":
             return perdido
@@ -372,7 +378,8 @@ def create_app(
                 if f.chat_id not in por_chat or f.ultimo_at > por_chat[f.chat_id].ultimo_at:
                     por_chat[f.chat_id] = f
             return [
-                (borradores.get(f.job_id), f, f.chat_id in dudosas)
+                (borradores.get(f.job_id), f, f.chat_id in dudosas,
+                 clases_por_chat.get(f.chat_id))
                 for f in sorted(por_chat.values(), key=lambda x: x.ultimo_at, reverse=True)
             ]
 
@@ -381,7 +388,8 @@ def create_app(
         for f in sorted(_fletes().values(), key=lambda x: x.ultimo_at, reverse=True):
             if f.chat_id in dormidos and f.chat_id not in vistos:
                 vistos.add(f.chat_id)
-                pospuestas.append((borradores.get(f.job_id), f, dormidos[f.chat_id]))
+                pospuestas.append((borradores.get(f.job_id), f, dormidos[f.chat_id],
+                                   clases_por_chat.get(f.chat_id)))
 
         cuentas = {clave: len(elegir(clave)) for clave, _ in FILTROS + FILTROS_APARTE}
         # Personales y spam no llegan a ser fletes: se cuentan aparte.
@@ -617,7 +625,7 @@ def create_app(
         Resolver una y pasar a la otra sin volver a la lista, respetando lo
         que estabas mirando: si filtraste "Cotizar", seguis entre esas.
         """
-        orden = [f.job_id for _, f, _ in _conversaciones(filtro)["filas"]]
+        orden = [fila[1].job_id for fila in _conversaciones(filtro)["filas"]]
         if job_id not in orden:
             # Ya no pasa el filtro (recien lo resolviste): sigue el primero.
             return None, orden[0] if orden else None
@@ -846,6 +854,30 @@ def create_app(
     # ------------------------------------------------------------------
     # Calendario para suscribirse desde el celular
     # ------------------------------------------------------------------
+
+    @app.get("/audios/{message_id}", include_in_schema=False)
+    def audio(message_id: str):
+        """El audio original, para escucharlo en vez de leer la transcripcion.
+
+        Transcribir se equivoca: cuando algo no cierra, hay que poder ir a
+        la fuente. Solo se sirve lo que esta guardado en la carpeta de
+        audios, resuelto contra la ruta real para que un id raro no pueda
+        sacar un archivo de otro lado.
+        """
+        conn = estado.conectar()
+        try:
+            fila = conn.execute(
+                "SELECT media_path FROM messages WHERE id = ? AND kind = 'audio'",
+                (message_id,),
+            ).fetchone()
+        finally:
+            conn.close()
+        if fila is None or not fila["media_path"]:
+            raise HTTPException(404, "ese mensaje no tiene audio")
+        ruta = Path(fila["media_path"]).resolve()
+        if not ruta.is_relative_to(MEDIA_DIR.resolve()) or not ruta.is_file():
+            raise HTTPException(404, "el audio no está guardado")
+        return FileResponse(ruta, media_type="audio/ogg")
 
     @app.get("/calendario/{secreto}.ics", include_in_schema=False)
     def ics(secreto: str):

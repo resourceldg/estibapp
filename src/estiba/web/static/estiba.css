@@ -402,7 +402,11 @@ ul.sin-contar { margin: 4px 0 0; padding-left: 18px; color: var(--tinta-2); }
 /* ------------------------------------------------------ conversacion */
 
 .chat { background: var(--superficie-2); }
-.mensajes { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 8px; min-width: 0; }
+.mensajes {
+  list-style: none; margin: 12px 0 0; padding: 0 2px; display: grid; gap: 8px; min-width: 0;
+  /* El hilo se lee como en WhatsApp: abre abajo, lo viejo queda arriba. */
+  max-height: 62vh; overflow-y: auto; overscroll-behavior: contain;
+}
 .msj { display: grid; max-width: 86%; scroll-margin-top: 90px; }
 .msj.cliente { justify-self: start; }
 .msj.vos { justify-self: end; justify-items: end; }
@@ -845,3 +849,20 @@ body:has(.barra-accion) { padding-bottom: calc(var(--tabbar) + 48px + env(safe-a
 .clase.puesta { background: var(--superficie-3); color: var(--tinta); }
 .clase-porque { margin-bottom: 14px; color: var(--tenue); font-size: 12px; }
 .resumen strong { color: var(--tinta); }
+
+/* La etiqueta de que es: se lee, no se toca. */
+.etq {
+  display: inline-flex; align-items: center; height: 22px; padding: 0 9px;
+  border-radius: 999px; font-size: 12px; font-weight: 650;
+  background: var(--superficie-3); color: var(--tinta-2);
+}
+.etq-cliente { background: var(--ok-fondo); color: var(--ok); }
+.etq-privado, .etq-spam { background: var(--neutro-fondo); color: var(--tenue); }
+.clase-puesta { margin-bottom: 14px; }
+.clase-puesta > summary {
+  display: flex; align-items: center; gap: 10px; cursor: pointer; list-style: none;
+}
+.clase-puesta > summary::-webkit-details-marker { display: none; }
+.cambiar { margin-left: auto; color: var(--tenue); font-size: 13px; }
+.clase-puesta[open] > summary { margin-bottom: 8px; }
+.oir { width: 100%; max-width: 230px; height: 34px; margin: 4px 0 2px; }

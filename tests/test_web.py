@@ -475,7 +475,7 @@ class TestPestanas:
 
     def test_lo_dudoso_no_se_mezcla_con_los_clientes(self, cliente):
         todos = cliente.get("/?f=todos").text
-        assert 'href="/?f=dudosas"' in todos and 'href="/?f=privados"' in todos
+        assert 'href="/?f=sin-clasificar"' in todos and 'href="/?f=privados"' in todos
 
     def test_un_perdido_no_ocupa_el_trabajo_del_dia(self, cliente):
         """Existe, pero en su pestaña."""
@@ -542,3 +542,49 @@ class TestClasesSumaCero:
             "SELECT COUNT(*) FROM messages WHERE chat_id = ?", (chat,)).fetchone()[0]
         conn.close()
         assert quedan == 0
+
+
+class TestAudioOriginal:
+    """Transcribir se equivoca: hay que poder ir a la fuente."""
+
+    def test_se_puede_escuchar_el_audio(self, db, tmp_path):
+        ruta = tmp_path / "audios" / "a.ogg"
+        ruta.parent.mkdir()
+        ruta.write_bytes(b"OggS prueba")
+        conn = connect(db)
+        ConversationStore(conn).ingest([Message(
+            "a:1", "a", True, datetime(2026, 9, 18, 10), MessageKind.AUDIO,
+            media_path=str(ruta))])
+        conn.close()
+        import estiba.web.app as app_mod
+        antes = app_mod.MEDIA_DIR
+        app_mod.MEDIA_DIR = ruta.parent
+        try:
+            with TestClient(create_app(db, ahora=lambda: JUEVES_18)) as c:
+                r = c.get("/audios/a:1")
+                assert r.status_code == 200 and r.content == b"OggS prueba"
+                assert '<audio' in c.get("/fletes/a:job").text
+        finally:
+            app_mod.MEDIA_DIR = antes
+
+    def test_no_sirve_archivos_de_otro_lado(self, db, tmp_path):
+        """Un id raro no puede sacar un archivo fuera de la carpeta."""
+        afuera = tmp_path / "secreto.txt"
+        afuera.write_text("no")
+        conn = connect(db)
+        ConversationStore(conn).ingest([Message(
+            "b:1", "b", True, datetime(2026, 9, 18, 10), MessageKind.AUDIO,
+            media_path=str(afuera))])
+        conn.close()
+        with TestClient(create_app(db, ahora=lambda: JUEVES_18)) as c:
+            assert c.get("/audios/b:1").status_code == 404
+
+    def test_la_categoria_se_puede_cambiar_desde_arriba(self, cliente, db):
+        from estiba.storage.repositories import ClaseRepository
+
+        conn = connect(db)
+        ClaseRepository(conn).corregir("5491122223333", "lead", JUEVES_18)
+        conn.close()
+        html = cliente.get("/fletes/5491122223333:job2").text
+        # La etiqueta y los cuatro botones, antes del chat.
+        assert html.index("clase-puesta") < html.index('class="panel chat"')
