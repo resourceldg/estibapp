@@ -223,6 +223,34 @@ def create_app(
                 return JSONResponse({"detail": "falta la clave"}, status_code=401)
             return RedirectResponse("/entrar", status_code=303)
 
+    @app.exception_handler(HTTPException)
+    async def _error_legible(request: Request, exc: HTTPException):
+        """Un error tiene que decir algo, no mostrar el JSON de adentro.
+
+        La API sigue devolviendo JSON; las pantallas, una pagina.
+        """
+        if request.url.path.startswith("/api") or request.headers.get("HX-Request"):
+            return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+        titulos = {
+            404: "Eso ya no está",
+            409: "No se puede hacer eso ahora",
+            401: "Falta la clave",
+        }
+        explicaciones = {
+            404: "Puede que la conversación haya pasado a privada, a spam, o que "
+                 "el flete se haya unido con otro.",
+        }
+        return templates.TemplateResponse(
+            request, "error.html",
+            _contexto(
+                request,
+                titulo_error=titulos.get(exc.status_code, "Algo salió mal"),
+                detalle=explicaciones.get(exc.status_code, str(exc.detail)),
+                titulo="Error",
+            ),
+            status_code=exc.status_code,
+        )
+
     @app.get("/entrar", response_class=HTMLResponse, include_in_schema=False)
     def entrar_form(request: Request, error: bool = False):
         return templates.TemplateResponse(
@@ -873,6 +901,13 @@ def create_app(
         conn = estado.conectar()
         try:
             ClaseRepository(conn).corregir(chat_id, clase, estado.ahora())
+            # "No es cliente" es de antes de que existieran las clases y
+            # sigue sacando la conversacion del circuito antes de mirar
+            # nada mas. Si ahora se dice que es un cliente, esa exclusion
+            # tiene que caer: si no, la decision no hace efecto y no hay
+            # forma de traer la conversacion de vuelta.
+            if clase in ("lead", "cliente"):
+                ExclusionRepository(conn).incluir(chat_id)
         finally:
             conn.close()
         estado.sincronizar()

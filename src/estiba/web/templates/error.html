@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icono %}
+{% block contenido %}
+<div class="vacio">
+  <div class="vacio-ico">{{ icono("aviso") }}</div>
+  <h2>{{ titulo_error }}</h2>
+  <p>{{ detalle }}</p>
+  <a class="btn secundario" href="/">Volver a Hoy</a>
+</div>
+{% endblock %}

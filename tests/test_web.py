@@ -813,3 +813,37 @@ class TestCotizarAMano:
         with TestClient(create_app(db, ahora=lambda: JUEVES_18)) as c:
             html = c.get("/fletes/m:job").text
             assert "data-monto" in html and "Poné el precio" in html
+
+
+class TestVolverDelDescarte:
+    """Una decision humana tiene que poder deshacerse."""
+
+    def test_marcar_como_cliente_lo_trae_de_vuelta(self, cliente, db):
+        from estiba.storage.repositories import ExclusionRepository
+
+        chat = "5491122223333"
+        # Se lo saca con el mecanismo viejo, el de "No es cliente".
+        cliente.post(f"/fletes/{chat}:job2/no-es-cliente")
+        assert cliente.get(f"/fletes/{chat}:job2").status_code == 404
+
+        # Y despues se dice que si es un cliente: tiene que volver.
+        cliente.post(f"/clientes/{chat}/clase", data={"clase": "cliente"})
+        conn = connect(db)
+        excluidos = ExclusionRepository(conn).excluidos()
+        conn.close()
+        assert chat not in excluidos
+        assert cliente.get(f"/fletes/{chat}:job2").status_code == 200
+
+
+class TestErroresLegibles:
+    def test_una_pantalla_no_muestra_el_json_de_adentro(self, cliente):
+        r = cliente.get("/fletes/no-existe")
+        assert r.status_code == 404
+        assert "Eso ya no está" in r.text and '"detail"' not in r.text
+
+    def test_explica_por_que_puede_faltar(self, cliente):
+        assert "privada" in cliente.get("/fletes/no-existe").text
+
+    def test_la_api_sigue_devolviendo_json(self, cliente):
+        r = cliente.get("/api/fletes/no-existe")
+        assert r.status_code == 404 and r.json()["detail"]
