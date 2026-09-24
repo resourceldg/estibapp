@@ -1,0 +1,21 @@
+{% from "_macros.html" import icono, chip %}
+{# La bandeja es para elegir a quien atender; se trabaja adentro de la
+   conversacion. Por eso aca no hay compositor: quien, que dijo, cuando,
+   como viene y que haria Estiba. #}
+<li>
+  <a class="conv{% if b and b.tipo == 'respuesta' %} pide-atencion{% endif %}" href="/fletes/{{ f.job_id }}">
+    <div class="conv-linea1">
+      <span class="conv-quien">{{ f.quien }}</span>
+      <span class="conv-hora">{{ f.ultimo }}</span>
+    </div>
+    <p class="conv-ultimo">
+      {%- if not f.ultimo_del_cliente %}<span class="conv-vos">Vos:</span> {% endif -%}
+      {{ f.ultimo_texto or "Mandó un audio o un archivo" }}
+    </p>
+    <div class="conv-linea3">
+      {% if b %}<span class="conv-accion">{{ icono(b.accion_icono) }}{{ b.accion }}</span>{% endif %}
+      {{ chip(f.estado_etiqueta, f.tono) }}
+      {% if f.alertas %}<span class="alerta-mini">{{ icono("aviso") }}{{ f.alertas|length }}</span>{% endif %}
+    </div>
+  </a>
+</li>

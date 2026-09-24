@@ -2,11 +2,18 @@
 {% from "_macros.html" import icono, chip %}
 {% set f = d.flete %}
 {% block contenido %}
-<a class="volver" href="/fletes">{{ icono("volver") }}Fletes</a>
+{# La unidad es la conversacion, no la ficha: primero con quien hablas, despues
+   que sigue, despues el chat. Lo que Estiba dedujo queda plegado: esta para
+   revisar cuando dudas, no para que lo cargues a mano. #}
+<div class="conv-cab">
+  <a class="volver" href="/">{{ icono("volver") }}Hoy</a>
+  {% if siguiente %}
+  <a class="btn-icono chico-texto" href="/fletes/{{ siguiente }}">Siguiente{{ icono("flecha") }}</a>
+  {% endif %}
+</div>
 
-<section class="portada">
-  <div class="portada-cab">
-    {{ chip(f.estado_etiqueta, f.tono) }}
+<section class="quien-cab">
+  <div class="quien-datos">
     <form class="nombre" method="post" action="/clientes/{{ f.chat_id }}/nombre"
           hx-post="/clientes/{{ f.chat_id }}/nombre" hx-trigger="change" hx-swap="none">
       {{ icono("lapiz") }}
@@ -15,17 +22,24 @@
     </form>
     <a class="tel" href="https://wa.me/{{ f.chat_id }}" target="_blank" rel="noopener">{{ f.telefono }}</a>
   </div>
-  <h1 class="ruta-grande">
-    <span>{{ f.origen or "¿Desde dónde?" }}</span>
-    {{ icono("flecha", "ruta-flecha") }}
-    <span>{{ f.destino or "¿Hasta dónde?" }}</span>
-  </h1>
-  <dl class="hechos">
-    <div><dt>Fecha</dt><dd>{{ f.fecha or "—" }}</dd></div>
-    <div><dt>Hora</dt><dd>{{ f.hora or "—" }}</dd></div>
-    <div><dt>Precio</dt><dd class="num">{{ f.cotizado or "—" }}</dd></div>
-  </dl>
+  {{ chip(f.estado_etiqueta, f.tono) }}
 </section>
+
+{# Lo que Estiba entendio, en una linea: el flete, no un formulario. #}
+{# Lo que dijo el cliente se escapa siempre: el origen sale de un WhatsApp. #}
+{%- set partes = [] -%}
+{%- if f.origen or f.destino %}{% set _ = partes.append((true, f.ruta)) %}{% endif -%}
+{%- if f.fecha %}{% set _ = partes.append((false, f.fecha ~ (" " ~ f.hora if f.hora else ""))) %}{% endif -%}
+{%- if f.cosas %}{% set _ = partes.append((false, f.cosas)) %}{% endif -%}
+{%- if f.cotizado %}{% set _ = partes.append((true, f.cotizado)) %}
+{%- elif f.sugerido %}{% set _ = partes.append((false, "sugerido " ~ f.sugerido)) %}{% endif -%}
+<p class="entendido">
+  {%- for fuerte, valor in partes -%}
+    {%- if not loop.first %} · {% endif -%}
+    {%- if fuerte %}<strong>{{ valor }}</strong>{% else %}{{ valor }}{% endif -%}
+  {%- endfor -%}
+  {%- if not partes %}Todavía no dijo nada del flete.{% endif -%}
+</p>
 
 {% if f.alertas %}
 <div class="aviso" role="status">
@@ -34,6 +48,12 @@
 </div>
 {% endif %}
 
+{# Que sigue: el borrador ya escrito, listo para aprobar. #}
+{% set en_detalle = true %}
+{% for b in d.borradores if b.estado == "pendiente" or (b.estado == "aprobado" and b.error_envio and not b.enviado) %}
+  {% include "_borrador.html" %}
+{% endfor %}
+
 {% if d.puede_realizar %}
 <form class="cerrar" method="post" action="/fletes/{{ f.job_id }}/realizado"
       hx-post="/fletes/{{ f.job_id }}/realizado" hx-confirm="¿Marcar el flete como realizado?">
@@ -41,126 +61,141 @@
 </form>
 {% endif %}
 
-{% set en_detalle = true %}
-{% for b in d.borradores if b.estado == "pendiente" or (b.estado == "aprobado" and b.error_envio and not b.enviado) %}
-  {% include "_borrador.html" %}
-{% endfor %}
+{# Posponer no cierra nada: la saca de lo urgente y vuelve sola. #}
+<details class="panel plegado posponer">
+  <summary>{{ icono("reloj") }}Posponer{% if pospuesta_hasta %} · vuelve {{ pospuesta_hasta }}{% endif %}</summary>
+  <p class="ayuda">Deja de estar entre las urgentes y vuelve sola cuando corresponda. No se cierra ni se archiva.</p>
+  <div class="plazos">
+    {% for clave, etiqueta in plazos %}
+    <form method="post" action="/fletes/{{ f.job_id }}/posponer" hx-post="/fletes/{{ f.job_id }}/posponer">
+      <input type="hidden" name="cuando" value="{{ clave }}">
+      <button class="btn secundario chico" type="submit">{{ etiqueta }}</button>
+    </form>
+    {% endfor %}
+  </div>
+  <form class="plazo-fecha" method="post" action="/fletes/{{ f.job_id }}/posponer"
+        hx-post="/fletes/{{ f.job_id }}/posponer">
+    <input type="hidden" name="cuando" value="fecha">
+    <label for="fecha-posponer">Elegir fecha</label>
+    <input id="fecha-posponer" type="datetime-local" name="fecha" required>
+    <button class="btn secundario chico" type="submit">Posponer</button>
+  </form>
+  {% if pospuesta_hasta %}
+  <form method="post" action="/fletes/{{ f.job_id }}/despertar" hx-post="/fletes/{{ f.job_id }}/despertar">
+    <button class="btn fantasma chico" type="submit">Traerla de vuelta ahora</button>
+  </form>
+  {% endif %}
+</details>
 
-<div class="columnas">
-  <div class="col-datos">
-    <section class="panel">
-      <h2>Datos</h2>
-      <p class="ayuda">Cada dato dice de qué mensaje salió. Tocalo para verlo en la conversación.</p>
-      <ul class="datos">
-        {% for x in d.datos %}
-        <li>
-          <a class="dato{% if x.duda or x.confianza < 0.7 %} dudoso{% endif %}" href="#{{ x.ancla }}" data-ir="{{ x.ancla }}">
-            <span class="dato-etq">{{ x.etiqueta }}</span>
-            <span class="dato-val">{{ x.valor }}</span>
-            <span class="dato-cita">“{{ x.cita }}”</span>
-            {% if x.duda %}<span class="dato-duda">{{ icono("aviso") }}{{ x.duda }}</span>{% endif %}
-            <span class="confianza" style="--c: {{ x.confianza }}" title="confianza {{ (x.confianza * 100)|round|int }}%"></span>
-          </a>
-        </li>
-        {% endfor %}
-        {% for falta in d.faltan %}
-        <li><div class="dato falta"><span class="dato-etq">{{ falta|capitalize }}</span><span class="dato-val">Falta</span></div></li>
-        {% endfor %}
-      </ul>
-    </section>
-
-    <section class="panel">
-      <h2>Precio</h2>
-      <div class="precios">
-        <div><span class="precio-etq">Cotizado</span><span class="precio-val num">{{ f.cotizado or "—" }}</span></div>
-        <div><span class="precio-etq">Sugerido</span><span class="precio-val num sugerido">{{ f.sugerido or "—" }}{% if f.sugerido and not f.sugerido_completo %}<small> o más</small>{% endif %}</span></div>
-      </div>
-      {% if d.desglose %}
-      <details class="desglose">
-        <summary>Cómo se calcula el sugerido</summary>
-        <table>
-          {% for concepto, monto in d.desglose %}<tr><td>{{ concepto }}</td><td class="num">{{ monto }}</td></tr>{% endfor %}
-        </table>
-        {% if d.sin_contar %}
-        <p class="sin-contar">Sin contar:</p>
-        <ul class="sin-contar">{% for s in d.sin_contar %}<li>{{ s }}</li>{% endfor %}</ul>
+{# La conversacion: lo que de verdad mirás. #}
+<section class="panel chat">
+  <h2 class="sr">Conversación</h2>
+  <ol class="mensajes">
+    {% for m in d.mensajes %}
+    <li class="msj {{ 'cliente' if m.del_cliente else 'vos' }}" id="{{ m.ancla }}">
+      <div class="burbuja">
+        {% if m.es_audio %}
+          <span class="audio">{{ icono("mic") }}{% if m.texto %}Audio transcripto{% else %}Audio sin transcribir{% endif %}</span>
+        {% elif m.medio %}
+          <span class="audio">{{ icono("adjunto") }}{{ m.medio }}</span>
         {% endif %}
-      </details>
-      {% endif %}
-    </section>
+        {% if m.texto %}<p>{{ m.texto }}</p>{% endif %}
+        <span class="msj-hora">{{ m.hora }}</span>
+      </div>
+      {% if m.datos %}<div class="msj-datos">{% for x in m.datos %}<span>{{ x }}</span>{% endfor %}</div>{% endif %}
+    </li>
+    {% endfor %}
+  </ol>
+</section>
 
-    {% if d.otros %}
-    <section class="panel">
-      <h2>Otros fletes de {{ f.nombre or "este cliente" }}</h2>
-      <ul class="otros">
-        {% for o in d.otros %}
-        <li><a href="/fletes/{{ o.job_id }}"><span>{{ o.titulo }}</span><span class="sub">{{ o.fecha or o.ultimo }}</span>{{ chip(o.estado_etiqueta, o.tono) }}</a></li>
-        {% endfor %}
-      </ul>
-    </section>
-    {% endif %}
+{# Todo lo de abajo es para revisar, no para cargar. #}
+<details class="panel plegado">
+  <summary>Lo que entendí del chat{% if d.faltan %} · faltan {{ d.faltan|length }}{% endif %}</summary>
+  <p class="ayuda">Cada dato dice de qué mensaje salió. Tocalo para verlo en la conversación.</p>
+  <ul class="datos">
+    {% for x in d.datos %}
+    <li>
+      <a class="dato{% if x.duda or x.confianza < 0.7 %} dudoso{% endif %}" href="#{{ x.ancla }}" data-ir="{{ x.ancla }}">
+        <span class="dato-etq">{{ x.etiqueta }}</span>
+        <span class="dato-val">{{ x.valor }}</span>
+        <span class="dato-cita">“{{ x.cita }}”</span>
+        {% if x.duda %}<span class="dato-duda">{{ icono("aviso") }}{{ x.duda }}</span>{% endif %}
+        <span class="confianza" style="--c: {{ x.confianza }}" title="confianza {{ (x.confianza * 100)|round|int }}%"></span>
+      </a>
+    </li>
+    {% endfor %}
+    {% for falta in d.faltan %}
+    <li><div class="dato falta"><span class="dato-etq">{{ falta|capitalize }}</span><span class="dato-val">Falta</span></div></li>
+    {% endfor %}
+  </ul>
+</details>
 
-    {% if d.historia %}
-    <section class="panel">
-      <h2>Historia</h2>
-      <ol class="historia">
-        {% for e in d.historia %}
-        <li class="tono-{{ e.tono }}">
-          <span class="hito"></span>
-          <div>
-            <strong>{{ e.hacia }}</strong>
-            <span class="historia-causa">{{ e.causa }}</span>
-            <span class="historia-cuando">{% if e.ancla %}<a href="#{{ e.ancla }}" data-ir="{{ e.ancla }}">{{ e.cuando }}</a>{% else %}{{ e.cuando }}{% endif %}</span>
-          </div>
-        </li>
-        {% endfor %}
-      </ol>
-    </section>
-    {% endif %}
-
-    {% if d.puede_perder %}
-    <details class="panel perder">
-      <summary>{{ icono("cruz") }}Dar por perdido</summary>
-      <form method="post" action="/fletes/{{ f.job_id }}/perdido" hx-post="/fletes/{{ f.job_id }}/perdido">
-        <label for="nota-perdido">¿Por qué? <span class="opcional">Opcional, para los números</span></label>
-        <input id="nota-perdido" name="nota" placeholder="Consiguió más barato, se arrepintió…" autocomplete="off">
-        <button class="btn fantasma peligro" type="submit">Dar por perdido</button>
-      </form>
-    </details>
-    {% endif %}
-
-    <details class="panel perder">
-      <summary>{{ icono("cruz") }}No es cliente</summary>
-      <p class="ayuda">Para charlas personales, spam o números equivocados. {{ f.quien }} desaparece de la bandeja, Fletes y Clientes para siempre. No se borra ningún mensaje.</p>
-      <form method="post" action="/fletes/{{ f.job_id }}/no-es-cliente" hx-post="/fletes/{{ f.job_id }}/no-es-cliente"
-            hx-confirm="¿{{ f.quien }} no es un cliente? Desaparece de la bandeja, Fletes y Clientes para siempre.">
-        <label for="nota-no-cliente">¿Por qué? <span class="opcional">Opcional</span></label>
-        <input id="nota-no-cliente" name="nota" placeholder="Charla personal, spam, número equivocado…" autocomplete="off">
-        <button class="btn fantasma peligro" type="submit">No es cliente</button>
-      </form>
-    </details>
+<details class="panel plegado">
+  <summary>Precio{% if f.cotizado %} · {{ f.cotizado }}{% elif f.sugerido %} · sugerido {{ f.sugerido }}{% endif %}</summary>
+  <div class="precios">
+    <div><span class="precio-etq">Cotizado</span><span class="precio-val num">{{ f.cotizado or "—" }}</span></div>
+    <div><span class="precio-etq">Sugerido</span><span class="precio-val num sugerido">{{ f.sugerido or "—" }}{% if f.sugerido and not f.sugerido_completo %}<small> o más</small>{% endif %}</span></div>
   </div>
+  {% if d.desglose %}
+  <table class="desglose-tabla">
+    {% for concepto, monto in d.desglose %}<tr><td>{{ concepto }}</td><td class="num">{{ monto }}</td></tr>{% endfor %}
+  </table>
+  {% if d.sin_contar %}
+  <p class="sin-contar">Sin contar:</p>
+  <ul class="sin-contar">{% for s in d.sin_contar %}<li>{{ s }}</li>{% endfor %}</ul>
+  {% endif %}
+  {% endif %}
+</details>
 
-  <div class="col-chat">
-    <section class="panel chat">
-      <h2>Conversación</h2>
-      <ol class="mensajes">
-        {% for m in d.mensajes %}
-        <li class="msj {{ 'cliente' if m.del_cliente else 'vos' }}" id="{{ m.ancla }}">
-          <div class="burbuja">
-            {% if m.es_audio %}
-              <span class="audio">{{ icono("mic") }}{% if m.texto %}Audio transcripto{% else %}Audio sin transcribir{% endif %}</span>
-            {% elif m.medio %}
-              <span class="audio">{{ icono("adjunto") }}{{ m.medio }}</span>
-            {% endif %}
-            {% if m.texto %}<p>{{ m.texto }}</p>{% endif %}
-            <span class="msj-hora">{{ m.hora }}</span>
-          </div>
-          {% if m.datos %}<div class="msj-datos">{% for x in m.datos %}<span>{{ x }}</span>{% endfor %}</div>{% endif %}
-        </li>
-        {% endfor %}
-      </ol>
-    </section>
-  </div>
-</div>
+{% if d.historia %}
+<details class="panel plegado">
+  <summary>Historia</summary>
+  <ol class="historia">
+    {% for e in d.historia %}
+    <li class="tono-{{ e.tono }}">
+      <span class="hito"></span>
+      <div>
+        <strong>{{ e.hacia }}</strong>
+        <span class="historia-causa">{{ e.causa }}</span>
+        <span class="historia-cuando">{% if e.ancla %}<a href="#{{ e.ancla }}" data-ir="{{ e.ancla }}">{{ e.cuando }}</a>{% else %}{{ e.cuando }}{% endif %}</span>
+      </div>
+    </li>
+    {% endfor %}
+  </ol>
+</details>
+{% endif %}
+
+{% if d.otros %}
+<details class="panel plegado">
+  <summary>Otros fletes de {{ f.nombre or "este cliente" }} · {{ d.otros|length }}</summary>
+  <ul class="otros">
+    {% for o in d.otros %}
+    <li><a href="/fletes/{{ o.job_id }}"><span>{{ o.titulo }}</span><span class="sub">{{ o.fecha or o.ultimo }}</span>{{ chip(o.estado_etiqueta, o.tono) }}</a></li>
+    {% endfor %}
+  </ul>
+</details>
+{% endif %}
+
+{% if d.puede_perder %}
+<details class="panel perder">
+  <summary>{{ icono("cruz") }}Dar por perdido</summary>
+  <form method="post" action="/fletes/{{ f.job_id }}/perdido" hx-post="/fletes/{{ f.job_id }}/perdido">
+    <label for="nota-perdido">¿Por qué? <span class="opcional">Opcional, para los números</span></label>
+    <input id="nota-perdido" name="nota" placeholder="Consiguió más barato, se arrepintió…" autocomplete="off">
+    <button class="btn fantasma peligro" type="submit">Dar por perdido</button>
+  </form>
+</details>
+{% endif %}
+
+{# No todo mensaje es un cliente: se le contesta algo y sale del circuito. #}
+<details class="panel perder">
+  <summary>{{ icono("cruz") }}No es cliente</summary>
+  <p class="ayuda">Charla personal, spam o número equivocado. {{ f.quien }} sale de Hoy, Fletes y Clientes para siempre. No se borra ningún mensaje.</p>
+  <form method="post" action="/fletes/{{ f.job_id }}/no-es-cliente" hx-post="/fletes/{{ f.job_id }}/no-es-cliente">
+    <label for="despedida">Contestarle antes <span class="opcional">Opcional</span></label>
+    <textarea id="despedida" name="despedida" rows="2" data-chat="{{ f.chat_id }}"
+              placeholder="Gracias, no me interesa. ¡Saludos!"></textarea>
+    <button class="btn fantasma peligro" type="submit">Sacar del circuito</button>
+  </form>
+</details>
 {% endblock %}

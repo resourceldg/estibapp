@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta
 
 import pytest
@@ -164,11 +165,14 @@ def cliente(db):
 
 
 class TestPaginas:
-    def test_bandeja_muestra_una_tarjeta_por_conversacion(self, cliente):
+    def test_bandeja_muestra_una_fila_por_conversacion(self, cliente):
+        """La bandeja elige a quien atender; el compositor vive adentro."""
         html = cliente.get("/").text
-        assert html.count('class="tarjeta borrador"') == 4
+        filas = re.findall(r'class="conv(?: pide-atencion)?"', html)
+        assert len(filas) == 4
+        assert "Escribí tu respuesta" not in html
         # Lo mas urgente primero: las confirmaciones antes que el seguimiento.
-        assert html.index("Almagro → Barracas") < html.index("Flores → Morón")
+        assert html.index("Confirmar flete") < html.index("Hacer seguimiento")
 
     def test_la_bandeja_agrupa_por_que_hacer(self, cliente):
         html = cliente.get("/").text
@@ -292,3 +296,79 @@ class TestOrden:
         html = cliente.get("/").text
         if "Sin noticias hace más de una semana" in html:
             assert html.index("Sin noticias hace más de una semana") > html.index("seccion-titulo")
+
+
+class TestConversacion:
+    """La unidad es la conversacion, no la ficha de flete."""
+
+    def test_el_chat_va_antes_que_lo_que_dedujo(self, cliente):
+        html = cliente.get("/fletes/5491177778888:job").text
+        assert html.index('class="panel chat"') < html.index("Lo que entendí del chat")
+
+    def test_lo_deducido_queda_plegado(self, cliente):
+        html = cliente.get("/fletes/5491177778888:job").text
+        assert "panel plegado" in html
+
+    def test_ofrece_pasar_a_la_siguiente(self, cliente):
+        html = cliente.get("/fletes/5491177778888:job").text
+        assert "Siguiente" in html
+
+    def test_se_puede_contestar_antes_de_sacar_del_circuito(self, cliente):
+        html = cliente.get("/fletes/5491177778888:job").text
+        assert 'name="despedida"' in html
+
+    def test_el_resumen_no_arranca_con_separador(self, cliente):
+        html = cliente.get("/fletes/5491155556666:job").text
+        assert 'class="entendido">\n  ·' not in html and '>· ' not in html
+
+    def test_lo_que_dijo_el_cliente_se_escapa(self, db):
+        """El origen sale de un WhatsApp: no puede inyectar HTML."""
+        conn = connect(db)
+        ConversationStore(conn).ingest([Message(
+            "x:1", "x", True, datetime(2026, 9, 18, 10), MessageKind.TEXT,
+            text="de <script>alert(1)</script> a Boedo una heladera",
+        )])
+        conn.close()
+        with TestClient(create_app(db, ahora=lambda: JUEVES_18)) as c:
+            html = c.get("/fletes/x:job").text
+            assert "<script>alert(1)</script>" not in html
+
+
+class TestPosponer:
+    """Posponer no cierra ni archiva: saca de lo urgente y vuelve sola."""
+
+    def _primero(self, cliente):
+        return cliente.get("/api/bandeja").json()[0]["borrador"]["job_id"]
+
+    def test_pospuesta_sale_de_lo_urgente(self, cliente):
+        job_id = self._primero(cliente)
+        antes = len(cliente.get("/api/bandeja").json())
+        cliente.post(f"/fletes/{job_id}/posponer", data={"cuando": "manana"})
+        html = cliente.get("/").text
+        assert "Pospuestas" in html
+        # Sigue existiendo: no se cerro ni se archivo.
+        assert len(cliente.get("/api/bandeja").json()) == antes
+
+    def test_vuelve_sola_cuando_se_cumple(self, db):
+        """Sin que nadie haga nada: pasa la fecha y reaparece."""
+        with TestClient(create_app(db, ahora=lambda: JUEVES_18)) as c:
+            job_id = c.get("/api/bandeja").json()[0]["borrador"]["job_id"]
+            c.post(f"/fletes/{job_id}/posponer", data={"cuando": "manana"})
+            assert "Pospuestas" in c.get("/").text
+        # Dos dias despues ya desperto.
+        despues = JUEVES_18 + timedelta(days=2)
+        with TestClient(create_app(db, ahora=lambda: despues)) as c:
+            assert "Pospuestas" not in c.get("/").text
+
+    def test_se_puede_traer_de_vuelta_antes(self, cliente):
+        job_id = self._primero(cliente)
+        cliente.post(f"/fletes/{job_id}/posponer", data={"cuando": "2-dias"})
+        assert "Pospuestas" in cliente.get("/").text
+        cliente.post(f"/fletes/{job_id}/despertar")
+        assert "Pospuestas" not in cliente.get("/").text
+
+    def test_una_fecha_que_no_se_entiende_no_pasa(self, cliente):
+        job_id = self._primero(cliente)
+        r = cliente.post(f"/fletes/{job_id}/posponer",
+                         data={"cuando": "fecha", "fecha": "cuando pueda"})
+        assert r.status_code == 400

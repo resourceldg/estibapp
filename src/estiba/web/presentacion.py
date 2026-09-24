@@ -39,6 +39,18 @@ TIPOS_BORRADOR = {
 #: Lo que no es texto ni audio: la burbuja no puede quedar en blanco.
 ETIQUETAS_MEDIO = {"image": "Imagen", "other": "Adjunto"}
 
+#: La proxima accion: una sola por conversacion, la que el contexto pide.
+#: Estiba propone, decide una persona. (etiqueta, icono)
+ACCIONES = {
+    "respuesta": ("Responder", "chat"),
+    "preguntas": ("Pedir datos", "chat"),
+    "cotizacion": ("Preparar cotización", "precio"),
+    "confirmacion": ("Confirmar flete", "hecho"),
+    "seguimiento": ("Hacer seguimiento", "chat"),
+}
+#: Cuando no hay nada que mandar, igual hay algo que decir de la conversacion.
+ESPERANDO = ("Esperar respuesta", "reloj")
+
 _ORDEN_DATOS = ("origin", "destination", "when", "hour", "daypart", "items",
                 "floors_no_lift", "helpers", "quoted_price")
 
@@ -57,6 +69,18 @@ def hace(desde: datetime, ahora: datetime) -> str:
         return f"hace {segundos // 3600} h"
     dias = segundos // 86400
     return "ayer" if dias == 1 else f"hace {dias} días"
+
+
+def cuando_vuelve(hasta: datetime, ahora: datetime) -> str:
+    """"vuelve manana 09:00", "vuelve en 2 h": cuando reaparece una pospuesta."""
+    minutos = int((hasta - ahora).total_seconds() // 60)
+    if minutos < 60:
+        return f"en {max(minutos, 1)} min"
+    if hasta.date() == ahora.date():
+        return f"hoy {hasta:%H:%M}"
+    if hasta.date() == (ahora + timedelta(days=1)).date():
+        return f"mañana {hasta:%H:%M}"
+    return f"el {fecha_corta(hasta.date())} {hasta:%H:%M}"
 
 
 def ancla(message_id: str) -> str:
@@ -131,6 +155,15 @@ class Borrador:
     whatsapp: str | None
     enviado: bool = False
     error_envio: str | None = None
+
+    @property
+    def accion(self) -> str:
+        """Que haria Estiba con esto. Una sola, la del contexto."""
+        return ACCIONES.get(self.tipo, (self.tipo_etiqueta, "chat"))[0]
+
+    @property
+    def accion_icono(self) -> str:
+        return ACCIONES.get(self.tipo, (self.tipo_etiqueta, "chat"))[1]
 
 
 @dataclass

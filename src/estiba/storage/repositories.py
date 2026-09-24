@@ -433,6 +433,37 @@ class ExclusionRepository:
         return {f["chat_id"] for f in self.conn.execute("SELECT chat_id FROM excluded_chats")}
 
 
+class SnoozeRepository:
+    """Conversaciones pospuestas: vuelven solas cuando se cumple la fecha.
+
+    Posponer no cierra ni archiva. Mientras dura, la conversacion no esta
+    entre las urgentes; cumplida la fecha reaparece sin que nadie haga nada.
+    """
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self.conn = conn
+
+    def posponer(self, chat_id: str, hasta: datetime, motivo: str | None, ahora: datetime) -> None:
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO snoozed_chats (chat_id, hasta, motivo, at) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT (chat_id) DO UPDATE SET hasta = excluded.hasta, "
+                "motivo = excluded.motivo, at = excluded.at",
+                (chat_id, _a_texto(hasta), (motivo or "").strip() or None, _a_texto(ahora)),
+            )
+
+    def despertar(self, chat_id: str) -> None:
+        with self.conn:
+            self.conn.execute("DELETE FROM snoozed_chats WHERE chat_id = ?", (chat_id,))
+
+    def vigentes(self, ahora: datetime) -> dict[str, datetime]:
+        """chat_id -> cuando vuelve. Lo ya cumplido no cuenta: ya desperto."""
+        filas = self.conn.execute(
+            "SELECT chat_id, hasta FROM snoozed_chats WHERE hasta > ?", (_a_texto(ahora),)
+        )
+        return {f["chat_id"]: datetime.fromisoformat(f["hasta"]) for f in filas}
+
+
 class SettingsRepository:
     """Ajustes que genera el sistema, como los secretos de las URLs."""
 

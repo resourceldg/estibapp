@@ -392,7 +392,9 @@ class TestAprobarYEnviar:
         ConversationStore(conn).ingest([normalizar(mensaje())])
         conn.close()
         with TestClient(create_app(tmp_path / "s.db", ahora=lambda: datetime(2026, 9, 18, 10, 30))) as tc:
-            assert "data-abre-whatsapp" in tc.get("/").text
+            # El compositor vive en la conversacion, no en la lista.
+            job_id = tc.get("/api/bandeja").json()[0]["borrador"]["job_id"]
+            assert "data-abre-whatsapp" in tc.get(f"/fletes/{job_id}").text
 
 
 class TestPantalla:

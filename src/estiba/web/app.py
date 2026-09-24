@@ -42,6 +42,7 @@ from estiba.storage.repositories import (
     DraftRepository,
     ExclusionRepository,
     SettingsRepository,
+    SnoozeRepository,
 )
 from estiba.web import presentacion as P
 from estiba.whatsapp import WhatsApp
@@ -53,6 +54,30 @@ _URGENCIA = ["respuesta", "confirmacion", "cotizacion", "preguntas", "seguimient
 
 #: Sin noticias por mas de esto, la conversacion deja de ser trabajo de hoy.
 DIAS_FRIO = 7
+
+
+def _cuando_vuelve(clave: str, ahora: datetime, fecha: str | None = None) -> datetime:
+    """Los plazos de posponer, en criollo. "Hoy" es esta tarde, no medianoche."""
+    if clave == "mas-tarde":
+        return ahora + timedelta(hours=3)
+    if clave == "hoy":
+        tarde = ahora.replace(hour=18, minute=0, second=0, microsecond=0)
+        return tarde if tarde > ahora else ahora + timedelta(hours=2)
+    if clave == "manana":
+        return (ahora + timedelta(days=1)).replace(hour=9, minute=0, second=0, microsecond=0)
+    if clave == "2-dias":
+        return (ahora + timedelta(days=2)).replace(hour=9, minute=0, second=0, microsecond=0)
+    if clave == "fecha" and fecha:
+        try:
+            d = datetime.fromisoformat(fecha)
+        except ValueError as e:
+            raise HTTPException(400, f"fecha invalida: {fecha}") from e
+        return d if d.hour or d.minute else d.replace(hour=9)
+    raise HTTPException(400, f"no se que plazo es {clave!r}")
+
+
+#: Lo que ofrece la pantalla, en orden. (clave, etiqueta)
+PLAZOS = [("mas-tarde", "Más tarde"), ("hoy", "Hoy"), ("manana", "Mañana"), ("2-dias", "En 2 días")]
 
 PERIODOS = {"7d": "7 días", "30d": "30 días", "mes": "Este mes", "todo": "Todo"}
 
@@ -245,6 +270,15 @@ def create_app(
         pendientes = _bandeja()
         con_borrador = {f.job_id for _, f in pendientes}
 
+        # Lo pospuesto no esta entre lo urgente, pero no se cierra: vuelve solo.
+        conn = estado.conectar()
+        try:
+            dormidos = SnoozeRepository(conn).vigentes(estado.ahora())
+        finally:
+            conn.close()
+        pospuestas = [(b, f, dormidos[f.chat_id]) for b, f in pendientes if f.chat_id in dormidos]
+        pendientes = [(b, f) for b, f in pendientes if f.chat_id not in dormidos]
+
         # El que no escribe hace mas de una semana no es el trabajo de hoy:
         # baja al fondo, plegado, para que arriba quede lo que esta vivo.
         corte = (estado.ahora() - timedelta(days=DIAS_FRIO)).isoformat()
@@ -276,6 +310,7 @@ def create_app(
             "sin_salir": _sin_salir(),
             "acciones": list(acciones.items()),
             "frios": frios,
+            "pospuestas": sorted(pospuestas, key=lambda x: x[2]),
             "esperando": esperando,
             "confirmados": confirmados,
             "cerrados": cerrados,
@@ -373,7 +408,19 @@ def create_app(
     @app.get("/fletes/{job_id}", response_class=HTMLResponse, include_in_schema=False)
     def pagina_flete(request: Request, job_id: str):
         d = _detalle(job_id)
-        return templates.TemplateResponse(request, "flete.html", _contexto(request, d=d, titulo=d.flete.ruta))
+        conn = estado.conectar()
+        try:
+            dormida = SnoozeRepository(conn).vigentes(estado.ahora()).get(d.flete.chat_id)
+        finally:
+            conn.close()
+        return templates.TemplateResponse(
+            request, "flete.html",
+            _contexto(
+                request, d=d, siguiente=_siguiente(job_id), plazos=PLAZOS,
+                pospuesta_hasta=P.cuando_vuelve(dormida, estado.ahora()) if dormida else None,
+                titulo=d.flete.quien,
+            ),
+        )
 
     @app.get("/numeros", response_class=HTMLResponse, include_in_schema=False)
     def pagina_numeros(request: Request, periodo: str = "30d"):
@@ -440,16 +487,34 @@ def create_app(
             conn.close()
         estado.sincronizar()
 
-    def _no_es_cliente(job_id: str, nota: str | None) -> None:
+    def _no_es_cliente(job_id: str, nota: str | None, despedida: str | None = None) -> None:
+        """Saca la charla del circuito, contestandole algo antes si hace falta.
+
+        Se manda primero: si WhatsApp falla, no se excluye nada y el error se
+        ve. Asi nunca queda uno "despedido" al que no le llego la despedida.
+        """
         if job_id not in estado.resultado.fletes:
             raise HTTPException(404, f"no hay un flete {job_id}")
         _, conv = estado.resultado.fletes[job_id]
+        despedida = (despedida or "").strip()
+        if despedida:
+            if estado.whatsapp is None:
+                raise HTTPException(409, "WhatsApp no esta conectado: no se puede contestar")
+            try:
+                estado.whatsapp.cliente.enviar_texto(conv.chat_id, despedida)
+            except ErrorWaha as e:
+                raise HTTPException(502, f"no salio el mensaje, no se saco a nadie: {e}") from e
         conn = estado.conectar()
         try:
             ExclusionRepository(conn).excluir(conv.chat_id, nota, estado.ahora())
         finally:
             conn.close()
         estado.sincronizar()
+
+    def _siguiente(job_id: str) -> str | None:
+        """El proximo que espera algo: resolver uno y seguir, sin volver a la lista."""
+        pendientes = [f.job_id for _, f in _bandeja() if f.job_id != job_id]
+        return pendientes[0] if pendientes else None
 
     def _volver(request: Request, a: str) -> Response:
         if request.headers.get("HX-Request"):
@@ -487,11 +552,41 @@ def create_app(
         _accion(job_id, PERDIDO, nota)
         return _volver(request, f"/fletes/{job_id}")
 
+    @app.post("/fletes/{job_id}/posponer", include_in_schema=False)
+    def posponer_form(request: Request, job_id: str, cuando: str = Form("manana"),
+                      fecha: str = Form(""), motivo: str = Form("")):
+        """Sacarla de lo urgente sin cerrarla: vuelve sola en la fecha."""
+        if job_id not in estado.resultado.fletes:
+            raise HTTPException(404, f"no hay un flete {job_id}")
+        _, conv = estado.resultado.fletes[job_id]
+        ahora = estado.ahora()
+        conn = estado.conectar()
+        try:
+            SnoozeRepository(conn).posponer(
+                conv.chat_id, _cuando_vuelve(cuando, ahora, fecha or None), motivo, ahora
+            )
+        finally:
+            conn.close()
+        return _volver(request, "/")
+
+    @app.post("/fletes/{job_id}/despertar", include_in_schema=False)
+    def despertar_form(request: Request, job_id: str):
+        if job_id not in estado.resultado.fletes:
+            raise HTTPException(404, f"no hay un flete {job_id}")
+        _, conv = estado.resultado.fletes[job_id]
+        conn = estado.conectar()
+        try:
+            SnoozeRepository(conn).despertar(conv.chat_id)
+        finally:
+            conn.close()
+        return _volver(request, "/")
+
     @app.post("/fletes/{job_id}/no-es-cliente", include_in_schema=False)
-    def no_es_cliente_form(request: Request, job_id: str, nota: str = Form("")):
+    def no_es_cliente_form(request: Request, job_id: str, nota: str = Form(""),
+                           despedida: str = Form("")):
         """Charla personal, spam, numero equivocado: se saca para siempre de
         la bandeja, los fletes y Clientes. Los mensajes no se borran."""
-        _no_es_cliente(job_id, nota)
+        _no_es_cliente(job_id, nota, despedida)
         return _volver(request, "/")
 
     @app.post("/clientes/{chat_id}/nombre", include_in_schema=False)

@@ -676,3 +676,68 @@ ul.sin-contar { margin: 4px 0 0; padding-left: 18px; color: var(--tinta-2); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* ------------------------------------------------- la conversacion */
+/* La unidad de trabajo es el chat, no la ficha: el hilo ocupa la pantalla y
+   lo que Estiba dedujo queda plegado, para revisar y no para cargar. */
+.conv-cab { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.btn-icono.chico-texto { margin-left: 0; min-height: 34px; font-weight: 650; color: var(--tinta); }
+.quien-cab {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin-bottom: 8px;
+}
+.quien-datos { display: grid; gap: 2px; min-width: 0; }
+.entendido { color: var(--tinta-2); font-size: 15px; margin-bottom: 14px; }
+.entendido strong { color: var(--tinta); font-weight: 650; }
+
+.panel.plegado { padding: 0; margin-bottom: 12px; }
+.panel.plegado > summary {
+  display: flex; align-items: center; gap: 8px; cursor: pointer; list-style: none;
+  padding: 14px 16px; font-weight: 650; font-size: 15px; color: var(--tinta-2);
+}
+.panel.plegado > summary::-webkit-details-marker { display: none; }
+.panel.plegado > summary::after { content: "▾"; margin-left: auto; color: var(--tenue); }
+.panel.plegado[open] > summary::after { content: "▴"; }
+.panel.plegado[open] > summary { border-bottom: 1px solid var(--linea); }
+.panel.plegado > *:not(summary) { margin-left: 16px; margin-right: 16px; }
+.panel.plegado > *:last-child { margin-bottom: 14px; }
+.desglose-tabla { width: 100%; font-size: 14px; color: var(--tinta-2); border-collapse: collapse; }
+.perder textarea {
+  width: 100%; min-height: 64px; padding: 10px 12px; field-sizing: content;
+  border: 1.5px solid var(--linea-2); border-radius: 12px;
+  background: var(--superficie); color: var(--tinta); font: inherit; font-size: 16px;
+}
+
+/* ------------------------------------------ fila de conversacion */
+/* La bandeja se lee como una lista de chats: quien, que dijo, cuando, como
+   viene y que haria Estiba. Se trabaja adentro, no desde la lista. */
+.conv { display: grid; gap: 3px; padding: 12px 14px; text-decoration: none; }
+.conv:hover { background: var(--superficie-2); }
+.conv-linea1 { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.conv-quien { font-weight: 650; font-size: 16px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conv-hora { color: var(--tenue); font-size: 12px; flex: none; }
+.conv-ultimo {
+  color: var(--tinta-2); font-size: 14px;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.conv-vos { color: var(--tenue); }
+.conv-linea3 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+.conv-accion {
+  display: inline-flex; align-items: center; gap: 5px;
+  color: var(--primario); font-size: 13px; font-weight: 650;
+}
+.conv-accion .ico { width: 15px; height: 15px; }
+@media (prefers-color-scheme: dark) { .conv-accion { color: var(--primario); } }
+/* Te hizo una pregunta que las reglas no saben contestar: te toca a vos. */
+.conv.pide-atencion { border-left: 3px solid var(--acento); padding-left: 11px; }
+
+/* --------------------------------------------------------- posponer */
+.plazos { display: flex; flex-wrap: wrap; gap: 8px; }
+.plazos form { display: contents; }
+.plazo-fecha { display: grid; gap: 6px; margin-top: 12px; }
+.plazo-fecha label { font-size: 14px; font-weight: 600; }
+.plazo-fecha input {
+  min-height: 46px; padding: 0 12px; border: 1.5px solid var(--linea-2);
+  border-radius: 12px; background: var(--superficie); color: var(--tinta); font: inherit;
+}
+.posponer > summary .ico { width: 17px; height: 17px; }
