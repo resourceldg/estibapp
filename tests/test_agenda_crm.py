@@ -475,7 +475,7 @@ class TestNumeroDeFlete:
         filas = conn.execute(
             "SELECT id FROM jobs j WHERE state = 'cancelado' AND numero IS NOT NULL "
             "AND NOT EXISTS (SELECT 1 FROM job_events e WHERE e.job_id = j.id "
-            "                AND e.hacia = 'presupuestado')"
+            "                AND e.to_state = 'presupuestado')"
         ).fetchall()
         assert not filas
 
