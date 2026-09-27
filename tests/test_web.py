@@ -57,7 +57,9 @@ class TestRedactor:
         p = _propuesta(_chat(("c", "hola, haces fletes?")))
         assert p.kind == "preguntas"
         assert p.text.count("?") <= 1        # invita, no interroga
-        assert "Contame" in p.text and "foto" in p.text
+        assert "Contame" in p.text and "audio" in p.text
+        # No se ofrece lo que Estiba no puede leer: una foto no deja dato.
+        assert "foto" not in p.text
 
     def test_una_vez_arrancada_la_charla_vuelve_a_dos_preguntas(self):
         p = _propuesta(_chat(("c", "hola, haces fletes?"),

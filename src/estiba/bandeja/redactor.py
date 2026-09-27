@@ -51,9 +51,15 @@ def _cosas(items: list[str]) -> str:
 #: contestarle con cinco preguntas lo pone a llenar un formulario. Una sola
 #: pregunta abierta deja que cuente lo que tenga, y de ahi Estiba saca lo
 #: que pueda. Los datos que falten se piden despues, de a dos.
+#:
+#: No se ofrece mandar fotos: Estiba no las puede leer. Una foto del ropero
+#: llega como un adjunto vacio, no deja ningun dato, y hay que repreguntar
+#: lo que el cliente ya creyo haber contestado. El audio si se transcribe,
+#: asi que ese ofrecimiento se cumple. Cuando Estiba sepa mirar una foto,
+#: vuelve a la invitacion.
 APERTURA = (
     "🚚 ¡Hola! Gracias por escribir. Contame qué tenés que llevar y te paso "
-    "un precio. Si te resulta más fácil, mandame una foto o un audio 📸"
+    "un precio. Si te resulta más fácil, mandame un audio 🎤"
 )
 
 
