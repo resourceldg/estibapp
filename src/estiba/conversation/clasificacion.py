@@ -75,9 +75,73 @@ _DESDE_PUBLI = re.compile(
 _OFRECE = re.compile(
     r"\b(?:te\s+(?:ofrezco|cuento\s+como)|le\s+ofrecemos|ofrecemos\s+"
     r"|sumate|seguinos|segui\s+nuestro|canal\s+de\s+whatsapp|lista\s+de\s+difusion"
+    r"|(?:te\s+)?quer[ií]a\s+ofrecer|quiero\s+ofrecerte|ofrecerte\s+"
     r"|me\s+dedico\s+a|brindo\s+(?:el\s+)?servicio|mi\s+emprendimiento"
     r"|contactame\s+si\s+(?:necesitas|queres))\b"
 )
+
+#: El otro trabajo. Lucas tambien da clases, y esos mensajes entraban como
+#: leads porque una pregunta es una pregunta: "podrias juntar a 1ro con 2do?
+#: faltan profesores" quedaba en la bandeja al lado de una mudanza. Nadie
+#: que quiera mover un ropero dice "profe".
+_DOCENCIA = re.compile(
+    r"\b(?:profe|profes|profesora?|profesores|alumn[oa]s?|docentes?|"
+    r"cens\b|escuela|colegio|instituto|c[aá]tedra|materia|"
+    r"trimestre|cuatrimestre|bolet[ií]n|planificaci[oó]n|"
+    r"cursada|aula|secundari[ao])\b"
+)
+
+#: Un grupo no se cuela como chat, pero si se habla de uno. Al que te
+#: pregunta si te agrega a un grupo no le estas vendiendo un flete.
+_DEL_GRUPO = re.compile(r"\b(?:al\s+grupo|del\s+grupo|grupo\s+de\s+wh?ats)\b")
+
+#: Contestadores y bots de empresa. Importa que se miren antes que el
+#: oficio: el mensaje de bienvenida de otro fletero ("Bienvenido a Fletes y
+#: Auxilios La Costa! Brindamos soluciones rapidas") nombra el oficio, y por
+#: eso entraba como lead. Un competidor no es un cliente.
+_AUTOMATICO = re.compile(
+    r"\bgracias\s+por\s+(?:comunicarte|comunicarse|contactarnos|escribirnos)\b"
+    r"|\bbienvenid[oa]s?\s+a\b"
+    r"|\bhorario\s+de\s+atenci[oó]n\b"
+    r"|\bdepartamento\s+de\s+(?:cobranzas|atenci[oó]n|ventas)\b"
+    r"|\bmensaje\s+autom[aá]tico\b"
+    r"|\bno\s+respond[ae][sr]?\s+a\s+este\s+mensaje\b"
+    r"|\bn[uú]mero\s+de\s+(?:dni|documento|socio|cliente)\b"
+    r"|\bbrindamos\s+(?:soluciones|servicios)\b"
+    r"|\bnuestros\s+servicios\b"
+)
+
+#: Como esta guardado el contacto tambien dice de que se trata. El que
+#: anoto "JULIA hermana" o "Guido Alumno Iot" ya clasifico la relacion: no
+#: hace falta leerle los mensajes para saber que no es un flete.
+_NOMBRE_DE_CONFIANZA = re.compile(
+    r"\b(?:mam[aá]|pap[aá]|abuel[ao]|herman[ao]|t[ií][ao]|prim[ao]|"
+    r"suegr[ao]|cu[nñ]ad[oa]|hij[oa]|esposa?|novi[ao]|"
+    r"profe|profesora?|alumn[oa]|maestr[ao])\b"
+)
+
+#: Los que te venden a vos. No son clientes ni son spam: son del negocio,
+#: pero del lado de los costos.
+_NOMBRE_PROVEEDOR = re.compile(
+    r"\b(?:mec[aá]nic[oa]|taller|chapista|gomer[ií]a|desarmadero|"
+    r"repuestos?|electricista|herrer[ií]a|lubricentro)\b"
+)
+
+#: Cuando el que compra es el fletero. Lleva la camioneta al mecanico y
+#: "camioneta" esta en el vocabulario del oficio, asi que el taller entraba
+#: como si fuera un cliente. Lo que lo distingue no es la palabra sino quien
+#: la dice: es el fletero el que cuenta que se le rompio algo. Por eso esto
+#: se busca en lo que escribe el, no en lo que le escriben.
+_TALLER = re.compile(
+    r"\b(?:mec[aá]nic[oa]|taller|chapista|gomer[ií]a|desarmadero|"
+    r"cremallera|embrague|bujias?|junta\s+de\s+tapa|caja\s+de\s+direccion|"
+    r"tren\s+delantero|service\b|vtv\b)\b"
+)
+#: "arreglar", "se rompio" y "reparar" quedaron afuera a proposito: un
+#: fletero dice "se rompio" de cualquier cosa, y con eso una venta personal
+#: terminaba explicada como "le llevas el vehiculo". Una razon falsa es peor
+#: que ninguna: es lo que el fletero lee en la pantalla para decidir si
+#: Estiba entendio bien.
 
 #: Afecto y casa: una charla que no es del negocio.
 _PERSONAL = re.compile(
@@ -190,6 +254,20 @@ def clasificar(conv: Conversation, ex: Extraccion, nombre: str | None = None) ->
     liso = plano(nombre or "")
     if liso and (_NOMBRE_COMERCIAL.search(liso) or _ES_HANDLE.match(liso)):
         return Clasificacion(Clase.SPAM, f"el contacto se llama “{nombre}”")
+    if liso and _NOMBRE_DE_CONFIANZA.search(liso):
+        return Clasificacion(Clase.PRIVADO, f"lo tenés guardado como “{nombre}”")
+    if liso and _NOMBRE_PROVEEDOR.search(liso):
+        return Clasificacion(Clase.PRIVADO, "es un proveedor tuyo, no un cliente")
+
+    # Un contestador, antes que el oficio: el mensaje de bienvenida de otro
+    # fletero nombra el oficio y entraba como si fuera un cliente.
+    if _AUTOMATICO.search(texto):
+        return Clasificacion(Clase.SPAM, "es un contestador, no una persona")
+
+    # Tambien antes del oficio: si sos vos el que cuenta que se le rompio la
+    # camioneta, el otro es tu mecanico y no tu cliente.
+    if _TALLER.search(_texto_del_fletero(conv)):
+        return Clasificacion(Clase.PRIVADO, "le llevás el vehículo, no le vendés un flete")
 
     # Pidio el servicio con todas las letras: eso le gana al afecto. Hay
     # clientes que cierran con "gracias mi amor" y no por eso dejan de serlo.
@@ -207,6 +285,15 @@ def clasificar(conv: Conversation, ex: Extraccion, nombre: str | None = None) ->
         return Clasificacion(Clase.PRIVADO, "te habla como alguien de confianza")
     if _PERSONAL.search(_texto_del_fletero(conv)):
         return Clasificacion(Clase.PRIVADO, "le hablás como a alguien de confianza")
+
+    # La escuela, en el mismo lugar que el afecto: le gana a lo inferido,
+    # pero no a un pedido de flete dicho de frente. Un profesor que se muda
+    # sigue siendo un cliente.
+    nuestro = _texto_del_fletero(conv)
+    if _DOCENCIA.search(texto) or _DOCENCIA.search(nuestro):
+        return Clasificacion(Clase.PRIVADO, "hablan de la escuela, no de fletes")
+    if _DEL_GRUPO.search(texto):
+        return Clasificacion(Clase.PRIVADO, "te habla de un grupo, no de un flete")
 
     fuertes = [c for c in _CAMPOS_FUERTES if c in ex.ganadores]
     if fuertes:
@@ -232,6 +319,15 @@ def clasificar(conv: Conversation, ex: Extraccion, nombre: str | None = None) ->
 
     debiles = [c for c in _CAMPOS_DEBILES if c in ex.ganadores]
     if debiles or any(i.intencion is Intencion.CONSULTA for i in ex.intenciones):
+        # Toda pregunta parecia una consulta de flete, y asi un amigo que
+        # escribe "¿todo bien?" o "¿tenés el número de Lorena?" terminaba en
+        # la bandeja junto a una mudanza. En un hilo largo y de ida y vuelta
+        # donde nunca se nombro el oficio, lo honesto no es afirmar que es un
+        # lead: es decir que no se sabe, que es lo unico que pide una
+        # decision. En un primer contacto, en cambio, una pregunta casi
+        # siempre es por un flete, y ahi si conviene suponerlo.
+        if len(de_ellos) >= 5 and nuestros:
+            return Clasificacion(Clase.DUDOSA, "hablan seguido pero nunca de fletes")
         return Clasificacion(Clase.LEAD, "parece una consulta, pero dijo poco")
 
     # Una charla larga y de ida y vuelta sin una sola palabra del oficio no

@@ -134,6 +134,26 @@ class TestNormalizar:
     def test_grupos_estados_y_canales_no_son_clientes(self, jid):
         assert normalizar(mensaje(**{"from": jid})) is None
 
+    @pytest.mark.parametrize("payload", [
+        # Lo que escribe el fletero DENTRO de un grupo, en los dos motores:
+        # WEBJS deja el grupo en "to", GOWS lo deja en "from" con "to" vacio.
+        {"fromMe": True, "from": "5491100000000@c.us", "to": "12036302@g.us"},
+        {"fromMe": True, "from": "12036302@g.us", "to": ""},
+    ])
+    def test_tampoco_lo_que_escribis_vos_en_un_grupo(self, payload):
+        """En un grupo se habla de todo y nadie pide un flete.
+
+        Ademas una sola conversacion traeria treinta interlocutores
+        distintos, y el hilo dejaria de ser el de una persona.
+        """
+        assert normalizar(mensaje(**payload)) is None
+
+    @pytest.mark.parametrize("jid", ["0@c.us", "123@c.us", "0@lid"])
+    def test_un_numero_que_no_parece_un_telefono_no_entra(self, jid):
+        """"0@c.us" pasaba el patron y dejaba un chat llamado "0", que no es
+        nadie: aparecia en la bandeja sin un solo dato para decidir."""
+        assert normalizar(mensaje(**{"from": jid})) is None
+
     def test_lid_se_traduce_a_telefono(self):
         m = normalizar(mensaje(**{"from": "99887766@lid"}), resolver_lid=lambda jid: "5491122223333")
         assert m.chat_id == "5491122223333"

@@ -74,9 +74,22 @@ class ErrorWaha(RuntimeError):
 _PERSONA = re.compile(r"^(\d+)@(?:c\.us|s\.whatsapp\.net)$")
 _LID = re.compile(r"^(\d+)@lid$")
 
+#: Lo que WhatsApp manda que no es una charla con una persona. Es una lista
+#: blanca, no negra: lo que no reconocemos no entra. Los grupos (@g.us) son
+#: el caso que mas importa: en un grupo de la escuela o del barrio se habla
+#: de todo, nadie te esta pidiendo un flete, y una sola conversacion puede
+#: traer treinta interlocutores distintos. Tampoco entran los estados
+#: (status@broadcast), los canales (@newsletter) ni las listas de difusion.
+#:
+#: Un numero tiene que parecer un telefono. "0@c.us" pasaba el patron y
+#: dejaba un chat llamado "0" en la bandeja, que no es nadie.
+_MINIMO_TELEFONO = 8
+
 
 def es_persona(jid: str) -> bool:
-    return bool(_PERSONA.match(jid) or _LID.match(jid))
+    """Si este jid es una charla con una persona. Los grupos quedan afuera."""
+    m = _PERSONA.match(jid) or _LID.match(jid)
+    return bool(m) and len(m.group(1)) >= _MINIMO_TELEFONO
 
 
 def telefono_de(jid: str) -> str | None:

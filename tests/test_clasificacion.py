@@ -28,6 +28,11 @@ def _clase(*lineas: tuple[str, str]):
     return clasificar(conv, SlotExtractor().extract(conv))
 
 
+def _clase_con_nombre(*lineas: tuple[str, str], nombre: str):
+    conv = _chat(*lineas)
+    return clasificar(conv, SlotExtractor().extract(conv), nombre)
+
+
 class TestEsNegocio:
     def test_pedido_claro_no_pregunta_nada(self):
         r = _clase(("c", "hola, necesito llevar una heladera de Almagro a Boedo"))
@@ -288,3 +293,104 @@ class TestDesdeLaPubli:
     def test_no_pide_decidir_nada(self):
         """Dijo poquito, pero no hay nada que dudar."""
         assert not self._clase_de("¡Hola! Quiero más información").pide_decision
+
+
+class TestElOtroTrabajo:
+    """Lucas tambien da clases, y esos mensajes entraban como leads.
+
+    Todos los textos de aca son mensajes reales de su WhatsApp. Seis
+    conversaciones de la escuela estaban en la bandeja al lado de las
+    mudanzas: una pregunta parecia una consulta de flete, sin mirar de que
+    se preguntaba.
+    """
+
+    def test_la_escuela_no_es_un_flete(self):
+        r = _clase(("c", "Hola! Te consulto hoy podrías juntar a 1er con 2do? "
+                         "Porque faltan profesores"),
+                   ("v", "Dale, lo vemos"))
+        assert r.clase is Clase.PRIVADO
+
+    def test_un_alumno_tampoco(self):
+        r = _clase(("c", "Profe, tengo para pasarte el texto que generé para el viernes"),
+                   ("v", "Joya, mandalo"))
+        assert r.clase is Clase.PRIVADO
+
+    def test_pero_un_profesor_que_se_muda_sigue_siendo_cliente(self):
+        """La escuela le gana a lo inferido, no a un pedido de frente."""
+        r = _clase(("c", "Hola, soy profe del cens 462 y necesito un flete "
+                         "para mudarme el sábado"))
+        assert r.clase is Clase.LEAD
+
+    def test_como_lo_tenes_guardado_alcanza(self):
+        """El que anoto "JULIA hermana" ya clasifico la relacion."""
+        r = _clase_con_nombre(("c", "hola, todo bien?"), nombre="JULIA hermana")
+        assert r.clase is Clase.PRIVADO
+
+    def test_el_que_te_agrega_a_un_grupo_no_te_compra_un_flete(self):
+        r = _clase(("c", "te agrego al grupo?"), ("v", "dale"))
+        assert r.clase is Clase.PRIVADO
+
+
+class TestNiClienteNiSpam:
+    """Los que estan del lado de los costos, no de las ventas."""
+
+    def test_el_mecanico_no_es_un_cliente(self):
+        """"camioneta" es del oficio, y el taller entraba como lead.
+
+        Lo que distingue no es la palabra sino quien la dice: es el fletero
+        el que cuenta que se le rompio algo.
+        """
+        r = _clase(("v", "hola, tengo una c10 que se le rompió la caja de dirección, "
+                         "¿la puedo llevar mañana?"),
+                   ("c", "Hola, cómo va? ¿Qué es lo que le pasa?"))
+        assert r.clase is Clase.PRIVADO
+
+    def test_el_nombre_del_contacto_ya_lo_dice(self):
+        r = _clase_con_nombre(("c", "seguro el martes"), nombre="Tito Mecanico")
+        assert r.clase is Clase.PRIVADO
+
+    def test_arreglar_solo_no_alcanza(self):
+        """Un fletero dice "se rompio" de cualquier cosa.
+
+        Con eso, una venta personal quedaba explicada como "le llevas el
+        vehiculo": una razon falsa, que es peor que ninguna.
+        """
+        r = _clase(("v", "te la puedo arreglar si querés"),
+                   ("c", "Te la puedo comprar en cuotas"))
+        assert r.clase is not Clase.PRIVADO
+
+
+class TestContestadores:
+    """Bots de empresa y la bienvenida de la competencia."""
+
+    def test_el_mensaje_de_otro_fletero_no_es_un_lead(self):
+        """Mensaje real: nombra el oficio, asi que entraba como cliente."""
+        r = _clase(("c", "Bienvenido/a a Fletes y Auxilios La Costa! "
+                         "Brindamos soluciones rápidas"))
+        assert r.clase is Clase.SPAM
+
+    def test_un_bot_de_cobranzas_tampoco(self):
+        r = _clase(("c", "¡Hola! Gracias por comunicarse con el Departamento de "
+                         "cobranzas. Nuestro horario de atención es de lunes a viernes"),
+                   ("c", "¿Podés brindarme tu número de DNI?"))
+        assert r.clase is Clase.SPAM
+
+
+class TestUnaPreguntaNoEsUnaConsulta:
+    def test_un_hilo_largo_sin_una_palabra_del_oficio_es_dudosa(self):
+        """Un amigo que pregunta "¿todo bien?" no es un lead.
+
+        No pasa a privado ni a spam: se dice que no se sabe, que es lo unico
+        que pide una decision. Descartarlo en silencio seria peor.
+        """
+        r = _clase(("c", "Lukiiiii como andassss brooo"), ("v", "todo bien"),
+                   ("c", "Mañana 9am seriaaa ?"), ("v", "dale"),
+                   ("c", "Siiiii dale manooo te esperooo"), ("v", "ahí voy"),
+                   ("c", "mi vecino el rasta dice que se suma"),
+                   ("c", "¿tenés el número de Lorena?"))
+        assert r.clase is Clase.DUDOSA
+        assert r.pide_decision
+
+    def test_pero_en_un_primer_contacto_la_pregunta_se_supone_del_oficio(self):
+        r = _clase(("c", "hola, cuánto me saldría?"))
+        assert r.clase is Clase.LEAD
