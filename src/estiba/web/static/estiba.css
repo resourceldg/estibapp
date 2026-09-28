@@ -1115,3 +1115,56 @@ summary::-webkit-details-marker { display: none; }
 .evento.tentativo { border: 1px dashed var(--linea-2); background: transparent; }
 .evento.tentativo .evento-hora { color: var(--tenue); }
 .sin-confirmar { color: var(--aviso); font-weight: 700; }
+
+/* ------------------------------------------------------- mes en grilla */
+/* Una lista dice que viene; la grilla dice donde estan los huecos, que es
+   lo que se mira cuando alguien pregunta "¿el jueves podes?".
+   Celular primero: siete columnas iguales, celdas cuadradas y del tamano
+   de un pulgar, y las marcas debajo del numero en vez de al lado. */
+.mes { margin-bottom: 18px; }
+.mes-cab { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.mes-cab h2 { font-size: 17px; font-weight: 700; text-transform: capitalize; }
+.mes-paso {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 44px; min-height: 44px; border-radius: 12px;
+  color: var(--tinta-2); text-decoration: none;
+}
+.mes-paso:hover { background: var(--superficie); color: var(--tinta); }
+.mes-hoy {
+  display: inline-block; margin-top: 2px; padding: 4px 0;
+  color: var(--acento); font-size: 13px; font-weight: 650;
+}
+
+.grilla { width: 100%; border-collapse: collapse; table-layout: fixed; margin-top: 6px; }
+.grilla th {
+  padding-bottom: 6px; font-size: 11px; font-weight: 700;
+  color: var(--tenue); text-transform: uppercase; letter-spacing: .04em;
+}
+.grilla th abbr { text-decoration: none; }
+.grilla td { padding: 1px; text-align: center; vertical-align: top; }
+.grilla td > * {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 3px; min-height: 44px; border-radius: 10px;
+  color: var(--tinta); font-size: 14px; text-decoration: none;
+}
+.grilla td > a { background: var(--superficie); font-weight: 700; }
+.grilla td > a:hover { background: var(--superficie-2); }
+.grilla td.otro-mes > * { color: var(--tenue); }
+.grilla td.pasado > * { opacity: .55; }
+.grilla td.hoy > * { box-shadow: inset 0 0 0 1.5px var(--acento); }
+.grilla td.hoy .dia-num { color: var(--acento); }
+
+.marcas { display: flex; gap: 3px; flex-wrap: wrap; justify-content: center; }
+.marca {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--ok); border: 1px solid var(--ok);
+}
+/* Hueca, no solo de otro color: sin confirmar tiene que distinguirse
+   tambien de forma, no unicamente por el tono. */
+.marca.sin-cerrar { background: transparent; border-color: var(--aviso); }
+.mes-pie {
+  display: flex; align-items: center; gap: 6px; margin-top: 10px;
+  color: var(--tenue); font-size: 12px;
+}
+.mes-pie .marca { margin-left: 6px; }
+.mes-pie .marca:first-child { margin-left: 0; }

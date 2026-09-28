@@ -514,7 +514,7 @@ def create_app(
             ("cerrados", "Pasados y perdidos", cerrados),
         ]
 
-    def _agenda(request: Request) -> P.Agenda:
+    def _agenda(request: Request, mes: str | None = None) -> P.Agenda:
         conn = estado.conectar()
         try:
             cal = LocalCalendar(conn)
@@ -522,7 +522,15 @@ def create_app(
             url = str(request.base_url).rstrip("/") + f"/calendario/{cal.token()}.ics"
         finally:
             conn.close()
-        return P.agenda(eventos, _fletes(), estado.ahora(), url)
+        # "2026-10" en la URL: un mes escrito de cualquier otra forma se
+        # ignora y se muestra el de hoy, que es lo que se queria ver.
+        mirando = None
+        if mes and re.fullmatch(r"\d{4}-\d{2}", mes):
+            try:
+                mirando = datetime.strptime(mes, "%Y-%m").date()
+            except ValueError:
+                mirando = None
+        return P.agenda(eventos, _fletes(), estado.ahora(), url, mirando)
 
     def _embudo(periodo: str) -> tuple[embudo.Embudo, P.Numeros]:
         ahora = estado.ahora()
@@ -574,9 +582,9 @@ def create_app(
         )
 
     @app.get("/agenda", response_class=HTMLResponse, include_in_schema=False)
-    def pagina_agenda(request: Request):
+    def pagina_agenda(request: Request, mes: str | None = None):
         return templates.TemplateResponse(
-            request, "agenda.html", _contexto(request, a=_agenda(request), titulo="Agenda")
+            request, "agenda.html", _contexto(request, a=_agenda(request, mes), titulo="Agenda")
         )
 
     @app.get("/fletes", response_class=HTMLResponse, include_in_schema=False)

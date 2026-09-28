@@ -26,6 +26,62 @@
   Lo que se habló pero nadie cerró aparece punteado y no suena.</p>
 </div>
 
+{# El mes de un vistazo. Una lista dice que viene; la grilla dice donde
+   estan los huecos, que es lo que se mira cuando alguien pregunta "¿el
+   jueves podes?". Por eso no reemplaza la lista: va arriba de ella. #}
+{% if a.mes %}
+<section class="mes">
+  <div class="mes-cab">
+    <a class="mes-paso" href="/agenda?mes={{ a.mes.anterior }}" aria-label="Mes anterior">{{ icono("volver") }}</a>
+    <h2>{{ a.mes.etiqueta }}</h2>
+    <a class="mes-paso" href="/agenda?mes={{ a.mes.siguiente }}" aria-label="Mes siguiente">{{ icono("flecha") }}</a>
+  </div>
+  {% if a.mes.hoy %}<a class="mes-hoy" href="/agenda?mes={{ a.mes.hoy }}">Volver a hoy</a>{% endif %}
+
+  <table class="grilla">
+    <thead>
+      <tr>{% for d in ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"] %}
+        <th><abbr title="{{ d }}">{{ d[0] }}</abbr></th>{% endfor %}</tr>
+    </thead>
+    <tbody>
+      {% for semana in a.mes.semanas %}
+      <tr>
+        {% for c in semana %}
+        <td class="{% if c.de_otro_mes %}otro-mes{% endif %}{% if c.pasado %} pasado{% endif %}{% if c.es_hoy %} hoy{% endif %}">
+          {% if c.total %}
+          {% set marcas %}
+            <span class="dia-num">{{ c.dia }}</span>
+            <span class="marcas">
+              {%- for _ in range(c.confirmados) %}<span class="marca"></span>{% endfor -%}
+              {%- for _ in range(c.tentativos) %}<span class="marca sin-cerrar"></span>{% endfor -%}
+            </span>
+          {% endset %}
+          {% if c.enlazable %}
+          <a href="#dia-{{ c.iso }}" aria-label="{{ c.dia }}: {{ c.total }} flete{{ 's' if c.total != 1 }}">{{ marcas }}</a>
+          {% else %}
+          {# Ya pasó: la marca se ve, pero no enlaza a ningun lado porque la
+             lista de abajo es de lo que viene. Prometer un salto que no
+             ocurre es peor que no ofrecerlo. #}
+          <span class="con-marcas">{{ marcas }}</span>
+          {% endif %}
+          {% else %}
+          <span class="dia-num">{{ c.dia }}</span>
+          {% endif %}
+        </td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {# El color no puede ser lo unico que distinga un flete cerrado de una
+     fecha que nadie confirmo: la marca hueca tambien lo dice de forma. #}
+  <p class="mes-pie">
+    <span class="marca"></span> cerrado
+    <span class="marca sin-cerrar"></span> sin confirmar
+  </p>
+</section>
+{% endif %}
+
 {% if a.para_cerrar %}
 <section class="seccion">
   <h2 class="seccion-titulo">Para cerrar <span class="seccion-cuenta">{{ a.para_cerrar|length }}</span></h2>
@@ -49,7 +105,7 @@
 {% endif %}
 
 {% for dia in a.dias %}
-<section class="seccion dia">
+<section class="seccion dia" id="dia-{{ dia.iso }}">
   <h2 class="seccion-titulo">{{ dia.etiqueta }} <span class="seccion-cuenta">{{ dia.fecha }}</span></h2>
   <ul class="lista">{% for i in dia.items %}{{ item(i) }}{% endfor %}</ul>
 </section>

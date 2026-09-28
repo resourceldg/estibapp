@@ -602,3 +602,68 @@ class TestElCalendarioNoSeQuedaConFechasViejas:
         # El flete se queda sin fecha: nadie vuelve a llamar a `programar`.
         assert cal.cancelar_de("549:job")
         assert not [e for e, cancelado in cal.eventos() if not cancelado]
+
+
+class TestElMesComoGrilla:
+    """El calendario, visto como calendario.
+
+    Una lista dice que viene; la grilla dice donde estan los huecos, que es
+    lo que se mira cuando alguien pregunta "¿el jueves podes?".
+    """
+
+    HOY = date(2026, 9, 28)
+
+    def _mes(self, eventos=(), cual=None):
+        from estiba.web.presentacion import mes_de
+
+        return mes_de(list(eventos), cual or self.HOY, self.HOY)
+
+    def test_las_semanas_empiezan_el_lunes_y_estan_enteras(self):
+        """Cada columna tiene que ser siempre el mismo dia de la semana: si
+        no, la grilla no se puede leer de un vistazo."""
+        m = self._mes()
+        for semana in m.semanas:
+            assert len(semana) == 7
+            assert semana[0].fecha.weekday() == 0
+            assert semana[-1].fecha.weekday() == 6
+
+    def test_los_dias_de_los_meses_vecinos_se_marcan(self):
+        """Estan para que la grilla quede entera, no para confundir."""
+        m = self._mes()
+        assert any(c.de_otro_mes for c in m.semanas[0])
+        assert all(c.fecha.month == 9 for s in m.semanas for c in s if not c.de_otro_mes)
+
+    def test_cuenta_los_fletes_de_cada_dia_y_separa_los_que_no_cerraron(self):
+        e1 = evento_de(_job(when=date(2026, 9, 30), hour=time(9)))
+        e2 = evento_de(_job(when=date(2026, 9, 30), hour=time(11)), tentativo=True)
+        celda = next(c for s in self._mes([(e1, False), (e2, False)]).semanas
+                     for c in s if c.fecha == date(2026, 9, 30))
+        assert (celda.confirmados, celda.tentativos, celda.total) == (1, 1, 2)
+
+    def test_un_evento_cancelado_no_se_cuenta(self):
+        e = evento_de(_job(when=date(2026, 9, 30)))
+        celda = next(c for s in self._mes([(e, True)]).semanas
+                     for c in s if c.fecha == date(2026, 9, 30))
+        assert celda.total == 0
+
+    def test_un_dia_que_ya_paso_no_promete_un_salto(self):
+        """La lista de abajo es de lo que viene: enlazar un dia pasado daba
+        un ancla que no existe, se tocaba y no pasaba nada."""
+        e = evento_de(_job(when=date(2026, 9, 21)))
+        celda = next(c for s in self._mes([(e, False)]).semanas
+                     for c in s if c.fecha == date(2026, 9, 21))
+        assert celda.total == 1 and celda.pasado and not celda.enlazable
+
+    def test_hoy_se_reconoce_y_se_puede_volver(self):
+        m = self._mes()
+        assert sum(1 for s in m.semanas for c in s if c.es_hoy) == 1
+        assert m.hoy is None, "estando en el mes de hoy no hace falta el botón"
+        assert self._mes(cual=date(2026, 12, 1)).hoy == "2026-09"
+
+    def test_se_puede_ir_al_mes_de_al_lado(self):
+        m = self._mes()
+        assert (m.anterior, m.siguiente) == ("2026-08", "2026-10")
+
+    def test_enero_y_diciembre_no_rompen_el_año(self):
+        assert self._mes(cual=date(2026, 1, 15)).anterior == "2025-12"
+        assert self._mes(cual=date(2026, 12, 15)).siguiente == "2027-01"

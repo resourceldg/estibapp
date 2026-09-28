@@ -438,3 +438,20 @@ class TestLaFechaDiceSiYaPaso:
             for fila in self._filas(cliente, filtro):
                 if "conv cerrada" in fila or "etapa-perdido" in fila or "etapa-vendido" in fila:
                     assert "ya pasó" not in fila
+
+
+class TestLaGrillaNoPrometeDeMas:
+    def test_ningun_dia_del_mes_enlaza_a_un_ancla_que_no_existe(self, cliente):
+        """La lista de abajo es de lo que viene: un dia pasado con marca
+        enlazaba a un ancla inexistente y se tocaba sin que pasara nada."""
+        html = cliente.get("/agenda").text
+        anclas = set(re.findall(r'id="dia-([\d-]+)"', html))
+        enlaces = set(re.findall(r'href="#dia-([\d-]+)"', html))
+        assert not (enlaces - anclas), enlaces - anclas
+
+    def test_sin_confirmar_no_se_distingue_solo_por_el_color(self, cliente):
+        """Misma regla que el resto de la app. La marca hueca lo dice de
+        forma, y el pie de la grilla lo dice con palabras."""
+        html = cliente.get("/agenda").text
+        if "marca sin-cerrar" in html:
+            assert "sin confirmar" in html

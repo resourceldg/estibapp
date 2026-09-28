@@ -490,6 +490,54 @@ class DiaAgenda:
     etiqueta: str
     fecha: str
     items: list[ItemAgenda]
+    #: Para que la grilla del mes pueda llevar hasta este dia.
+    iso: str = ""
+
+
+@dataclass
+class CeldaMes:
+    """Un dia en la grilla del mes."""
+
+    fecha: date
+    dia: int
+    #: De un mes vecino: se dibuja apagado para que la grilla quede entera.
+    de_otro_mes: bool
+    es_hoy: bool
+    pasado: bool
+    #: Cuantos fletes cerrados y cuantas fechas que nadie confirmo.
+    confirmados: int
+    tentativos: int
+
+    @property
+    def total(self) -> int:
+        return self.confirmados + self.tentativos
+
+    @property
+    def enlazable(self) -> bool:
+        """Si tocar el dia lleva a algun lado.
+
+        La lista de abajo solo tiene los dias que vienen, asi que un dia
+        pasado con marca enlazaba a un ancla que no existe: se tocaba y no
+        pasaba nada. La marca se sigue viendo —el mes cuenta lo que pasó
+        tambien— pero no promete un salto que no puede cumplir.
+        """
+        return self.total > 0 and not self.pasado
+
+    @property
+    def iso(self) -> str:
+        return self.fecha.isoformat()
+
+
+@dataclass
+class Mes:
+    """El mes que se esta mirando, y como moverse a los de al lado."""
+
+    etiqueta: str          # "septiembre 2026"
+    semanas: list[list[CeldaMes]]
+    anterior: str          # "2026-08", para el enlace
+    siguiente: str
+    #: El mes de hoy, para el boton de volver. None si ya se esta mirando.
+    hoy: str | None
 
 
 @dataclass
@@ -498,9 +546,68 @@ class Agenda:
     dias: list[DiaAgenda]
     url_ics: str
     url_webcal: str
+    mes: Mes | None = None
 
 
-def agenda(eventos, fletes: dict[str, Flete], ahora: datetime, url_ics: str) -> Agenda:
+#: La semana empieza el lunes, como el calendario de pared de cualquier casa.
+DIAS_SEMANA = ["L", "M", "M", "J", "V", "S", "D"]
+
+MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
+         "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
+
+
+def mes_de(eventos, cual: date, hoy: date) -> Mes:
+    """La grilla del mes, con cuantos fletes cae en cada dia.
+
+    Una lista de dias dice que viene; una grilla dice donde estan los
+    huecos, que es lo que se mira cuando alguien pregunta "¿el jueves
+    podes?". Por eso la grilla no reemplaza la lista: van juntas.
+    """
+    porque: dict[date, list[bool]] = {}
+    for e, cancelado in eventos:
+        if cancelado:
+            continue
+        dia = e.inicio if not isinstance(e.inicio, datetime) else e.inicio.date()
+        porque.setdefault(dia, []).append(e.tentativo)
+
+    primero = cual.replace(day=1)
+    # Lunes de la semana en la que cae el 1: la grilla arranca ahi para que
+    # cada columna sea siempre el mismo dia de la semana.
+    arranque = primero - timedelta(days=primero.weekday())
+    siguiente_mes = (primero + timedelta(days=32)).replace(day=1)
+    ultimo = siguiente_mes - timedelta(days=1)
+    cierre = ultimo + timedelta(days=6 - ultimo.weekday())
+
+    semanas, semana, d = [], [], arranque
+    while d <= cierre:
+        marcas = porque.get(d, [])
+        semana.append(CeldaMes(
+            fecha=d,
+            dia=d.day,
+            de_otro_mes=d.month != primero.month,
+            es_hoy=d == hoy,
+            pasado=d < hoy,
+            confirmados=sum(1 for t in marcas if not t),
+            tentativos=sum(1 for t in marcas if t),
+        ))
+        if len(semana) == 7:
+            semanas.append(semana)
+            semana = []
+        d += timedelta(days=1)
+
+    anterior = (primero - timedelta(days=1)).replace(day=1)
+    este_mes = f"{hoy:%Y-%m}"
+    return Mes(
+        etiqueta=f"{MESES[primero.month - 1]} {primero.year}",
+        semanas=semanas,
+        anterior=f"{anterior:%Y-%m}",
+        siguiente=f"{siguiente_mes:%Y-%m}",
+        hoy=None if f"{primero:%Y-%m}" == este_mes else este_mes,
+    )
+
+
+def agenda(eventos, fletes: dict[str, Flete], ahora: datetime, url_ics: str,
+           mirando: date | None = None) -> Agenda:
     hoy = ahora.date()
     para_cerrar: list[ItemAgenda] = []
     por_dia: dict[date, list[ItemAgenda]] = {}
@@ -533,9 +640,11 @@ def agenda(eventos, fletes: dict[str, Flete], ahora: datetime, url_ics: str) -> 
             etiqueta = "Mañana"
         else:
             etiqueta = nombre_dia(dia).capitalize()
-        dias.append(DiaAgenda(etiqueta, f"{dia:%d/%m}", sorted(por_dia[dia], key=lambda i: i.hora)))
+        dias.append(DiaAgenda(etiqueta, f"{dia:%d/%m}",
+                              sorted(por_dia[dia], key=lambda i: i.hora), dia.isoformat()))
     webcal = "webcal://" + url_ics.split("://", 1)[1]
-    return Agenda(para_cerrar, dias, url_ics, webcal)
+    return Agenda(para_cerrar, dias, url_ics, webcal,
+                  mes=mes_de(eventos, mirando or hoy, hoy))
 
 
 # --------------------------------------------------------------------------
