@@ -57,6 +57,21 @@ class Transcript:
     model: str  # que modelo y version lo produjo, para poder re-transcribir
     duration_s: float
 
+    @property
+    def dudosa(self) -> bool:
+        """Si conviene escuchar el original antes de creerle.
+
+        Medido sobre 138 audios reales: la mediana da 0.69 y lo que cae por
+        debajo de 0.55 esta roto de forma evidente —"Hay la mirocha", "viene
+        de Sanquilandia"—, mientras que entre 0.55 y 0.65 hay de las dos
+        (a 0.59 aparece "Avisale a mama que no vas", que esta perfecta).
+
+        El umbral va bajo a proposito. Marcar una de cada cuatro convierte
+        el aviso en papel pintado y deja de mirarse; asi se marca una de
+        cada diez, y cuando aparece significa algo.
+        """
+        return self.confidence < 0.55
+
 
 # --------------------------------------------------------------------------
 # Trazabilidad

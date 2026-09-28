@@ -173,8 +173,15 @@
     <li class="msj {{ 'cliente' if m.del_cliente else 'vos' }}" id="{{ m.ancla }}">
       <div class="burbuja">
         {% if m.es_audio %}
-          <span class="audio">{{ icono("mic") }}{% if m.texto %}Audio transcripto{% else %}Audio sin transcribir{% endif %}</span>
-          {# Transcribir se equivoca: si algo no cierra, se escucha el original. #}
+          <span class="audio{% if m.transcripcion_dudosa %} dudosa{% endif %}">
+            {{ icono("mic") }}
+            {%- if not m.texto %}Audio sin transcribir
+            {%- elif m.transcripcion_dudosa %}Puede estar mal transcripto
+            {%- else %}Audio transcripto{% endif -%}
+          </span>
+          {# Transcribir se equivoca, y no siempre se nota leyendo: hay
+             frases que suenan a castellano y dicen otra cosa. Cuando
+             Whisper entendio poco, el original esta ahi al lado. #}
           {% if m.escuchable %}<audio class="oir" controls preload="none" src="/audios/{{ m.id }}"></audio>{% endif %}
         {% elif m.medio %}
           <span class="audio">{{ icono("adjunto") }}{{ m.medio }}</span>
@@ -200,11 +207,14 @@
   <ul class="datos">
     {% for x in d.datos %}
     <li>
-      <a class="dato{% if x.duda or x.confianza < 0.7 %} dudoso{% endif %}" href="#{{ x.ancla }}" data-ir="{{ x.ancla }}">
+      <a class="dato{% if x.duda or x.de_audio_dudoso or x.confianza < 0.7 %} dudoso{% endif %}" href="#{{ x.ancla }}" data-ir="{{ x.ancla }}">
         <span class="dato-etq">{{ x.etiqueta }}</span>
         <span class="dato-val">{{ x.valor }}</span>
         <span class="dato-cita">“{{ x.cita }}”</span>
         {% if x.duda %}<span class="dato-duda">{{ icono("aviso") }}{{ x.duda }}</span>{% endif %}
+        {# Un dato sacado de un audio mal entendido es peor que la
+           transcripcion mala: la frase rara se nota leyendola, el dato no. #}
+        {% if x.de_audio_dudoso %}<span class="dato-duda">{{ icono("mic") }}salió de un audio que puede estar mal transcripto: escuchalo</span>{% endif %}
         <span class="confianza" style="--c: {{ x.confianza }}" title="confianza {{ (x.confianza * 100)|round|int }}%"></span>
       </a>
     </li>

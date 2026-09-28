@@ -255,3 +255,24 @@ class TestCli:
         main(["--db", db, "ingest", "--fixtures", str(conversacion)])
         assert main(["--db", db, "transcribe"]) == 1
         assert "FALLO: audio corrupto" in capsys.readouterr().err
+
+
+class TestDudarDeLaTranscripcion:
+    """Whisper se equivoca y no siempre se nota leyendo.
+
+    Los numeros salen de los 138 audios reales del fletero: la mediana da
+    0.69 y debajo de 0.55 esta roto de forma evidente ("Hay la mirocha",
+    "viene de Sanquilandia"). Entre 0.55 y 0.65 hay de las dos, asi que el
+    umbral queda abajo: marcar una de cada cuatro vuelve el aviso papel
+    pintado y deja de mirarse.
+    """
+
+    def test_lo_que_whisper_no_entendio_se_marca(self):
+        assert Transcript("m:1", "Hay la mirocha.", 0.49, "small", 1.2).dudosa
+
+    def test_y_lo_que_entendio_bien_no(self):
+        assert not Transcript("m:1", "Viernes 25.", 0.71, "small", 1.4).dudosa
+
+    def test_en_la_franja_del_medio_no_se_grita(self):
+        """A 0.59 aparece "Avisale a mama que no vas", que esta perfecta."""
+        assert not Transcript("m:1", "Avisale a mamá que no vas.", 0.59, "small", 2.0).dudosa

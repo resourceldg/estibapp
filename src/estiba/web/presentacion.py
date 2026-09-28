@@ -133,6 +133,12 @@ class Dato:
     message_id: str
     ancla: str
     duda: str | None
+    #: El dato salio de un audio que Whisper no entendio bien. Es el caso
+    #: peligroso: en la base real hay un flete agendado el 30/09 a las 11, y
+    #: las dos cosas salieron de audios con 0.46 y 0.51 de confianza, rotos
+    #: los dos. Una transcripcion mala se nota leyendola; una fecha mal
+    #: entendida se nota el dia que vas.
+    de_audio_dudoso: bool = False
 
 
 @dataclass
@@ -158,6 +164,9 @@ class Mensaje:
     largo: bool = False
     #: Hay archivo de audio guardado: se puede escuchar el original.
     escuchable: bool = False
+    #: Whisper no entendio bien: lo que dice la burbuja puede no ser lo que
+    #: se dijo. El original esta al lado para salir de la duda.
+    transcripcion_dudosa: bool = False
     datos: list[str] = field(default_factory=list)  # que datos salieron de este mensaje
 
 
@@ -396,6 +405,7 @@ def detalle(
             message_id=mid,
             ancla=ancla(mid),
             duda=c.duda,
+            de_audio_dudoso=(t.dudosa if (t := conv.transcripts.get(mid)) else False),
         ))
         por_mensaje.setdefault(mid, []).append(ETIQUETAS[campo])
 
@@ -424,6 +434,7 @@ def detalle(
             medio=ETIQUETAS_MEDIO.get(m.kind.value),
             largo=len(conv.text_of(m) or "") > LARGO_PARA_PLEGAR,
             escuchable=bool(m.media_path),
+            transcripcion_dudosa=(t.dudosa if (t := conv.transcripts.get(m.id)) else False),
             datos=por_mensaje.get(m.id, []),
         ))
 

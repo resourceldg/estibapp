@@ -14,10 +14,10 @@ from estiba.bandeja.redactor import proponer
 from estiba.bandeja.servicio import sincronizar
 from estiba.cli import main
 from estiba.conversation.store import ConversationStore
-from estiba.core.models import Conversation, Message, MessageKind
+from estiba.core.models import Conversation, Message, MessageKind, Transcript
 from estiba.jobs.engine import JobEngine
 from estiba.storage.db import connect
-from estiba.storage.repositories import ClaseRepository, DraftRepository
+from estiba.storage.repositories import ClaseRepository, DraftRepository, TranscriptRepository
 from estiba.web.app import create_app
 
 JUEVES_18 = datetime(2026, 9, 18, 12)
@@ -858,3 +858,40 @@ class TestErroresLegibles:
     def test_la_api_sigue_devolviendo_json(self, cliente):
         r = cliente.get("/api/fletes/no-existe")
         assert r.status_code == 404 and r.json()["detail"]
+
+
+class TestAvisarDeUnAudioMalTranscripto:
+    """Un dato sacado de un audio que Whisper no entendio.
+
+    En la base real hay un flete agendado el 30/09 a las 11, y las dos
+    cosas salieron de audios con 0.46 y 0.51 de confianza, rotos los dos.
+    La frase rara se nota leyendola; la fecha equivocada se nota el dia
+    que vas.
+    """
+
+    def _con_audio(self, db, confianza: float, texto: str):
+        conn = connect(db)
+        ConversationStore(conn).ingest([Message(
+            "a:1", "a", True, datetime(2026, 9, 18, 10), MessageKind.AUDIO,
+            text=None, media_path="/tmp/x.ogg")])
+        TranscriptRepository(conn).save(Transcript("a:1", texto, confianza, "small", 3.0))
+        conn.close()
+
+    def test_la_burbuja_lo_dice(self, db):
+        self._con_audio(db, 0.49, "lo llevo el viernes 30 a las 11 de la mañana")
+        with TestClient(create_app(db, ahora=lambda: JUEVES_18)) as c:
+            html = c.get("/fletes/a:job").text
+            assert "Puede estar mal transcripto" in html
+            assert 'class="audio dudosa"' in html or "audio dudosa" in html
+
+    def test_y_tambien_el_dato_que_salio_de_ahi(self, db):
+        self._con_audio(db, 0.49, "lo llevo el viernes 30 a las 11 de la mañana")
+        with TestClient(create_app(db, ahora=lambda: JUEVES_18)) as c:
+            assert "salió de un audio que puede estar mal transcripto" in c.get("/fletes/a:job").text
+
+    def test_un_audio_bien_entendido_no_avisa_nada(self, db):
+        self._con_audio(db, 0.78, "lo llevo el viernes 30 a las 11 de la mañana")
+        with TestClient(create_app(db, ahora=lambda: JUEVES_18)) as c:
+            html = c.get("/fletes/a:job").text
+            assert "Puede estar mal transcripto" not in html
+            assert "salió de un audio" not in html
