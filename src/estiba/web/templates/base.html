@@ -15,11 +15,14 @@
 <body>
   <header class="barra">
     <a class="marca" href="/">{{ marca() }}<span>Estiba</span></a>
+    {# Las mismas cuatro secciones que abajo, en el mismo orden. Antes esta
+       barra tenia "API" y la de abajo tenia "WhatsApp": quien aprendia la
+       app en el celular no encontraba lo mismo en la compu, y al reves. #}
     <nav class="nav-escritorio" aria-label="Secciones">
       <a href="/" {% if ruta == "/" or ruta.startswith("/fletes") %}aria-current="page"{% endif %}>Hoy{% if pendientes %}<span class="cuenta">{{ pendientes }}</span>{% endif %}</a>
-      <a href="/agenda" {% if ruta == "/agenda" %}aria-current="page"{% endif %}>Agenda</a>
+      <a href="/agenda" {% if ruta in ("/agenda", "/fletes") %}aria-current="page"{% endif %}>Agenda</a>
       <a href="/numeros" {% if ruta in ("/numeros", "/clientes") %}aria-current="page"{% endif %}>Números</a>
-      <a href="/docs">API</a>
+      <a href="/whatsapp" {% if ruta == "/whatsapp" %}aria-current="page"{% endif %}>WhatsApp</a>
     </nav>
     {% if whatsapp is not none %}
     <a class="conexion-mini tono-{{ whatsapp.tono }}" href="/whatsapp" title="WhatsApp: {{ whatsapp.etiqueta }}">
@@ -55,7 +58,7 @@
       <span class="tab-ico">{{ icono("bandeja") }}{% if pendientes %}<span class="cuenta">{{ pendientes }}</span>{% endif %}</span>
       Hoy
     </a>
-    <a href="/agenda" {% if ruta == "/agenda" %}aria-current="page"{% endif %}>
+    <a href="/agenda" {% if ruta in ("/agenda", "/fletes") %}aria-current="page"{% endif %}>
       <span class="tab-ico">{{ icono("agenda") }}</span>
       Agenda
     </a>

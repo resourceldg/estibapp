@@ -1,8 +1,11 @@
 {% extends "base.html" %}
 {% from "_macros.html" import icono, chip %}
 {% block contenido %}
+<a class="volver" href="/agenda">{{ icono("volver") }}Agenda</a>
 <div class="encabezado">
   <h1>Fletes</h1>
+  <p class="bajada">Uno por flete, no por conversación: un cliente que te
+  pidió dos veces aparece dos veces.</p>
 </div>
 
 {% for clave, titulo, fletes in secciones %}

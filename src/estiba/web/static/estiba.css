@@ -18,7 +18,10 @@
   --superficie-3: #302e36;    /* la propuesta de Estiba, un escalon mas */
   --tinta: #ece9e4;           /* blanco roto */
   --tinta-2: #a9a4a0;
-  --tenue: #78736f;
+  /* Aclarado de #78736f: daba 3.2:1 sobre las superficies y se usa justo
+     en el texto de 12-13px (los contadores de las pestañas, el "por que"
+     de una clase, las notas al pie). Ahora pasa AA sobre las cuatro. */
+  --tenue: #9a938e;
   --linea: #302e36;
   --linea-2: #3d3a43;
 
@@ -28,6 +31,9 @@
   --primario-tinta: #0d1f14;
 
   --ok: #5cc485;      --ok-fondo: #1a2b21;
+  /* Un flete hecho tiene tono propio. Compartia `neutro` con "Nuevo", asi
+     que lo que todavia no empezo y lo que ya se cobro se veian igual. */
+  --hecho: #6fb9c4;   --hecho-fondo: #1b272b;
   --info: #86a8ff;    --info-fondo: #1c2236;
   --aviso: #d9a15c;   --aviso-fondo: #2b2419;
   --mal: #e0857e;     --mal-fondo: #2e1f1e;
@@ -162,6 +168,7 @@ p { margin: 0; }
 .tono-aviso  { color: var(--aviso);  background: var(--aviso-fondo); }
 .tono-mal    { color: var(--mal);    background: var(--mal-fondo); }
 .tono-neutro { color: var(--neutro); background: var(--neutro-fondo); }
+.tono-hecho  { color: var(--hecho);  background: var(--hecho-fondo); }
 
 /* ----------------------------------------------------------- botones */
 
@@ -180,7 +187,29 @@ p { margin: 0; }
 .btn.secundario { background: var(--superficie); border-color: var(--linea-2); color: var(--tinta); }
 .btn.fantasma { background: transparent; color: var(--tinta-2); border-color: var(--linea); }
 .btn.fantasma:hover { color: var(--tinta); border-color: var(--linea-2); }
-.htmx-request .btn.primario, .btn.primario.htmx-request { opacity: .7; pointer-events: none; }
+
+/* Dos niveles de destruccion, porque no son lo mismo.
+   `peligro` es lo que se puede deshacer desde la app: dar por perdido,
+   marcar spam. Borde rojo, fondo transparente: avisa, no grita.
+   `destructivo` es lo que no vuelve nunca: borrar los mensajes. Va
+   relleno, con el peso de un boton primario, porque leerlo por error y
+   tocarlo por error no pueden costar lo mismo. Antes era al reves: lo
+   irreversible era un texto gris de 26px y lo recuperable era rojo. */
+.btn.peligro { color: var(--mal); border-color: color-mix(in srgb, var(--mal) 35%, transparent); }
+.btn.destructivo {
+  background: var(--mal-fondo); color: var(--mal);
+  border-color: color-mix(in srgb, var(--mal) 55%, transparent); font-weight: 700;
+}
+.btn.destructivo:hover { background: color-mix(in srgb, var(--mal) 22%, var(--mal-fondo)); }
+
+/* Mientras la accion viaja, el boton lo dice y no se puede tocar de nuevo.
+   Valia solo para `.btn.primario`, asi que marcar spam, dar por perdido,
+   clasificar o posponer se podian mandar dos veces sin ninguna senal. */
+.htmx-request.btn, .htmx-request .btn,
+.htmx-request.clase, .htmx-request .clase,
+.htmx-request.desde-aca, .htmx-request .desde-aca {
+  opacity: .55; pointer-events: none; cursor: progress;
+}
 
 /* ------------------------------------------------------------ tarjetas */
 
@@ -499,9 +528,31 @@ ul.sin-contar { margin: 4px 0 0; padding-left: 18px; color: var(--tinta-2); }
 .nombre input:focus { outline: none; border-style: solid; border-color: var(--primario); background: var(--superficie); }
 
 .cerrar { margin-bottom: 16px; }
+.cerrar label { display: block; margin-bottom: 6px; font-size: 14px; color: var(--tinta-2); }
+.cerrar input {
+  width: 100%; min-height: 46px; margin-bottom: 10px; padding: 0 12px;
+  border: 1.5px solid var(--linea-2); border-radius: 12px;
+  background: var(--superficie); color: var(--tinta); font: inherit;
+  font-variant-numeric: tabular-nums;
+}
 .cerrar .btn { width: 100%; }
+
+/* En la agenda el mismo formulario entra en una linea: el campo del monto
+   al lado del boton, para cerrar sin salir de la lista ni perder el dato. */
+.cerrar.compacto {
+  display: flex; align-items: center; gap: 6px; margin-bottom: 0; flex: none;
+}
+.cerrar.compacto label { margin: 0; display: inline-flex; color: var(--tenue); }
+.cerrar.compacto label .ico { width: 15px; height: 15px; }
+.cerrar.compacto input { width: 8ch; min-height: 38px; margin: 0; padding: 0 8px; font-size: 14px; }
+.cerrar.compacto .btn { width: auto; min-height: 38px; padding: 0 12px; font-size: 14px; }
+.cerrar.compacto .btn span { display: none; }
+@media (min-width: 560px) { .cerrar.compacto .btn span { display: inline; } }
+
+/* El fieldset no puede traer el borde ni el padding del navegador. */
+.motivos-grupo { margin: 0 0 4px; padding: 0; border: 0; }
+.motivos-grupo legend { padding: 0; margin-bottom: 8px; font-size: 14px; color: var(--tinta-2); }
 .btn.chico { min-height: 38px; padding: 0 12px; font-size: 14px; }
-.btn.peligro { color: var(--mal); border-color: color-mix(in srgb, var(--mal) 35%, transparent); }
 
 .perder summary {
   display: flex; align-items: center; gap: 8px; cursor: pointer; list-style: none;
@@ -537,7 +588,7 @@ ul.sin-contar { margin: 4px 0 0; padding-left: 18px; color: var(--tinta-2); }
 .evento-ruta { font-weight: 700; line-height: 1.25; }
 .evento-sub { font-size: 13px; color: var(--tinta-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .evento-precio { font-weight: 700; align-self: start; }
-.para-cerrar { display: flex; align-items: center; gap: 8px; padding-right: 12px; }
+.para-cerrar { display: flex; align-items: center; gap: 8px; padding-right: 12px; flex-wrap: wrap; }
 .para-cerrar .evento { flex: 1; grid-template-columns: 1fr; min-width: 0; }
 .seccion.dia .seccion-titulo { color: var(--tinta); }
 .suscribir { margin-top: 8px; }
@@ -819,7 +870,10 @@ body:has(.barra-accion) { padding-bottom: calc(var(--tabbar) + 48px + env(safe-a
   min-height: 36px; padding: 0 4px; border: 0; background: none;
   color: var(--tenue); font-size: 14px; font-weight: 500;
 }
-.btn.texto:hover { color: var(--mal); }
+/* Descartar una propuesta no destruye nada: se vuelve a generar sola en la
+   proxima sincronizacion. Ponerse rojo al pasar por encima la hacia parecer
+   tan grave como borrar una conversacion. */
+.btn.texto:hover { color: var(--tinta); }
 
 /* Las pestañas de lo que quedo afuera pesan menos que las del trabajo. */
 .filtros.aparte { margin-top: -6px; margin-bottom: 14px; }
@@ -838,7 +892,6 @@ body:has(.barra-accion) { padding-bottom: calc(var(--tabbar) + 48px + env(safe-a
 /* Disponible pero casi invisible: no puede costarle una linea entera a
    cada fila de la lista. */
 .conv-duda.discreto { padding: 0 12px 8px; justify-content: flex-end; margin-top: -6px; }
-.conv-duda.discreto .btn.texto { min-height: 26px; font-size: 12px; }
 .privado { margin-bottom: 12px; }
 
 /* Suma cero: una sola clase activa, y se ve cual. */
@@ -948,6 +1001,19 @@ summary::-webkit-details-marker { display: none; }
 .tabla th { text-align: left; font-size: 12px; color: var(--tenue); font-weight: 650; padding-bottom: 6px; }
 .tabla td { padding: 7px 0; border-top: 1px solid var(--linea); }
 .tabla .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Una tabla de escritorio no se achica: se transforma. Debajo de 560px cada
+   fila pasa a ser un bloque y cada celda se presenta con su etiqueta, que si
+   no queda una columna de numeros sueltos sin saber de que son. */
+@media (max-width: 559px) {
+  .tabla.apilable thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .tabla.apilable tr { display: block; padding: 10px 0; border-top: 1px solid var(--linea); }
+  .tabla.apilable td { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; border: 0; }
+  .tabla.apilable td::before { content: attr(data-etq); color: var(--tenue); font-size: 13px; }
+  .tabla.apilable td:first-child { font-weight: 650; margin-bottom: 2px; }
+  .tabla.apilable td:first-child::before { content: none; }
+  .tabla.apilable td.num { text-align: right; }
+}
 .descargas { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
 .descargas-csv { display: flex; flex-wrap: wrap; gap: 4px 14px; }
 .monto-campo.vacio-error { border-color: var(--mal); animation: sacudir .3s; }
@@ -975,7 +1041,7 @@ summary::-webkit-details-marker { display: none; }
 .etapa-sin-cotizar          { border-left-color: var(--linea-2); }
 .etapa-cotizado             { border-left-color: var(--info); }
 .etapa-cerrado-falta-hacer  { border-left-color: var(--aviso); }
-.etapa-vendido              { border-left-color: var(--ok); }
+.etapa-vendido              { border-left-color: var(--hecho); }
 .etapa-perdido              { border-left-color: transparent; }
 /* La atencion pisa a la etapa: si te preguntaron algo, eso va primero. */
 .conv.pide-atencion { border-left-color: var(--acento); }
@@ -1007,7 +1073,7 @@ summary::-webkit-details-marker { display: none; }
 /* El numero del flete: para nombrarlo, no para mirarlo. Discreto. */
 .numero-flete {
   display: inline-flex; align-items: center; height: 22px; padding: 0 8px;
-  border-radius: 6px; background: var(--superficie-3); color: var(--tenue);
+  border-radius: 6px; background: var(--superficie-3); color: var(--tinta-2);
   font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
 }
 .quien-estado { display: flex; align-items: center; gap: 8px; }

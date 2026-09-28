@@ -1,0 +1,38 @@
+{% from "_macros.html" import icono %}
+{# Cerrar un flete: una sola forma en toda la app.
+
+   Antes habia tres. Una con el campo de lo cobrado y sin confirmar, otra en
+   la barra de abajo que confirmaba pero tiraba el monto, y una tercera en la
+   agenda que ni confirmaba ni lo pedia. Las tres decian "Realizado" y las
+   tres son irreversibles: `ActionRepository` no tiene borrar, asi que un
+   flete cerrado por error no se puede reabrir desde la app.
+
+   Dos decisiones que evitan el error en vez de avisar despues:
+
+   - El monto viene cargado con lo cotizado, no como `placeholder`. Lo que se
+     ve es lo que se manda. Antes el gris del placeholder hacia creer que el
+     numero estaba puesto, y lo cobrado se perdia sin una sola senal.
+   - Se pregunta solo cuando falta el monto, que es el unico caso en que se
+     pierde informacion. Confirmar siempre entrena a confirmar sin leer.
+
+   `compacto` es la version de una linea para la agenda: el mismo campo, el
+   mismo boton y el mismo nombre, sin la etiqueta larga.
+#}
+{% macro cerrar(job_id, cotizado=none, compacto=false, destacado=true) -%}
+<form class="cerrar{% if compacto %} compacto{% endif %}" method="post"
+      action="/fletes/{{ job_id }}/realizado" hx-post="/fletes/{{ job_id }}/realizado"
+      data-cerrar>
+  <label for="cobrado-{{ job_id }}">
+    {%- if compacto %}<span class="sr">¿Cuánto cobraste?</span>{{ icono("precio") }}
+    {%- else %}¿Cuánto cobraste? <span class="opcional">Se puede dejar vacío</span>{% endif -%}
+  </label>
+  <input id="cobrado-{{ job_id }}" name="cobrado" inputmode="numeric" autocomplete="off"
+         value="{{ cotizado or '' }}" placeholder="Ej: 45.000" data-cobrado>
+  {# `destacado` solo cuando cerrar es lo que la pantalla pide. Plegado
+     dentro de "Ya se hizo este flete" va en secundario: el verde es de la
+     accion principal, y por pantalla hay una sola. #}
+  <button class="btn {{ "primario" if destacado else "secundario" }}{% if not compacto %} ancho{% endif %}" type="submit">
+    {{ icono("hecho") }}<span>Marcar realizado</span>
+  </button>
+</form>
+{%- endmacro %}

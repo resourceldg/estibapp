@@ -616,8 +616,13 @@ class PanelRepository:
             "   ORDER BY a.at DESC LIMIT 1) AS cotizado, "
             "  (SELECT monto FROM job_actions a WHERE a.job_id = j.id AND a.action = 'realizado' "
             "   ORDER BY a.at DESC LIMIT 1) AS cobrado, "
-            "  j.state AS estado "
-            "FROM jobs j ORDER BY j.created_at DESC"
+            "  j.state AS estado, "
+            # El resto de la app muestra el nombre y cae al telefono solo si
+            # no hay. El panel mostraba el chat_id crudo, asi que la misma
+            # persona era "Dami" en la bandeja y "5492235550002" aca.
+            "  COALESCE(c.display_name, c.wa_name, j.conversation_id) AS quien "
+            "FROM jobs j LEFT JOIN contacts c ON c.id = j.conversation_id "
+            "ORDER BY j.created_at DESC"
         )
         return [dict(f) for f in filas if f["sugerido"] or f["cotizado"] or f["cobrado"]]
 
@@ -635,8 +640,12 @@ class PanelRepository:
 
     def correcciones_de_clase(self) -> list[sqlite3.Row]:
         return list(self.conn.execute(
-            "SELECT * FROM clase_historia WHERE quien = 'humano' "
-            "AND clase_previa IS NOT NULL AND clase_previa != clase ORDER BY at DESC"
+            # `quien` ya existe en clase_historia (humano | estiba): el nombre
+            # del contacto va como `de_quien` para no pisarlo.
+            "SELECT h.*, COALESCE(c.display_name, c.wa_name, h.chat_id) AS de_quien "
+            "FROM clase_historia h LEFT JOIN contacts c ON c.id = h.chat_id "
+            "WHERE h.quien = 'humano' "
+            "AND h.clase_previa IS NOT NULL AND h.clase_previa != h.clase ORDER BY h.at DESC"
         ))
 
     def tabla(self, nombre: str) -> tuple[list[str], list[sqlite3.Row]]:

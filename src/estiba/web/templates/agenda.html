@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_macros.html" import icono, chip %}
+{% from "_cerrar.html" import cerrar %}
 {% macro item(i) -%}
 <li>
   <a class="evento" href="/fletes/{{ i.job_id }}">
@@ -31,9 +32,9 @@
           <span class="evento-sub">{{ i.quien }}{% if i.precio %} · {{ i.precio }}{% endif %}</span>
         </span>
       </a>
-      <form method="post" action="/fletes/{{ i.job_id }}/realizado" hx-post="/fletes/{{ i.job_id }}/realizado">
-        <button class="btn secundario chico" type="submit">{{ icono("hecho") }}<span>Realizado</span></button>
-      </form>
+      {# El mismo formulario que en la conversacion, no un atajo que pierde
+         el monto: se cierra desde aca sin dejar de anotar lo cobrado. #}
+      {{ cerrar(i.job_id, i.precio_crudo, compacto=true) }}
     </li>
     {% endfor %}
   </ul>
@@ -54,6 +55,19 @@
 </div>
 {% endif %}
 {% endfor %}
+
+{# /fletes existia sin un solo enlace en toda la app: una pantalla entera,
+   con sus secciones y sus precios, a la que solo se llegaba escribiendo la
+   URL. Va aca porque es la pregunta que sigue a la agenda: esta muestra lo
+   que tiene fecha, y aquella todos los fletes, uno por uno. #}
+<a class="panel enlace-clientes" href="/fletes">
+  <span class="enlace-ico">{{ icono("camion") }}</span>
+  <span>
+    <strong>Todos los fletes</strong>
+    <span class="sub">Los que vienen, los que están en curso y los cerrados</span>
+  </span>
+  {{ icono("flecha") }}
+</a>
 
 <section class="panel suscribir">
   <h2>En el calendario del celular</h2>

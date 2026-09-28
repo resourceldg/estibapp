@@ -52,10 +52,15 @@
       </div>
     </a>
     {% if es_spam %}
-    <div class="conv-duda discreto">
+    {# La unica accion de la app que destruye datos: borra los mensajes y no
+       se puede deshacer. Estaba como un texto gris de 26px, mientras "Dar
+       por perdido" —que se recupera solo con que el cliente vuelva a
+       escribir— iba en rojo. El peso visual tiene que seguir a la
+       consecuencia, no al orden en que se fueron agregando los botones. #}
+    <div class="conv-duda">
       <form method="post" action="/clientes/{{ a.chat_id }}/borrar" hx-post="/clientes/{{ a.chat_id }}/borrar"
-            hx-confirm="¿Borrar la conversación con {{ a.quien }}? Se borran los mensajes y no se puede deshacer.">
-        <button class="btn texto" type="submit">Borrar</button>
+            hx-confirm="¿Borrar la conversación con {{ a.quien }}? Se borran los mensajes para siempre. Marcarla como spam ya la saca de la bandeja, sin borrar nada.">
+        <button class="btn destructivo chico" type="submit">{{ icono("cruz") }}<span>Borrar los mensajes</span></button>
       </form>
     </div>
     {% endif %}

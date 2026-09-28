@@ -335,10 +335,13 @@ def create_app(
     #: La pantalla viva es solo de clientes y leads. Lo que ya se clasifico
     #: como ajeno al negocio, y lo que se dio por perdido, vive en sus
     #: propias pestañas: esta, pero no molesta.
+    #: Cada pestaña se llama como la etiqueta que va a ver adentro. "Cotizar"
+    #: y "Cotizado" estaban a un caracter de distancia y querian decir lo
+    #: contrario; "Confirmados" mostraba fletes cuyo chip decia "Agendado".
     FILTROS = [
         ("todos", "Todos"), ("hoy", "Hoy"), ("responder", "Responder"),
-        ("faltan", "Faltan datos"), ("cotizar", "Cotizar"),
-        ("seguimiento", "Seguimiento"), ("confirmados", "Confirmados"),
+        ("faltan", "Faltan datos"), ("cotizar", "Para cotizar"),
+        ("seguimiento", "Seguimiento"), ("confirmados", "Para hacer"),
     ]
     #: Las de afuera del trabajo del dia.
     #: Leads y clientes NO se separan: van juntos en el hilo principal, que
@@ -453,7 +456,7 @@ def create_app(
             ("cerrado-falta-hacer", "Cerrado, falta hacerlo"),
             ("cotizado", "Cotizado, esperando respuesta"),
             ("sin-cotizar", "Sin cotizar"),
-            ("vendido", "Hechos"),
+            ("vendido", "Realizados"),
             ("perdido", "Perdidos"),
         ]
         por_etapa = {}
@@ -643,7 +646,10 @@ def create_app(
     # no muestra bandeja ni contadores, para no empujar a trabajar mientras
     # se analiza.
 
-    SECCIONES_PANEL = [("/panel", "Cómo viene")]
+    #: La cascara del panel. "API" vivia en la barra de trabajo, al lado de
+    #: Hoy y Agenda, y no existia en el celular: es documentacion, se mira
+    #: sentado, y ese es exactamente el lugar del panel.
+    SECCIONES_PANEL = [("/panel", "Cómo viene"), ("/docs", "API")]
 
     def _contexto_panel(request: Request, **extra) -> dict:
         return {
@@ -1013,6 +1019,13 @@ def create_app(
             raise HTTPException(404, str(e)) from e
         finally:
             conn.close()
+        # Guardar el nombre no recarga la pantalla. Con `hx-trigger="change"`,
+        # salir del campo devolvia HX-Refresh y se repintaba la conversacion
+        # entera: el hilo saltaba al final y se perdia donde estabas leyendo.
+        # Lo que se escribio ya esta en pantalla; no hay nada que volver a
+        # dibujar. Sin htmx el form navega y el 303 lo trae de vuelta.
+        if request.headers.get("HX-Request"):
+            return Response(status_code=204)
         return _volver(request, "/clientes")
 
     @app.post("/sincronizar", include_in_schema=False)

@@ -174,3 +174,44 @@ document.addEventListener("click", (e) => {
   campo.classList.remove("vacio-error");
   escribirPrecio(campo);
 });
+
+// Cerrar un flete no se puede deshacer: `ActionRepository` no tiene borrar.
+// Se pregunta solo cuando falta el monto, que es el unico caso en que se
+// pierde algo. Confirmar siempre entrena a confirmar sin leer, y entonces la
+// pregunta no protege de nada.
+document.addEventListener("submit", (e) => {
+  const form = e.target.closest("[data-cerrar]");
+  if (!form) return;
+  const monto = form.querySelector("[data-cobrado]");
+  if (monto && monto.value.trim()) return;
+  if (!confirm("Cerrar el flete sin anotar cuánto cobraste. No se puede deshacer, y ese monto es el que Estiba usa para sugerirte precios.")) {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    monto?.focus();
+  }
+}, true);
+
+// Una accion que viaja tiene que notarse, y no se puede mandar dos veces.
+// htmx marca el elemento que disparo el pedido con .htmx-request; el CSS lo
+// apaga. Aca se agrega lo que el CSS no puede: decirlo en voz alta para
+// quien no ve la pantalla, y bloquear el submit repetido.
+const avisar = (texto) => {
+  let region = document.getElementById("avisos");
+  if (!region) {
+    region = document.createElement("div");
+    region.id = "avisos";
+    region.className = "sr";
+    region.setAttribute("role", "status");
+    region.setAttribute("aria-live", "polite");
+    document.body.append(region);
+  }
+  region.textContent = texto;
+};
+
+document.addEventListener("htmx:beforeRequest", (e) => {
+  const boton = e.detail.elt.querySelector?.("button[type=submit]") ?? e.detail.elt;
+  avisar(`${boton.textContent?.trim() || "Acción"}: mandando…`);
+});
+document.addEventListener("htmx:afterRequest", (e) => {
+  avisar(e.detail.successful ? "Listo." : "No se pudo. Probá de nuevo.");
+});

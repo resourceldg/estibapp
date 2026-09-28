@@ -46,15 +46,19 @@
 <section class="bloque">
   <h2 class="bloque-titulo">Estimado, cotizado y cobrado</h2>
   {% if precios %}
-  <table class="tabla">
+  {# Cuatro columnas no entran en 390px. En vez de achicarlas hasta que no
+     se lean, cada fila se apila y cada numero se presenta con su etiqueta;
+     desde 560px vuelve a ser una tabla. La semantica de tabla se mantiene:
+     lo que cambia es como se dibuja. #}
+  <table class="tabla apilable">
     <thead><tr><th>Flete</th><th class="num">Estiba</th><th class="num">Mandaste</th><th class="num">Cobraste</th></tr></thead>
     <tbody>
       {% for f in precios %}
       <tr>
-        <td><a href="/fletes/{{ f.job_id }}">{{ f.chat_id }}</a></td>
-        <td class="num">{{ f.sugerido or "—" }}</td>
-        <td class="num">{{ f.cotizado or "—" }}</td>
-        <td class="num">{{ f.cobrado or "—" }}</td>
+        <td data-etq="Flete"><a href="/fletes/{{ f.job_id }}">{{ f.quien }}</a></td>
+        <td class="num" data-etq="Estiba sugirió">{{ f.sugerido or "—" }}</td>
+        <td class="num" data-etq="Mandaste">{{ f.cotizado or "—" }}</td>
+        <td class="num" data-etq="Cobraste">{{ f.cobrado or "—" }}</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -75,7 +79,7 @@
     {% for c in correcciones %}
     <li><a class="fila" href="/fletes/{{ c.chat_id }}:job">
       <div class="fila-cuerpo">
-        <div class="fila-ruta">{{ c.chat_id }}</div>
+        <div class="fila-ruta">{{ c.de_quien }}</div>
         <div class="fila-sub">creyó <strong>{{ c.clase_previa }}</strong> y era <strong>{{ c.clase }}</strong></div>
       </div>
     </a></li>

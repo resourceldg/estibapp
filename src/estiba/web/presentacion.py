@@ -18,13 +18,25 @@ from estiba.formato import pesos, telefono
 from estiba.jobs.engine import Evaluacion
 from estiba.jobs.preguntas import ETIQUETAS
 
+#: Como se llama cada estado en la pantalla, y con que tono.
+#:
+#: Una palabra por cosa, y la misma en toda la app. Antes el paso del
+#: precio se llamaba "Presupuestado" en el chip, "Cotizado" en el grupo y
+#: "Cotizar" en la pestaña, y esas dos ultimas estaban a un caracter de
+#: distancia significando lo contrario: una queria decir "ya se cotizo" y
+#: la otra "hay que cotizar".
+#:
+#: El tono tampoco puede significar dos cosas. "Nuevo" y "Realizado"
+#: compartian `neutro`, asi que un flete que no habia empezado y uno
+#: terminado se veian igual. Un trabajo hecho es la unica buena noticia
+#: del embudo: lleva `hecho`, que es suyo y de nadie mas.
 ESTADOS = {
     JobState.DRAFT: ("Nuevo", "neutro"),
-    JobState.QUOTED: ("Presupuestado", "info"),
+    JobState.QUOTED: ("Cotizado", "info"),
     JobState.WAITING_CUSTOMER: ("Esperando al cliente", "aviso"),
     JobState.CONFIRMED: ("Confirmado", "ok"),
     JobState.SCHEDULED: ("Agendado", "ok"),
-    JobState.DONE: ("Realizado", "neutro"),
+    JobState.DONE: ("Realizado", "hecho"),
     JobState.CANCELLED: ("Perdido", "mal"),
 }
 
@@ -196,6 +208,11 @@ class Flete:
     hora: str | None
     cosas: str | None
     cotizado: str | None
+    #: El mismo numero sin formato, para precargar el campo de "cuanto
+    #: cobraste". Antes el precio cotizado se mostraba como `placeholder`:
+    #: parecia estar cargado y se mandaba vacio, asi que lo cobrado se
+    #: perdia en silencio y el precio aprendido se quedaba sin su dato.
+    cotizado_crudo: str | None
     sugerido: str | None
     sugerido_completo: bool
     alertas: list[str]
@@ -262,8 +279,17 @@ class DetalleFlete:
     mensajes: list[Mensaje]
     borradores: list[Borrador]
     otros: list[Flete]
+    #: Cerrarlo o darlo por perdido se puede casi siempre: hay fletes que se
+    #: arreglan por telefono y nunca dejan rastro en el chat.
     puede_realizar: bool
     puede_perder: bool
+    #: Pero que se pueda no quiere decir que sea lo que sigue. Cerrar es el
+    #: final del embudo: solo es la accion principal cuando el cliente ya
+    #: dijo que si. Antes la accion principal de un lead que acababa de
+    #: escribir "hola" era "Marcar realizado", medido en 2 conversaciones
+    #: reales. Cuando no es lo que sigue, la accion existe igual, plegada
+    #: mas abajo junto con "Dar por perdido".
+    cerrar_es_lo_que_sigue: bool
 
 
 def flete(job_id: str, ev: Evaluacion, conv: Conversation, ahora: datetime,
@@ -296,6 +322,7 @@ def flete(job_id: str, ev: Evaluacion, conv: Conversation, ahora: datetime,
         hora=hora,
         cosas=", ".join(job.items.value) if job.items else None,
         cotizado=pesos(job.quoted_price.value) if job.quoted_price else None,
+        cotizado_crudo=f"{int(job.quoted_price.value)}" if job.quoted_price else None,
         sugerido=pesos(ev.presupuesto.total) if ev.presupuesto else None,
         sugerido_completo=bool(ev.presupuesto and ev.presupuesto.completo),
         alertas=ev.alertas,
@@ -411,6 +438,7 @@ def detalle(
         otros=otros or [],
         puede_realizar=ev.job.state not in (JobState.DONE, JobState.CANCELLED),
         puede_perder=ev.job.state not in (JobState.DONE, JobState.CANCELLED),
+        cerrar_es_lo_que_sigue=ev.job.state in (JobState.CONFIRMED, JobState.SCHEDULED),
     )
 
 
@@ -427,6 +455,8 @@ class ItemAgenda:
     ruta: str
     cosas: str | None
     precio: str | None
+    #: Sin formato: precarga el campo al cerrar el flete desde la agenda.
+    precio_crudo: str | None
     quien: str
     estado_etiqueta: str
     tono: str
@@ -462,7 +492,8 @@ def agenda(eventos, fletes: dict[str, Flete], ahora: datetime, url_ics: str) -> 
             hora = f"{'~' if e.aproximado else ''}{hora_legible(e.inicio.time())} h"
         item = ItemAgenda(
             job_id=e.job_id, hora=hora, aproximado=e.aproximado, ruta=f.ruta, cosas=f.cosas,
-            precio=f.cotizado, quien=f.quien, estado_etiqueta=f.estado_etiqueta, tono=f.tono,
+            precio=f.cotizado, precio_crudo=f.cotizado_crudo,
+            quien=f.quien, estado_etiqueta=f.estado_etiqueta, tono=f.tono,
         )
         if dia < hoy:
             if f.estado == JobState.SCHEDULED.value:

@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_macros.html" import icono, chip, clases %}
+{% from "_cerrar.html" import cerrar %}
 {% set f = d.flete %}
 {% set pendiente = (d.borradores | selectattr("estado", "equalto", "pendiente") | list | first) %}
 {% block contenido %}
@@ -83,15 +84,16 @@
   {% include "_borrador.html" %}
 {% endfor %}
 
-{% if d.puede_realizar %}
-{# Cerrarlo y anotar lo cobrado de una vez: despues nadie vuelve a cargarlo. #}
-<form class="cerrar" method="post" action="/fletes/{{ f.job_id }}/realizado"
-      hx-post="/fletes/{{ f.job_id }}/realizado">
-  <label for="cobrado">¿Cuánto cobraste? <span class="opcional">Se puede dejar vacío</span></label>
-  <input id="cobrado" name="cobrado" inputmode="numeric" autocomplete="off"
-         placeholder="{{ f.cotizado or 'Ej: 45.000' }}">
-  <button class="btn primario ancho" type="submit">{{ icono("hecho") }}<span>Marcar realizado</span></button>
-</form>
+{# Cerrarlo y anotar lo cobrado de una vez: despues nadie vuelve a cargarlo.
+   Solo cuando cerrar es el paso que sigue de verdad. Estaba disponible
+   desde el primer "hola": la accion principal de un lead recien llegado era
+   marcarlo realizado, que es el final del embudo, no el principio. #}
+{# Una sola accion principal por pantalla. Si hay un mensaje esperando que
+   lo apruebes, eso es lo que sigue: cerrar el flete viene despues, y dos
+   botones verdes compitiendo no son una jerarquia. #}
+{% set cerrar_arriba = d.cerrar_es_lo_que_sigue and not pendiente %}
+{% if cerrar_arriba %}
+<div id="cerrar-flete">{{ cerrar(f.job_id, f.cotizado_crudo) }}</div>
 {% endif %}
 
 {# Un flete arreglado en persona no deja rastro en el chat: ninguna regla
@@ -259,20 +261,36 @@
 </details>
 {% endif %}
 
+{# Cerrar cuando no es lo que sigue: el flete que se arreglo por telefono y
+   nunca paso por el chat. Se puede, pero no compite con lo que el estado
+   pide de verdad. Mismo formulario, mismo nombre, mismo icono. #}
+{% if d.puede_realizar and not cerrar_arriba %}
+<details class="panel plegado" id="cerrar-flete">
+  <summary>{{ icono("hecho") }}Ya se hizo este flete</summary>
+  <p class="ayuda">Si lo arreglaste por teléfono o en persona y no quedó en el
+  chat, cerralo igual. No se puede deshacer.</p>
+  {{ cerrar(f.job_id, f.cotizado_crudo, destacado=false) }}
+</details>
+{% endif %}
+
 {% if d.puede_perder %}
 <details class="panel perder">
   <summary>{{ icono("cruz") }}Dar por perdido</summary>
   <form method="post" action="/fletes/{{ f.job_id }}/perdido" hx-post="/fletes/{{ f.job_id }}/perdido">
-    <label>¿Por qué? <span class="opcional">Para los números</span></label>
-    {# De la lista y listo: escrito a mano cada vez, despues no se puede contar. #}
-    <div class="motivos">
-      {% for valor, etiqueta in motivos %}
-      <label class="motivo">
-        <input type="radio" name="motivo" value="{{ valor }}"{% if loop.first %} checked{% endif %}>
-        <span>{{ etiqueta }}</span>
-      </label>
-      {% endfor %}
-    </div>
+    {# De la lista y listo: escrito a mano cada vez, despues no se puede contar.
+       Va en un fieldset: un <label> suelto no le pone nombre a un grupo de
+       radios, y un lector de pantalla leia siete opciones sin decir de que. #}
+    <fieldset class="motivos-grupo">
+      <legend>¿Por qué? <span class="opcional">Para los números</span></legend>
+      <div class="motivos">
+        {% for valor, etiqueta in motivos %}
+        <label class="motivo">
+          <input type="radio" name="motivo" value="{{ valor }}"{% if loop.first %} checked{% endif %}>
+          <span>{{ etiqueta }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </fieldset>
     <input id="nota-perdido" name="nota" placeholder="Algo más, si hace falta" autocomplete="off">
     <button class="btn fantasma peligro" type="submit">Dar por perdido</button>
   </form>
@@ -321,11 +339,13 @@
       {# La decision sobre la propuesta esta arriba, pegada a la propuesta.
          Repetirla aca la desconecta de lo que se esta decidiendo. #}
       <span class="accion-nada">{{ icono(pendiente.accion_icono) }}{{ pendiente.accion }}</span>
-    {% elif d.puede_realizar %}
-      <form method="post" action="/fletes/{{ f.job_id }}/realizado"
-            hx-post="/fletes/{{ f.job_id }}/realizado" hx-confirm="¿Marcar el flete como realizado?">
-        <button class="btn primario ancho" type="submit">{{ icono("hecho") }}<span>Marcar realizado</span></button>
-      </form>
+    {% elif cerrar_arriba %}
+      {# Un solo boton de cerrar por pantalla. Este repetia el de arriba con
+         otra consecuencia: confirmaba, pero mandaba el monto vacio. Ahora
+         lleva al unico formulario, que es el que anota lo cobrado. #}
+      <a class="btn primario ancho" href="#cerrar-flete">
+        {{ icono("hecho") }}<span>Marcar realizado</span>
+      </a>
     {% else %}
       <span class="accion-nada">{{ icono("reloj") }}Nada que hacer: le toca contestar</span>
     {% endif %}
