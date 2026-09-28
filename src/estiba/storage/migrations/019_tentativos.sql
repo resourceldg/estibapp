@@ -1,0 +1,11 @@
+-- Fechas que alguien nombro pero nadie confirmo.
+--
+-- Solo llegaban al calendario los fletes confirmados o agendados. Una fecha
+-- dicha en un audio —"el 30 a las 11"— sobre un flete que todavia no cerro
+-- no estaba en ningun lado: si el fletero no abria esa conversacion, el 30
+-- llegaba y no se habia enterado. En la base real hay una asi.
+--
+-- Ahora entran, marcadas. Van al .ics como TENTATIVE, que es lo que
+-- iCalendar tiene justo para esto, y sin alarma: no se madruga por un
+-- quizas, pero tampoco se pierde una fecha por no tenerla escrita.
+ALTER TABLE calendar_events ADD COLUMN tentative INTEGER NOT NULL DEFAULT 0;

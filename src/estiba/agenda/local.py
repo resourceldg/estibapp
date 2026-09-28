@@ -49,28 +49,30 @@ class LocalCalendar:
 
     # -- lo que usa la sincronizacion ---------------------------------------
 
-    def programar(self, job: FreightJob) -> tuple[Evento, str]:
+    def programar(self, job: FreightJob, tentativo: bool = False) -> tuple[Evento, str]:
         """Deja el evento del flete como tiene que estar. Devuelve que hizo:
         "creado", "movido", "actualizado" o "igual"."""
-        e = evento_de(job)
+        e = evento_de(job, tentativo)
         previo = self.conn.execute("SELECT * FROM calendar_events WHERE id = ?", (e.uid,)).fetchone()
-        valores = (_texto(e.inicio), int(e.todo_el_dia), int(e.aproximado), e.titulo, e.descripcion)
+        valores = (_texto(e.inicio), int(e.todo_el_dia), int(e.aproximado), e.titulo,
+                   e.descripcion, int(tentativo))
         ahora = _texto(self.reloj())
         with self.conn:
             if previo is None:
                 self.conn.execute(
                     "INSERT INTO calendar_events (id, job_id, starts_at, all_day, approximate, title, "
-                    "description, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    "description, tentative, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (e.uid, e.job_id, *valores, ahora),
                 )
                 return e, "creado"
             actuales = (previo["starts_at"], previo["all_day"], previo["approximate"],
-                        previo["title"], previo["description"])
+                        previo["title"], previo["description"], previo["tentative"])
             if actuales == valores and previo["status"] == "activo":
                 return e, "igual"
             self.conn.execute(
                 "UPDATE calendar_events SET starts_at = ?, all_day = ?, approximate = ?, title = ?, "
-                "description = ?, status = 'activo', mirrored = 0, updated_at = ? WHERE id = ?",
+                "description = ?, tentative = ?, status = 'activo', mirrored = 0, updated_at = ? "
+                "WHERE id = ?",
                 (*valores, ahora, e.uid),
             )
             return e, "movido" if previo["starts_at"] != valores[0] else "actualizado"
@@ -109,4 +111,5 @@ def _evento(f: sqlite3.Row) -> Evento:
     inicio: date | datetime = (
         date.fromisoformat(f["starts_at"]) if f["all_day"] else datetime.fromisoformat(f["starts_at"])
     )
-    return Evento(f["id"], f["job_id"], inicio, bool(f["approximate"]), f["title"], f["description"])
+    return Evento(f["id"], f["job_id"], inicio, bool(f["approximate"]), f["title"],
+                  f["description"], bool(f["tentative"]))

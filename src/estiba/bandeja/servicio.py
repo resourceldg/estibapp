@@ -103,14 +103,28 @@ def sincronizar(conn: sqlite3.Connection, engine: JobEngine, ahora: datetime, es
             # Sin fecha no hay nada que poner en el calendario. Un flete que
             # se arreglo por telefono y se hizo el mismo dia se cierra igual:
             # el calendario es una consecuencia, no un requisito.
-            if ev.job.when and ev.job.state in (
+            # Una fecha que alguien nombro y no esta en ningun lado es una
+            # fecha que se pasa. Entran todas las que todavia no pasaron; las
+            # que no cerro el cliente van marcadas como tentativas y no
+            # suenan. Antes solo entraban las confirmadas, y una fecha dicha
+            # en un audio sobre un flete sin cerrar no aparecia en ninguna
+            # pantalla salvo que abrieras esa conversacion.
+            cerrado_con_fecha = ev.job.state in (
                 JobState.CONFIRMED, JobState.SCHEDULED, JobState.DONE
-            ):
-                evento, cambio = agenda.programar(ev.job)
+            )
+            se_viene = bool(ev.job.when) and ev.job.when.value >= ahora.date()
+            if ev.job.when and (cerrado_con_fecha or (se_viene and ev.job.state is not JobState.CANCELLED)):
+                evento, cambio = agenda.programar(ev.job, tentativo=not cerrado_con_fecha)
                 ev.job.calendar_event_id = evento.uid
                 if cambio != "igual":
                     r.agenda.append((ep.job_id, cambio))
-            elif ev.job.state is JobState.CANCELLED and agenda.cancelar_de(ep.job_id):
+            elif agenda.cancelar_de(ep.job_id):
+                # Se cae del calendario si el flete se perdio, y tambien si
+                # se quedo sin fecha. Esto ultimo pasa: una fecha sale de un
+                # audio, se vuelve a transcribir o se corta el episodio, y
+                # el flete deja de tenerla. El evento quedaba en el celular
+                # con el titulo viejo y un dia que ya no existia en ningun
+                # lado. En la base real habia uno.
                 r.agenda.append((ep.job_id, "cancelado"))
 
             jobs.save(ev.job, ev.eventos)

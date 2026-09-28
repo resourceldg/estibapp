@@ -480,6 +480,9 @@ class ItemAgenda:
     quien: str
     estado_etiqueta: str
     tono: str
+    #: La fecha se habló pero el cliente no la cerró. Esta en la agenda
+    #: para no perderla, no porque este vendida.
+    tentativo: bool = False
 
 
 @dataclass
@@ -514,6 +517,7 @@ def agenda(eventos, fletes: dict[str, Flete], ahora: datetime, url_ics: str) -> 
             job_id=e.job_id, hora=hora, aproximado=e.aproximado, ruta=f.ruta, cosas=f.cosas,
             precio=f.cotizado, precio_crudo=f.cotizado_crudo,
             quien=f.quien, estado_etiqueta=f.estado_etiqueta, tono=f.tono,
+            tentativo=e.tentativo,
         )
         if dia < hoy:
             if f.estado == JobState.SCHEDULED.value:

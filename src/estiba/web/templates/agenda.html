@@ -3,11 +3,17 @@
 {% from "_cerrar.html" import cerrar %}
 {% macro item(i) -%}
 <li>
-  <a class="evento" href="/fletes/{{ i.job_id }}">
+  {# Lo tentativo se ve distinto: es una fecha que alguien nombro, no una
+     vendida. Punteado y con la pregunta a la vista, que el que mira la
+     agenda a la mañana sepa cual tiene que confirmar antes de salir. #}
+  <a class="evento{% if i.tentativo %} tentativo{% endif %}" href="/fletes/{{ i.job_id }}">
     <span class="evento-hora{% if i.aproximado %} aproximada{% endif %}">{{ i.hora }}</span>
     <span class="evento-cuerpo">
       <span class="evento-ruta">{{ i.ruta }}</span>
-      <span class="evento-sub">{{ i.quien }}{% if i.cosas %} · {{ i.cosas }}{% endif %}</span>
+      <span class="evento-sub">
+        {%- if i.tentativo %}<strong class="sin-confirmar">Sin confirmar</strong> · {% endif -%}
+        {{ i.quien }}{% if i.cosas %} · {{ i.cosas }}{% endif %}
+      </span>
     </span>
     {% if i.precio %}<span class="evento-precio num">{{ i.precio }}</span>{% endif %}
   </a>
@@ -16,7 +22,8 @@
 {% block contenido %}
 <div class="encabezado">
   <h1>Agenda</h1>
-  <p class="bajada">Cada flete confirmado se agenda solo. Si cambia la fecha, se mueve; si se cae, se borra.</p>
+  <p class="bajada">Cada flete confirmado se agenda solo y suena en tu celular.
+  Lo que se habló pero nadie cerró aparece punteado y no suena.</p>
 </div>
 
 {% if a.para_cerrar %}

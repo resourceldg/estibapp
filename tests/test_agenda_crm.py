@@ -538,3 +538,67 @@ class TestDespuesDeCerrarUnFlete:
 
     def test_la_negacion_no_abre_nada(self):
         assert len(self._eps("no necesito otro flete, gracias")) == 1
+
+
+class TestAlarmasYTentativos:
+    """El .ics al que se suscribe el celular no tenia ninguna alarma.
+
+    Estaba suscripto y no sonaba nunca, asi que servia para mirar y no para
+    enterarse. Y solo entraban los fletes confirmados: una fecha dicha en un
+    audio sobre un flete sin cerrar —en la base real hay una, el 30 a las
+    11— no estaba en ningun lado.
+    """
+
+    ESTAMPA = datetime(2026, 9, 20, 12)
+
+    def test_un_flete_confirmado_suena_antes(self):
+        e = evento_de(_job(when=date(2026, 9, 25), hour=time(9)))
+        ics = calendario([(e, False)], self.ESTAMPA)
+        assert "BEGIN:VALARM" in ics and "TRIGGER:-PT2H" in ics
+        assert "STATUS:CONFIRMED" in ics
+
+    def test_uno_de_todo_el_dia_avisa_la_vispera(self):
+        """Dos horas antes de un evento sin hora no significa nada."""
+        ics = calendario([(evento_de(_job(when=date(2026, 9, 25), hour=None)), False)], self.ESTAMPA)
+        assert "TRIGGER:-PT15H" in ics
+
+    def test_lo_que_nadie_confirmo_entra_pero_no_suena(self):
+        """Una fecha que alguien nombro y no esta en ningun lado se pasa.
+        Pero no se madruga por un quizas."""
+        e = evento_de(_job(when=date(2026, 9, 30), hour=time(11)), tentativo=True)
+        ics = calendario([(e, False)], self.ESTAMPA)
+        assert "STATUS:TENTATIVE" in ics
+        assert "BEGIN:VALARM" not in ics
+
+    def test_y_se_ve_que_no_esta_confirmado(self):
+        """El calendario del celular no siempre distingue un TENTATIVE de un
+        CONFIRMED de un vistazo: el titulo lo dice con palabras."""
+        e = evento_de(_job(when=date(2026, 9, 30)), tentativo=True)
+        assert e.titulo.startswith("Sin confirmar · ")
+        assert "SIN CONFIRMAR" in e.descripcion
+
+    def test_sin_ruta_el_titulo_dice_de_quien_es(self):
+        """"Flete ¿? → ¿?" en el calendario del celular no dice nada."""
+        e = evento_de(_job(when=date(2026, 9, 30), origin=None, destination=None))
+        assert "¿? → ¿?" not in e.titulo
+        assert "549" in e.titulo
+
+    def test_un_flete_cancelado_no_suena(self):
+        ics = calendario([(evento_de(_job(when=date(2026, 9, 25))), True)], self.ESTAMPA)
+        assert "STATUS:CANCELLED" in ics and "BEGIN:VALARM" not in ics
+
+
+class TestElCalendarioNoSeQuedaConFechasViejas:
+    def test_si_el_flete_pierde_la_fecha_el_evento_se_cae(self, conn):
+        """Una fecha sale de un audio, se vuelve a transcribir o se corta el
+        episodio, y el flete deja de tenerla. El evento quedaba en el celular
+        con el titulo viejo y un dia que ya no existia en ningun lado. En la
+        base real habia uno asi.
+        """
+        cal = LocalCalendar(conn, reloj=lambda: datetime(2026, 9, 20, 12))
+        cal.programar(_job(when=date(2026, 9, 25)))
+        assert [e for e, cancelado in cal.eventos() if not cancelado]
+
+        # El flete se queda sin fecha: nadie vuelve a llamar a `programar`.
+        assert cal.cancelar_de("549:job")
+        assert not [e for e, cancelado in cal.eventos() if not cancelado]

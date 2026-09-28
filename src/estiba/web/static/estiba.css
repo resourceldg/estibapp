@@ -1109,3 +1109,9 @@ summary::-webkit-details-marker { display: none; }
 }
 .salio-sola .ico { width: 15px; height: 15px; margin-top: 2px; }
 .salio-sola em { color: var(--tinta-2); font-style: normal; }
+
+/* Una fecha que se hablo y nadie cerro. Esta para no perderla, no porque
+   este vendida: punteada, y lo dice con palabras ademas del borde. */
+.evento.tentativo { border: 1px dashed var(--linea-2); background: transparent; }
+.evento.tentativo .evento-hora { color: var(--tenue); }
+.sin-confirmar { color: var(--aviso); font-weight: 700; }

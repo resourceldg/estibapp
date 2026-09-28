@@ -30,6 +30,11 @@ class Evento:
     aproximado: bool
     titulo: str
     descripcion: str
+    #: La fecha se dijo pero el cliente todavia no confirmo. Va al
+    #: calendario igual, como TENTATIVE: una fecha que alguien nombro y no
+    #: esta en ningun lado es una fecha que se pasa. Pero no suena, porque
+    #: no se madruga por un quizas.
+    tentativo: bool = False
 
     @property
     def todo_el_dia(self) -> bool:
@@ -44,7 +49,7 @@ def uid_de(job_id: str) -> str:
     return f"{job_id.replace(':', '-')}@estiba"
 
 
-def evento_de(job: FreightJob) -> Evento:
+def evento_de(job: FreightJob, tentativo: bool = False) -> Evento:
     if job.when is None:
         raise ValueError(f"el flete {job.id} no tiene fecha: no se puede agendar")
     dia = job.when.value
@@ -57,8 +62,16 @@ def evento_de(job: FreightJob) -> Evento:
     else:
         inicio = dia
 
-    ruta = f"{job.origin.value if job.origin else '¿?'} → {job.destination.value if job.destination else '¿?'}"
-    titulo = f"{'~' if aproximado else ''}Flete {ruta}"
+    # Sin ruta, "Flete ¿? → ¿?" en el calendario del celular no dice nada.
+    # El telefono al menos deja saber de quien se trata.
+    if job.origin or job.destination:
+        que = (f"Flete {job.origin.value if job.origin else '¿?'} → "
+               f"{job.destination.value if job.destination else '¿?'}")
+    else:
+        que = f"Flete de {telefono(job.conversation_id)}"
+    # El titulo lo dice con palabras, porque el calendario del celular no
+    # siempre distingue un TENTATIVE de un CONFIRMED de un vistazo.
+    titulo = f"{'Sin confirmar · ' if tentativo else ''}{'~' if aproximado else ''}{que}"
 
     lineas = []
     if job.items:
@@ -77,7 +90,9 @@ def evento_de(job: FreightJob) -> Evento:
     chat_id = job.conversation_id
     lineas.append(f"Cliente: {telefono(chat_id)} · https://wa.me/{chat_id}")
 
-    return Evento(uid_de(job.id), job.id, inicio, aproximado, titulo, "\n".join(lineas))
+    if tentativo:
+        lineas.insert(0, "SIN CONFIRMAR: la fecha se habló pero el cliente no la cerró.")
+    return Evento(uid_de(job.id), job.id, inicio, aproximado, titulo, "\n".join(lineas), tentativo)
 
 
 # --------------------------------------------------------------------------
@@ -113,9 +128,33 @@ def _fecha_ical(valor: date | datetime) -> str:
     return valor.strftime("%Y%m%d")
 
 
-def vevent(e: Evento, estampa: datetime, cancelado: bool = False) -> list[str]:
-    tipo = ";VALUE=DATE" if e.todo_el_dia else ""
+#: Cuanto antes avisa el celular. Un flete no se prepara con cinco minutos:
+#: hay que cargar, salir y llegar. La vispera a la tarde es para acomodar el
+#: dia siguiente; las dos horas, para salir a tiempo.
+AVISO_VISPERA = "-PT15H"   # desde un evento de todo el dia: 18 h del dia anterior
+AVISO_ANTES = "-PT2H"
+
+
+def _valarm(disparo: str, texto: str) -> list[str]:
     return [
+        "BEGIN:VALARM",
+        "ACTION:DISPLAY",
+        f"TRIGGER:{disparo}",
+        f"DESCRIPTION:{_escapar(texto)}",
+        "END:VALARM",
+    ]
+
+
+def vevent(e: Evento, estampa: datetime, cancelado: bool = False) -> list[str]:
+    """Un VEVENT, con alarma si es un flete de verdad.
+
+    El .ics al que se suscribe el celular no tenia ninguna alarma: estaba
+    suscripto y no sonaba nunca. Ahora suena, salvo para lo tentativo: no
+    se madruga por una fecha que el cliente no confirmo.
+    """
+    tipo = ";VALUE=DATE" if e.todo_el_dia else ""
+    estado = "CANCELLED" if cancelado else ("TENTATIVE" if e.tentativo else "CONFIRMED")
+    lineas = [
         "BEGIN:VEVENT",
         f"UID:{e.uid}",
         f"DTSTAMP:{estampa.strftime('%Y%m%dT%H%M%S')}",
@@ -123,9 +162,12 @@ def vevent(e: Evento, estampa: datetime, cancelado: bool = False) -> list[str]:
         f"DTEND{tipo}:{_fecha_ical(e.fin)}",
         f"SUMMARY:{_escapar(e.titulo)}",
         f"DESCRIPTION:{_escapar(e.descripcion)}",
-        f"STATUS:{'CANCELLED' if cancelado else 'CONFIRMED'}",
-        "END:VEVENT",
+        f"STATUS:{estado}",
     ]
+    if not cancelado and not e.tentativo:
+        lineas += _valarm(AVISO_VISPERA if e.todo_el_dia else AVISO_ANTES, e.titulo)
+    lineas.append("END:VEVENT")
+    return lineas
 
 
 def calendario(eventos: list[tuple[Evento, bool]], estampa: datetime, nombre: str = "Fletes") -> str:
