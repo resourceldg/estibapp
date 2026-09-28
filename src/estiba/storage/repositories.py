@@ -342,6 +342,11 @@ class DraftRepository:
             "AND send_error IS NOT NULL ORDER BY decided_at"
         ))
 
+    def marcar_automatico(self, draft_id: int) -> None:
+        """Este salio sin que nadie lo aprobara. Queda dicho en la pantalla."""
+        with self.conn:
+            self.conn.execute("UPDATE drafts SET auto = 1 WHERE id = ?", (draft_id,))
+
     def get(self, draft_id: int) -> sqlite3.Row | None:
         return self.conn.execute("SELECT * FROM drafts WHERE id = ?", (draft_id,)).fetchone()
 

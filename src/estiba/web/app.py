@@ -17,6 +17,7 @@ import hashlib
 import hmac
 import io
 import json
+import logging
 import re
 from collections.abc import Callable
 from contextlib import asynccontextmanager
@@ -42,6 +43,7 @@ from estiba.adapters.waha import MEDIA_DIR, ConfigWaha, ErrorWaha, WahaClient, f
 from estiba.agenda.caldav import ConfigCalDAV, EspejoCalDAV
 from estiba.agenda.evento import calendario
 from estiba.agenda.local import LocalCalendar
+from estiba.bandeja.automatico import encendido, sale_sola
 from estiba.bandeja.servicio import Resultado, sincronizar
 from estiba.conversation.store import ConversationStore
 from estiba.core.models import JobState
@@ -140,6 +142,9 @@ class Estado:
             return None
         self.sesion = info["status"] if info else "SIN_SESION"
         return info
+
+
+log = logging.getLogger("estiba")
 
 
 class Decision(BaseModel):
@@ -1127,6 +1132,55 @@ def create_app(
         estado.sincronizar()
         return _volver(request, "/")
 
+    def _aperturas_automaticas() -> int:
+        """Contestarle solo al que llego por la publicidad, una sola vez.
+
+        Es la unica cosa que sale por WhatsApp sin aprobacion, y las
+        condiciones estan todas en `bandeja/automatico.py`. Aca se agrega
+        la que no puede vivir alla: que ya haya salido algo antes a esa
+        conversacion, que se sabe mirando la tabla de borradores.
+
+        Si WhatsApp no esta conectado no pasa nada: el borrador queda
+        pendiente y se aprueba a mano, como cualquier otro.
+        """
+        if estado.whatsapp is None or not encendido():
+            return 0
+        salieron = 0
+        conn = estado.conectar()
+        try:
+            repo = DraftRepository(conn)
+            candidatos = []
+            for fila in repo.pending():
+                par = estado.resultado.fletes.get(fila["job_id"])
+                if par is None:
+                    continue
+                ya = conn.execute(
+                    "SELECT 1 FROM drafts WHERE chat_id = ? AND sent_at IS NOT NULL",
+                    (fila["chat_id"],),
+                ).fetchone() is not None
+                if sale_sola(par[1], fila["text"], estado.ahora(), ya):
+                    candidatos.append((fila["id"], fila["text"]))
+        finally:
+            conn.close()
+        for draft_id, texto in candidatos:
+            conn = estado.conectar()
+            try:
+                # El texto va explicito: aprobar sin texto lo toma como un
+                # mensaje vacio y lo rechaza, que es la misma proteccion que
+                # impide mandar un borrador en blanco desde la pantalla.
+                repo_d = DraftRepository(conn)
+                repo_d.decide(draft_id, True, texto, estado.ahora())
+                repo_d.marcar_automatico(draft_id)
+                estado.whatsapp.enviar(conn, draft_id, estado.ahora())
+                salieron += 1
+            except (ErrorWaha, ValueError) as e:
+                # Que no salga uno no puede frenar el resto ni tirar el
+                # webhook: queda pendiente y se manda a mano.
+                log.warning("no salio la apertura automatica de %s: %s", draft_id, e)
+            finally:
+                conn.close()
+        return salieron
+
     def _procesar() -> None:
         """Despues de recibir: transcribir los audios nuevos y reevaluar."""
         conn = estado.conectar()
@@ -1135,6 +1189,8 @@ def create_app(
         finally:
             conn.close()
         estado.sincronizar()
+        if _aperturas_automaticas():
+            estado.sincronizar()
 
     @app.post("/webhooks/waha/{secreto}", include_in_schema=False)
     async def webhook_waha(secreto: str, request: Request, background: BackgroundTasks):

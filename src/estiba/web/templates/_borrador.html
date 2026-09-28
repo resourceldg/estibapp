@@ -81,6 +81,7 @@
   <header class="decidido-cab">
     <span class="sello{% if b.error_envio and not b.enviado %} fallo{% endif %}">
       {%- if b.estado != "aprobado" %}Descartado
+      {%- elif b.enviado and b.automatico %}{{ icono("enviar") }} Salió sola: llegó por la publicidad
       {%- elif b.enviado %}{{ icono("check") }} Enviado por WhatsApp
       {%- elif b.error_envio %}{{ icono("aviso") }} Aprobado, pero no salió
       {%- else %}{{ icono("check") }} Aprobado{% endif -%}

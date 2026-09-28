@@ -183,6 +183,9 @@ class Borrador:
     texto_final: str | None
     whatsapp: str | None
     enviado: bool = False
+    #: Salio sin que nadie lo aprobara. Es la unica excepcion a la regla de
+    #: la app, asi que se dice en la pantalla en vez de disimularse.
+    automatico: bool = False
     error_envio: str | None = None
     #: Lo que dice el mensaje que sale, para poder tocarlo sin editar texto.
     monto: int | None = None
@@ -374,6 +377,7 @@ def borrador(fila: sqlite3.Row) -> Borrador:
         texto_final=texto_final,
         whatsapp=whatsapp(fila["chat_id"], texto_final) if texto_final else None,
         enviado=bool(fila["sent_at"]),
+        automatico=bool(fila["auto"]) if "auto" in fila.keys() else False,
         error_envio=fila["send_error"],
         monto=monto_del_texto(fila["text"]),
     )

@@ -78,6 +78,18 @@
 </div>
 {% endif %}
 
+{# Lo unico que sale sin aprobacion tiene que poder mirarse. Los borradores
+   ya enviados no se dibujan en esta pantalla, asi que sin esto el fletero
+   veria un mensaje suyo en el hilo sin saber si lo aprobo distraido o lo
+   mando la app. Esa duda es peor que la funcion. #}
+{% for b in d.borradores if b.automatico and b.enviado %}
+<p class="salio-sola">
+  {{ icono("enviar") }}
+  <span>Estiba le contestó sola porque llegó por la publicidad.
+  <em>“{{ b.texto_final }}”</em></span>
+</p>
+{% endfor %}
+
 {# Que sigue: el borrador ya escrito, listo para aprobar. #}
 {% set en_detalle = true %}
 {% for b in d.borradores if b.estado == "pendiente" or (b.estado == "aprobado" and b.error_envio and not b.enviado) %}

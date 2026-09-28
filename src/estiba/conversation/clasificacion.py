@@ -64,8 +64,15 @@ _ES_HANDLE = re.compile(r"^[a-z][a-z._-]{5,}\d{2,}$")
 #: El mensaje que Meta pre-carga cuando alguien toca tu publicidad. No lo
 #: escribio la persona: lo puso el boton. Dice poco, pero dice lo unico que
 #: importa aca: llego por un anuncio de fletes, asi que es un lead.
+#:
+#: Meta usa mas de una plantilla. Ademas de "Quiero mas informacion" manda
+#: "Me gustaria conseguir mas informacion sobre esto", y el verbo del medio
+#: hacia que no se reconociera: 3 de las 20 conversaciones que arrancan
+#: pidiendo informacion quedaban afuera. No se notaba porque esas tres
+#: contaban de que se trataba enseguida y entraban como lead por la ruta.
 _DESDE_PUBLI = re.compile(
-    r"\b(?:quiero|quisiera|necesito|me\s+gustaria)\s+(?:saber\s+)?m[aá]s\s+informaci"
+    r"\b(?:quiero|quisiera|necesito|me\s+gustaria|me\s+interesa)\s+"
+    r"(?:\w+\s+){0,2}m[aá]s\s+informaci"
     r"|\bme\s+interesa\s+(?:este|esta|lo\s+que)\b"
     r"|\bvi\s+(?:tu|la|el)\s+(?:publicaci[oó]n|anuncio|aviso|publicidad)\b"
 )

@@ -1099,3 +1099,13 @@ summary::-webkit-details-marker { display: none; }
 /* Deshacer un cierre: la unica accion que le queda a un flete cerrado. */
 .reabrir { margin-bottom: 16px; }
 .reabrir .ayuda { margin-top: 8px; text-align: center; }
+
+/* Lo unico que sale sin aprobacion: se cuenta, no se disimula. */
+.salio-sola {
+  display: flex; gap: 8px; align-items: flex-start; margin-bottom: 14px;
+  padding: 10px 12px; border-radius: var(--radio-chico);
+  background: var(--info-fondo); color: var(--info);
+  font-size: 13px; line-height: 1.4;
+}
+.salio-sola .ico { width: 15px; height: 15px; margin-top: 2px; }
+.salio-sola em { color: var(--tinta-2); font-style: normal; }

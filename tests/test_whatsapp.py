@@ -509,3 +509,80 @@ class TestNombres:
         repo.set_name(CLIENTE, "Sabi (vecina)")
         repo.set_wa_name(CLIENTE, "Otro nombre", dt(2026, 9, 24, 11))
         assert repo.name(CLIENTE) == "Sabi (vecina)"
+
+
+class TestLaAperturaSaleSola:
+    """La unica cosa que Estiba manda sin que el fletero la apruebe.
+
+    Se prueba de punta a punta —webhook, borrador, envio real al WAHA
+    falso— porque un mensaje mandado no se puede desmandar. Las cinco
+    condiciones en aislamiento estan en `test_automatico.py`.
+    """
+
+    DE_LA_PAUTA = {"body": "¡Hola! Quiero más información"}
+
+    def test_al_que_llega_por_la_publicidad_le_contesta_al_toque(self, app_con_waha, falso):
+        cuerpo, headers = _firmado({"event": "message.any", "session": "default",
+                                    "payload": mensaje(**self.DE_LA_PAUTA)})
+        app_con_waha.post(f"/webhooks/waha/{_secreto(app_con_waha)}", content=cuerpo, headers=headers)
+        assert len(falso.enviados) == 1, "no le contesto a alguien que llego del anuncio"
+        assert "Contame qué tenés que llevar" in falso.enviados[0]["text"]
+
+    def test_y_no_le_queda_pendiente_para_aprobar(self, app_con_waha, falso):
+        """Si ademas quedara en la bandeja, el fletero lo mandaria dos veces."""
+        cuerpo, headers = _firmado({"event": "message.any", "session": "default",
+                                    "payload": mensaje(**self.DE_LA_PAUTA)})
+        app_con_waha.post(f"/webhooks/waha/{_secreto(app_con_waha)}", content=cuerpo, headers=headers)
+        assert app_con_waha.get("/api/bandeja").json() == []
+
+    def test_al_que_escribe_a_mano_no_le_manda_nada(self, app_con_waha, falso):
+        """Un "hola" suelto puede ser un cliente, la madre o un equivocado."""
+        cuerpo, headers = _firmado({"event": "message.any", "session": "default",
+                                    "payload": mensaje(body="hola, buenas")})
+        app_con_waha.post(f"/webhooks/waha/{_secreto(app_con_waha)}", content=cuerpo, headers=headers)
+        assert falso.enviados == []
+        assert app_con_waha.get("/api/bandeja").json(), "y queda esperando aprobacion"
+
+    def test_no_saluda_dos_veces(self, app_con_waha, falso):
+        secreto = _secreto(app_con_waha)
+        for i, texto in enumerate(["¡Hola! Quiero más información", "hola?"]):
+            cuerpo, headers = _firmado({"event": "message.any", "session": "default",
+                                        "payload": mensaje(id=f"x:{i}", body=texto)})
+            app_con_waha.post(f"/webhooks/waha/{secreto}", content=cuerpo, headers=headers)
+        assert len(falso.enviados) == 1
+
+    def test_apagada_no_manda_nada(self, app_con_waha, falso, monkeypatch):
+        from estiba.bandeja.automatico import VARIABLE
+
+        monkeypatch.setenv(VARIABLE, "0")
+        cuerpo, headers = _firmado({"event": "message.any", "session": "default",
+                                    "payload": mensaje(**self.DE_LA_PAUTA)})
+        app_con_waha.post(f"/webhooks/waha/{_secreto(app_con_waha)}", content=cuerpo, headers=headers)
+        assert falso.enviados == []
+        assert app_con_waha.get("/api/bandeja").json()
+
+    def test_si_waha_falla_queda_pendiente_y_no_rompe_el_webhook(self, app_con_waha, falso):
+        falso.falla_envio = True
+        cuerpo, headers = _firmado({"event": "message.any", "session": "default",
+                                    "payload": mensaje(**self.DE_LA_PAUTA)})
+        r = app_con_waha.post(f"/webhooks/waha/{_secreto(app_con_waha)}", content=cuerpo, headers=headers)
+        assert r.status_code == 200
+
+    def test_se_ve_en_la_pantalla_que_salio_sola(self, app_con_waha, falso):
+        """Ver un mensaje propio que no recordas haber mandado, sin saber si
+        lo aprobaste distraido o lo mando la app, es peor que la funcion."""
+        cuerpo, headers = _firmado({"event": "message.any", "session": "default",
+                                    "payload": mensaje(**self.DE_LA_PAUTA)})
+        app_con_waha.post(f"/webhooks/waha/{_secreto(app_con_waha)}", content=cuerpo, headers=headers)
+        html = app_con_waha.get(f"/fletes/{CLIENTE}:job").text
+        assert "Estiba le contestó sola porque llegó por la publicidad" in html
+        assert "Contame qué tenés que llevar" in html, "y se ve que fue lo que salio"
+
+    def test_lo_que_aprobaste_vos_no_dice_eso(self, app_con_waha, falso):
+        cuerpo, headers = _firmado({"event": "message.any", "session": "default",
+                                    "payload": mensaje(body="necesito llevar una heladera a Güemes 200")})
+        app_con_waha.post(f"/webhooks/waha/{_secreto(app_con_waha)}", content=cuerpo, headers=headers)
+        [item] = app_con_waha.get("/api/bandeja").json()
+        app_con_waha.post(f"/borradores/{item['borrador']['id']}/aprobar",
+                          data={"texto": "te paso el precio"})
+        assert "contestó sola" not in app_con_waha.get(f"/fletes/{CLIENTE}:job").text
