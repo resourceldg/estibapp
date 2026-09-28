@@ -810,6 +810,8 @@ ul.sin-contar { margin: 4px 0 0; padding-left: 18px; color: var(--tinta-2); }
 .conv-duda .btn { min-height: 36px; padding: 0 16px; font-size: 14px; }
 .conv-fecha { display: inline-flex; align-items: center; gap: 5px; color: var(--tinta-2); font-size: 13px; font-weight: 600; }
 .conv-fecha .ico { width: 14px; height: 14px; }
+/* Vencida y el flete todavia abierto: es un pendiente, no un dato. */
+.conv-fecha.pasada { color: var(--aviso); }
 
 /* ------------------------------------------------- botonera de accion */
 /* Adentro de una conversacion reemplaza a la navegacion: una mano, el

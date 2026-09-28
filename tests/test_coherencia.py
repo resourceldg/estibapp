@@ -391,3 +391,50 @@ class TestLaCronologiaManda:
     def test_y_en_que_estado_esta(self, cliente):
         for fila in self._principal(cliente):
             assert re.search(r'chip tono-\w+', fila), fila[:120]
+
+
+class TestLaFechaDiceSiYaPaso:
+    """Una fecha vencida no puede verse igual que una que viene.
+
+    En la bandeja real habia tres fletes abiertos mostrando "26/09" un 27,
+    sin ninguna senal. El motor avisa "la fecha ya paso" solo para los
+    confirmados y agendados, asi que un presupuestado o un borrador con la
+    fecha encima no decia nada.
+    """
+
+    #: Dos dias despues del reloj de los demas tests, uno de los fletes de
+    #: los fixtures tiene la fecha encima y sigue abierto. Sin adelantar el
+    #: reloj no hay ninguno vencido y estos tests pasarian comparando una
+    #: lista vacia consigo misma, que es no probar nada.
+    VENCIDO = datetime(2026, 9, 20, 11, 0)
+
+    @pytest.fixture
+    def cliente(self, db):
+        with TestClient(create_app(db, ahora=lambda: self.VENCIDO)) as c:
+            yield c
+
+    def _filas(self, cliente, filtro="todos"):
+        html = cliente.get(f"/?f={filtro}").text.split('<details class="seccion cerrada">')[0]
+        return html.split('<a class="conv ')[1:]
+
+    def test_hay_alguno_vencido_para_probar(self, cliente):
+        assert any("conv-fecha pasada" in f for f in self._filas(cliente))
+
+    def test_un_flete_abierto_con_la_fecha_encima_lo_dice(self, cliente):
+        for fila in self._filas(cliente):
+            if "conv-fecha pasada" in fila:
+                assert "ya pasó" in fila, "lo dice con color pero no con palabras"
+
+    def test_y_no_lo_dice_solo_con_el_color(self, cliente):
+        """La misma regla que el resto de la app: el color acompaña, no
+        informa solo."""
+        for fila in self._filas(cliente):
+            assert ("conv-fecha pasada" in fila) == ("ya pasó" in fila)
+
+    def test_en_un_flete_cerrado_la_fecha_pasada_es_lo_normal(self, cliente):
+        """Un flete realizado o perdido tiene la fecha atras por definicion:
+        marcarlo seria ruido en todas las filas viejas."""
+        for filtro in ("todos", "perdidos"):
+            for fila in self._filas(cliente, filtro):
+                if "conv cerrada" in fila or "etapa-perdido" in fila or "etapa-vendido" in fila:
+                    assert "ya pasó" not in fila

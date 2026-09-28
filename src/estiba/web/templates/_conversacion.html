@@ -30,7 +30,11 @@
       {%- else %}<span class="etq etq-dudosa">Sin clasificar</span>{% endif %}
       {{ chip(f.estado_etiqueta, f.tono) }}
       {# Si ya tiene fecha, es trabajo agendado: se ve sin entrar. #}
-      {% if f.fecha %}<span class="conv-fecha">{{ icono("agenda") }}{{ f.fecha }}{% if f.hora %} · {{ f.hora }}{% endif %}</span>{% endif %}
+      {# Una fecha vencida en un flete abierto no puede verse igual que una
+         que viene: eran tres en la bandeja real, y decian "26/09" un 27 sin
+         ninguna senal. Lo dice con palabras, no solo con el color. En un
+         flete cerrado la fecha pasada es lo normal y no se marca. #}
+      {% if f.fecha %}<span class="conv-fecha{% if f.pasado and not f.cerrado %} pasada{% endif %}">{{ icono("agenda") }}{{ f.fecha }}{% if f.hora %} · {{ f.hora }}{% endif %}{% if f.pasado and not f.cerrado %} · ya pasó{% endif %}</span>{% endif %}
       {% if f.alertas %}<span class="alerta-mini">{{ icono("aviso") }}{{ f.alertas|length }}</span>{% endif %}
     </div>
   </a>
