@@ -6,7 +6,10 @@
   {# Un flete cerrado se apaga: sigue ahi, pero no compite con lo que falta
      hacer. Si el mismo cliente vuelve a escribir, eso abre otro flete y esa
      fila aparece encendida. #}
-  <a class="conv etapa-{{ f.etapa }}{% if f.cerrado %} cerrada{% endif %}{% if b and b.tipo == 'respuesta' %} pide-atencion{% endif %}" href="/fletes/{{ f.job_id }}{% if filtro and filtro != 'todos' %}?f={{ filtro }}{% endif %}">
+  {# `data-ultimo` es la fecha que ordena la lista. Esta en el HTML para que
+     un test pueda comprobar que la cronologia no se rompio: sin eso, la
+     prueba compara una lista vacia consigo misma y pasa siempre. #}
+  <a class="conv etapa-{{ f.etapa }}{% if f.cerrado %} cerrada{% endif %}{% if b and b.tipo == 'respuesta' %} pide-atencion{% endif %}" data-ultimo="{{ f.ultimo_at }}" href="/fletes/{{ f.job_id }}{% if filtro and filtro != 'todos' %}?f={{ filtro }}{% endif %}">
     <div class="conv-linea1">
       <span class="conv-quien">{{ f.quien }}</span>
       <span class="conv-hora">{{ f.ultimo }}</span>
@@ -18,7 +21,13 @@
     <div class="conv-linea3">
       {% if b %}<span class="conv-accion">{{ icono(b.accion_icono) }}{{ b.accion }}</span>{% endif %}
       {% if f.numero %}<span class="numero-flete">{{ f.numero }}</span>{% endif %}
-      {% if clase and clase != "dudosa" %}<span class="etq etq-{{ clase }}">{{ {"lead": "Lead", "cliente": "Cliente", "privado": "Privado", "spam": "Spam"}.get(clase, clase) }}</span>{% endif %}
+      {# Toda fila dice que es. Las que Estiba no pudo determinar decian
+         nada: quedaban en la lista sin etiqueta y sin explicacion, y son
+         justo las que el cliente contesto solo con fotos o adjuntos, asi
+         que no hay de donde deducirlo. La etiqueta no pide nada: los
+         cuatro botones estan adentro de la conversacion. #}
+      {% if clase and clase != "dudosa" %}<span class="etq etq-{{ clase }}">{{ {"lead": "Lead", "cliente": "Cliente", "privado": "Privado", "spam": "Spam"}.get(clase, clase) }}</span>
+      {%- else %}<span class="etq etq-dudosa">Sin clasificar</span>{% endif %}
       {{ chip(f.estado_etiqueta, f.tono) }}
       {# Si ya tiene fecha, es trabajo agendado: se ve sin entrar. #}
       {% if f.fecha %}<span class="conv-fecha">{{ icono("agenda") }}{{ f.fecha }}{% if f.hora %} · {{ f.hora }}{% endif %}</span>{% endif %}

@@ -346,3 +346,48 @@ class TestPreciosEnMiles:
             (job_id,)).fetchone()[0]
         conn.close()
         assert monto == "45000"
+
+
+class TestLaCronologiaManda:
+    """La bandeja es una sola lista, del ultimo que escribio al mas viejo.
+
+    Estaba partida en cinco por etapa de la venta, "en orden de cercania a
+    la plata". Sonaba bien y rompia lo unico que un fletero tiene metido en
+    el cuerpo despues de anios de WhatsApp: que arriba esta lo que acaba de
+    llegar. Alguien que escribio recien aparecia tres titulos mas abajo que
+    uno de hace cuatro dias, por estar en otra etapa.
+    """
+
+    def _principal(self, cliente, filtro="todos") -> list[str]:
+        """Las filas de la lista, sin las pospuestas, que van aparte."""
+        html = cliente.get(f"/?f={filtro}").text.split('<details class="seccion cerrada">')[0]
+        return html.split('<a class="conv ')[1:]
+
+    def test_no_quedan_titulos_de_etapa(self, cliente):
+        assert 'class="grupo-etapa"' not in cliente.get("/").text
+
+    def test_la_lista_va_del_mas_nuevo_al_mas_viejo(self, cliente):
+        """El orden sale de `ultimo_at`, que es lo que la fila muestra como
+        "hace 2 días". Si alguien vuelve a agrupar, esto falla."""
+        for filtro in ("todos", "hoy", "responder", "perdidos"):
+            fechas = [
+                re.search(r'data-ultimo="([^"]*)"', t).group(1)
+                for t in self._principal(cliente, filtro)
+                if re.search(r'data-ultimo="([^"]*)"', t)
+            ]
+            assert fechas == sorted(fechas, reverse=True), filtro
+
+    def test_toda_fila_dice_que_es(self, cliente):
+        """Sin los titulos de etapa, la fila es lo unico que ubica.
+
+        Las que Estiba no pudo determinar no mostraban nada: son justo las
+        que el cliente contesto solo con adjuntos, asi que quedaban en la
+        lista sin etiqueta y sin explicacion.
+        """
+        for filtro in ("todos", "perdidos"):
+            for fila in self._principal(cliente, filtro):
+                assert re.search(r'etq etq-\w+', fila), (filtro, fila[:120])
+
+    def test_y_en_que_estado_esta(self, cliente):
+        for fila in self._principal(cliente):
+            assert re.search(r'chip tono-\w+', fila), fila[:120]

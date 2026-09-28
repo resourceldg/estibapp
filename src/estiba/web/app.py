@@ -450,22 +450,18 @@ def create_app(
                 for f in sorted(por_chat.values(), key=lambda x: x.ultimo_at, reverse=True)
             ]
 
+        # Una sola lista, del ultimo que escribio al mas viejo. Como WhatsApp.
+        #
+        # Estaba agrupada por etapa de la venta, "en orden de cercania a la
+        # plata". Sonaba bien y rompia lo unico que el fletero tiene metido
+        # en el cuerpo: que arriba esta lo que acaba de llegar. Un cliente
+        # que escribio recien aparecia tres titulos mas abajo que uno de
+        # hace cuatro dias, porque estaba en otra etapa.
+        #
+        # La etapa no se pierde: viaja en la fila, en el chip de estado y en
+        # el color del borde. Y el que quiera ver una etapa sola tiene su
+        # pestaña: para eso estan "Para cotizar" y "Para hacer".
         filas = elegir(filtro)
-        # Agrupadas por etapa de la venta, en orden de cercania a la plata,
-        # pero sin romper la cronologia adentro de cada grupo.
-        ORDEN_ETAPAS = [
-            ("cerrado-falta-hacer", "Cerrado, falta hacerlo"),
-            ("cotizado", "Cotizado, esperando respuesta"),
-            ("sin-cotizar", "Sin cotizar"),
-            ("vendido", "Realizados"),
-            ("perdido", "Perdidos"),
-        ]
-        por_etapa = {}
-        for fila in filas:
-            por_etapa.setdefault(fila[1].etapa, []).append(fila)
-        grupos = [
-            (etiqueta, por_etapa[clave]) for clave, etiqueta in ORDEN_ETAPAS if clave in por_etapa
-        ]
         pospuestas, vistos = [], set()
         for f in sorted(_fletes().values(), key=lambda x: x.ultimo_at, reverse=True):
             if f.chat_id in dormidos and f.chat_id not in vistos:
@@ -483,7 +479,6 @@ def create_app(
         return {
             "sin_salir": _sin_salir() if filtro in ("todos", "hoy") else [],
             "filas": filas,
-            "grupos": grupos,
             "apartadas": apartadas,
             "filtros_aparte": FILTROS_APARTE,
             "es_spam": filtro == "spam",

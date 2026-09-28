@@ -915,6 +915,12 @@ body:has(.barra-accion) { padding-bottom: calc(var(--tabbar) + 48px + env(safe-a
 }
 .etq-cliente { background: var(--ok-fondo); color: var(--ok); }
 .etq-privado, .etq-spam { background: var(--neutro-fondo); color: var(--tenue); }
+/* Lo que Estiba no pudo determinar. Punteada porque no es una clase mas:
+   es la ausencia de una, y se resuelve entrando a la conversacion. */
+.etq-dudosa {
+  background: transparent; color: var(--tenue);
+  border: 1px dashed var(--linea-2); font-weight: 600;
+}
 .clase-puesta { margin-bottom: 14px; }
 .clase-puesta > summary {
   display: flex; align-items: center; gap: 10px; cursor: pointer; list-style: none;

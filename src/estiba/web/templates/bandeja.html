@@ -67,15 +67,14 @@
   </li>
   {% endfor %}
 </ul>
-{% elif grupos %}
-{# Separadas por etapa: lo que ya se vendio no se mezcla con lo que falta
-   cotizar. Adentro de cada grupo sigue mandando el orden de llegada. #}
-{% for etiqueta, filas_ in grupos %}
-<h2 class="grupo-etapa">{{ etiqueta }} <span class="seccion-cuenta">{{ filas_|length }}</span></h2>
+{% elif filas %}
+{# Una sola lista, del ultimo que escribio al mas viejo. Cada fila dice en
+   que etapa esta: el chip de estado, el color del borde y la etiqueta de
+   lead o cliente. Los titulos de etapa partian el dia en cinco listas y
+   mandaban al fondo a alguien que habia escrito recien. #}
 <ul class="lista">
-  {% for b, f, dudosa, clase in filas_ %}{% include "_conversacion.html" %}{% endfor %}
+  {% for b, f, dudosa, clase in filas %}{% include "_conversacion.html" %}{% endfor %}
 </ul>
-{% endfor %}
 {% else %}
 <div class="vacio">
   <div class="vacio-ico">{{ icono("check") }}</div>
