@@ -342,6 +342,27 @@ class DraftRepository:
             "AND send_error IS NOT NULL ORDER BY decided_at"
         ))
 
+    def cancelar_del_chat(self, chat_id: str, ahora: datetime) -> int:
+        """Saca de la bandeja lo que quedo escrito para esta conversacion.
+
+        Cuando una charla sale del embudo —se marca privada o spam— sus
+        borradores no volvian a tocarse nunca: `sincronizar()` saltea esos
+        chats antes de llegar a `sync`, asi que lo que se habia escrito
+        cuando todavia parecia un flete se quedaba pendiente para siempre.
+
+        No es solo un contador inflado. En la base real quedaron 22, entre
+        ellos uno a la hermana del fletero y otro a un amigo preguntando
+        "¿Desde que barrio seria? ¿Hay ascensor?". Bastaba con aprobar uno
+        sin mirar para mandarle un cuestionario de flete a la familia.
+        """
+        with self.conn:
+            cur = self.conn.execute(
+                "UPDATE drafts SET status = 'reemplazado', decided_at = ? "
+                "WHERE chat_id = ? AND status = 'pendiente'",
+                (_a_texto(ahora), chat_id),
+            )
+        return cur.rowcount
+
     def marcar_automatico(self, draft_id: int) -> None:
         """Este salio sin que nadie lo aprobara. Queda dicho en la pantalla."""
         with self.conn:

@@ -89,7 +89,7 @@ def decidir(ev: Evaluacion, conv: Conversation, ahora: datetime) -> Decision:
         razon = (
             "Dijo que confirmaba y no volvió a escribir"
             if estado is JobState.WAITING_CUSTOMER
-            else "Hace más de un día que no responde"
+            else "Hace dos días que no responde"
         )
         return Decision(Accion.SEGUIR, razon)
 

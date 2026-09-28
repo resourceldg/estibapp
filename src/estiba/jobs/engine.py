@@ -35,7 +35,12 @@ _CERRADOS = (JobState.DONE, JobState.CANCELLED)
 @dataclass(frozen=True)
 class Politica:
     #: Sin respuesta del cliente despues de esto: hay que escribirle.
-    seguimiento: timedelta = timedelta(days=1)
+    #:
+    #: Al dia es demasiado pronto para una mudanza: la gente pregunta,
+    #: junta presupuestos y lo habla en casa. Escribirle a las 24 horas
+    #: parece que estas desesperado por el trabajo. A los dos dias ya se
+    #: enfrio lo suficiente como para que valga la pena recordarlo.
+    seguimiento: timedelta = timedelta(days=2)
     #: Sin respuesta despues de esto: el flete se da por perdido.
     abandono: timedelta = timedelta(days=4)
     #: Por debajo de esta confianza, un dato obligatorio no alcanza para confirmar.

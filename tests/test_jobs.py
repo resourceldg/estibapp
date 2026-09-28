@@ -88,7 +88,7 @@ class TestFixtures:
         assert despues.job.state is JobState.CANCELLED
         cancelacion = despues.eventos[-1]
         assert "sin respuesta" in cancelacion.causa
-        assert cancelacion.at == datetime(2026, 9, 20, 19, 33)  # 4 dias despues del ultimo mensaje
+        assert cancelacion.at == datetime(2026, 9, 19, 19, 33)  # 4 dias despues del ultimo mensaje
 
     def test_la_aceptacion_con_fecha_dudosa_no_confirma_hasta_que_se_aclara(self):
         ev = JobEngine().evaluar(_fixture("03-cambio-de-destino.json"), LUNES_21)

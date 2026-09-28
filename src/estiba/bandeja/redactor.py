@@ -124,10 +124,18 @@ def proponer(ev: Evaluacion, conv: Conversation, ahora: datetime) -> Propuesta |
         return propuesta("")   # te toca a vos: Estiba no inventa la respuesta
 
     if d.accion is Accion.SEGUIR:
+        # Al que se quedo callado no se le pregunta si "pudo ver" algo: eso
+        # suena a reclamo. Se le pregunta si todavia lo quiere hacer, que es
+        # lo que de verdad se quiere saber, y se le ofrece cerrar la fecha,
+        # que es lo unico que falta. Nombrar la ruta le ahorra tener que
+        # acordarse de que veniamos hablando.
         flete = "lo del flete"
         if job.origin and job.destination:
             flete += f" de {job.origin.value} a {job.destination.value}"
-        return propuesta(f"¡Hola! ¿Pudiste ver {flete}? Si me decís el día, te lo reservo.")
+        return propuesta(
+            f"👋 ¡Hola! Te escribo por {flete}: ¿lo seguís necesitando? "
+            "Si querés, agendamos una fecha 📅"
+        )
 
     if d.accion is Accion.CONFIRMAR:
         partes = ["¡Listo!"]

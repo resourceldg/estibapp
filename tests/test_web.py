@@ -895,3 +895,38 @@ class TestAvisarDeUnAudioMalTranscripto:
             html = c.get("/fletes/a:job").text
             assert "Puede estar mal transcripto" not in html
             assert "salió de un audio" not in html
+
+
+class TestElSeguimientoALosDosDias:
+    """Al que se queda callado se le escribe, pero no al dia siguiente.
+
+    Una mudanza se piensa: la gente pregunta, junta presupuestos y lo habla
+    en casa. Escribir a las 24 horas parece desesperacion por el trabajo.
+    """
+
+    def _seguimiento(self, dias_de_silencio: float):
+        # Silencio de verdad: el fletero cotizo y el cliente no volvio. Si
+        # el cliente hubiera dicho "manana te confirmo", eso es POSPONER y
+        # no lleva seguimiento: se lo espera hasta manana.
+        conv = _chat(("c", "necesito llevar una heladera de Güemes 200 a Colón 3000"),
+                     ("v", "Te sale $40.000, ¿te sirve?"))
+        ultimo = conv.messages[-1].sent_at
+        return _propuesta(conv, ultimo + timedelta(days=dias_de_silencio))
+
+    def test_al_dia_todavia_no(self):
+        p = self._seguimiento(1.0)
+        assert p is None or p.kind != "seguimiento"
+
+    def test_a_los_dos_dias_si(self):
+        assert self._seguimiento(2.1).kind == "seguimiento"
+
+    def test_pregunta_si_lo_sigue_queriendo_y_ofrece_la_fecha(self):
+        """No "¿pudiste ver?", que suena a reclamo: lo que se quiere saber
+        es si el flete sigue en pie."""
+        texto = self._seguimiento(2.1).text
+        assert "seguís necesitando" in texto
+        assert "agendamos una fecha" in texto
+        assert "👋" in texto and "📅" in texto
+
+    def test_nombra_el_flete_para_que_no_tenga_que_acordarse(self):
+        assert "Güemes 200" in self._seguimiento(2.1).text

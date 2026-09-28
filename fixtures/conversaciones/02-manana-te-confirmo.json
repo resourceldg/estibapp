@@ -2,12 +2,40 @@
   "chat_id": "5491155556666",
   "descripcion": "El caso trampa. 'Manana te confirmo' NO es confirmar para manana: es posponer la decision. Despues hay cuatro dias de silencio, que es una cancelacion implicita, no un flete agendado.",
   "mensajes": [
-    {"de": "cliente", "hora": "2026-09-16T18:40:00", "texto": "buenas! cuanto me sale un flete?"},
-    {"de": "vos", "hora": "2026-09-16T19:02:00", "texto": "Hola! Depende de que y de donde a donde. Contame"},
-    {"de": "cliente", "hora": "2026-09-16T19:05:00", "texto": "un juego de comedor, mesa y 6 sillas, de Flores a Moron"},
-    {"de": "vos", "hora": "2026-09-16T19:15:00", "texto": "Eso te sale 60 mil. Que dia lo pensabas hacer?"},
-    {"de": "cliente", "hora": "2026-09-16T19:31:00", "texto": "uh, tengo que ver con mi senora"},
-    {"de": "cliente", "hora": "2026-09-16T19:31:30", "texto": "manana te confirmo"},
-    {"de": "vos", "hora": "2026-09-16T19:33:00", "texto": "Dale, quedo atento"}
+    {
+      "de": "cliente",
+      "hora": "2026-09-15T18:40:00",
+      "texto": "buenas! cuanto me sale un flete?"
+    },
+    {
+      "de": "vos",
+      "hora": "2026-09-15T19:02:00",
+      "texto": "Hola! Depende de que y de donde a donde. Contame"
+    },
+    {
+      "de": "cliente",
+      "hora": "2026-09-15T19:05:00",
+      "texto": "un juego de comedor, mesa y 6 sillas, de Flores a Moron"
+    },
+    {
+      "de": "vos",
+      "hora": "2026-09-15T19:15:00",
+      "texto": "Eso te sale 60 mil. Que dia lo pensabas hacer?"
+    },
+    {
+      "de": "cliente",
+      "hora": "2026-09-15T19:31:00",
+      "texto": "uh, tengo que ver con mi senora"
+    },
+    {
+      "de": "cliente",
+      "hora": "2026-09-15T19:31:30",
+      "texto": "manana te confirmo"
+    },
+    {
+      "de": "vos",
+      "hora": "2026-09-15T19:33:00",
+      "texto": "Dale, quedo atento"
+    }
   ]
 }

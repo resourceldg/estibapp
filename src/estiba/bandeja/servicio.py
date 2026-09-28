@@ -83,6 +83,10 @@ def sincronizar(conn: sqlite3.Connection, engine: JobEngine, ahora: datetime, es
         # metricas. La duda si entra: perder un cliente en silencio es peor.
         if clase in (Clase.PRIVADO, Clase.SPAM):
             r.fuera[chat_id] = clase.value
+            # Y lo que hubiera quedado escrito para esta conversacion sale
+            # de la bandeja. De aca en adelante no se la vuelve a mirar, asi
+            # que si no se limpia ahora no se limpia nunca.
+            borradores.cancelar_del_chat(chat_id, ahora)
             continue
         todos = episodios(conv, engine, acciones.for_job, cortes.de(chat_id))
         for n, ep in enumerate(todos, start=1):
