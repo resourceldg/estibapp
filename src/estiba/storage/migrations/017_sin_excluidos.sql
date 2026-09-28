@@ -1,0 +1,11 @@
+-- Se va la tabla de excluidos.
+--
+-- La 015 paso su contenido a `chat_clase` y la dejo vacia por prudencia,
+-- pero vacia y viva es peor que muerta: un proceso viejo del servidor,
+-- corriendo en paralelo con el nuevo sobre la misma base, volvio a escribir
+-- una fila el 25/9. Nadie la leia ya, asi que el chat no desaparecio, pero
+-- una tabla que nadie lee y alguien escribe es una trampa esperando.
+--
+-- Nada se pierde: cada decision sobre cada conversacion esta en
+-- `clase_historia`, con quien la tomo y cuando.
+DROP TABLE IF EXISTS excluded_chats;

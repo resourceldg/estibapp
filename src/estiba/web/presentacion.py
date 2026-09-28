@@ -290,6 +290,10 @@ class DetalleFlete:
     #: reales. Cuando no es lo que sigue, la accion existe igual, plegada
     #: mas abajo junto con "Dar por perdido".
     cerrar_es_lo_que_sigue: bool
+    #: Esta cerrado, asi que lo unico que queda es poder deshacerlo. Cerrar
+    #: era irreversible: un toque equivocado en la agenda dejaba el flete
+    #: fuera del embudo para siempre.
+    puede_reabrir: bool
 
 
 def flete(job_id: str, ev: Evaluacion, conv: Conversation, ahora: datetime,
@@ -439,6 +443,7 @@ def detalle(
         puede_realizar=ev.job.state not in (JobState.DONE, JobState.CANCELLED),
         puede_perder=ev.job.state not in (JobState.DONE, JobState.CANCELLED),
         cerrar_es_lo_que_sigue=ev.job.state in (JobState.CONFIRMED, JobState.SCHEDULED),
+        puede_reabrir=ev.job.state in (JobState.DONE, JobState.CANCELLED),
     )
 
 

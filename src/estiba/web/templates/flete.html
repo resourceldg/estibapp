@@ -273,6 +273,21 @@
 </details>
 {% endif %}
 
+{# Deshacer un cierre. Va arriba de las dos salidas porque es lo unico que
+   se puede hacer con un flete cerrado, y porque el error que arregla —un
+   toque de mas en la agenda— no tenia arreglo. #}
+{% if d.puede_reabrir %}
+<form class="reabrir" method="post" action="/fletes/{{ f.job_id }}/reabrir"
+      hx-post="/fletes/{{ f.job_id }}/reabrir"
+      hx-confirm="¿Reabrir el flete? Vuelve a la bandeja como estaba. Queda anotado que lo cerraste y que lo reabriste.">
+  <button class="btn secundario ancho" type="submit">
+    {{ icono("actualizar") }}<span>Reabrir el flete</span>
+  </button>
+  <p class="ayuda">Lo cerraste el {{ d.historia[-1].cuando if d.historia else "" }}.
+  Si fue sin querer, esto lo devuelve a donde estaba.</p>
+</form>
+{% endif %}
+
 {% if d.puede_perder %}
 <details class="panel perder">
   <summary>{{ icono("cruz") }}Dar por perdido</summary>

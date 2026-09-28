@@ -56,6 +56,20 @@ REALIZADO = "realizado"
 PERDIDO = "perdido"
 #: El precio que se le mando al cliente, tal cual salio.
 COTIZADO = "cotizado"
+#: Deshacer un cierre. No borra la accion anterior: agrega una que la anula.
+#:
+#: El historial de un flete es la unica cosa que no se recalcula, asi que
+#: tampoco se edita. Si "marcar realizado" se pudiera borrar, la historia
+#: diria que ese flete nunca se cerro, y lo que paso de verdad —que se
+#: cerro por error y se reabrio— se perderia. Asi quedan los dos hechos.
+#:
+#: DONE y CANCELLED son terminales en ALLOWED_TRANSITIONS y siguen
+#: siendolo: anular no es una transicion de vuelta, es que el cierre deja
+#: de contar y el estado se vuelve a deducir desde los mensajes.
+ANULADO = "anulado"
+
+#: Las que cierran un flete. Son las unicas que se pueden anular.
+CIERRES = (REALIZADO, PERDIDO)
 
 #: Por que no se concreto. Se elige de la lista, no se escribe.
 MOTIVOS_PERDIDA = [
@@ -80,6 +94,25 @@ class Accion:
     nota: str | None = None
     #: Lo cotizado o lo cobrado, segun la accion. No siempre coinciden.
     monto: Decimal | None = None
+
+
+def sin_anuladas(acciones: Iterable[Accion]) -> list[Accion]:
+    """El historial que queda en pie, en orden.
+
+    Cada `anulado` saca el ultimo cierre que seguia valiendo antes de el.
+    Se puede deshacer dos veces seguidas si se cerro dos veces, y un
+    `anulado` sin nada que anular no hace nada.
+    """
+    en_pie: list[Accion] = []
+    for a in sorted(acciones, key=lambda x: x.at):
+        if a.tipo != ANULADO:
+            en_pie.append(a)
+            continue
+        for i in range(len(en_pie) - 1, -1, -1):
+            if en_pie[i].tipo in CIERRES:
+                en_pie.pop(i)
+                break
+    return en_pie
 
 
 @dataclass
@@ -111,7 +144,9 @@ class JobEngine:
         self, conv: Conversation, ahora: datetime, acciones: Iterable[Accion] = ()
     ) -> Evaluacion:
         mensajes = [m for m in conv.messages if m.sent_at <= ahora]
-        pendientes = sorted((a for a in acciones if a.at <= ahora), key=lambda a: a.at)
+        # Lo anulado no llega a la reconstruccion: para el estado es como si
+        # ese cierre no se hubiera marcado, aunque en la base siga estando.
+        pendientes = sin_anuladas(a for a in acciones if a.at <= ahora)
         if not mensajes:
             raise ValueError(f"la conversacion {conv.chat_id} no tiene mensajes hasta {ahora}")
 

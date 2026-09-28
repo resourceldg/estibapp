@@ -9,3 +9,4 @@ fixtures/audios/*
 !fixtures/audios/.gitkeep
 data/
 .env
+estiba.db.antes-de-*

@@ -1077,3 +1077,7 @@ summary::-webkit-details-marker { display: none; }
   font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
 }
 .quien-estado { display: flex; align-items: center; gap: 8px; }
+
+/* Deshacer un cierre: la unica accion que le queda a un flete cerrado. */
+.reabrir { margin-bottom: 16px; }
+.reabrir .ayuda { margin-top: 8px; text-align: center; }

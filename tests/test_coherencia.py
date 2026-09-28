@@ -230,3 +230,119 @@ class TestVocabulario:
         estados = {etiqueta for etiqueta, _ in ESTADOS.values()}
         assert not ({p.strip() for p in pestañas} & estados), \
             "una pestaña se llama igual que un estado y quieren decir cosas distintas"
+
+
+class TestDeshacerUnCierre:
+    """Cerrar un flete era definitivo: `ActionRepository` no tiene borrar.
+
+    No se resolvio borrando la accion, sino agregando una que la anula. El
+    historial es lo unico que no se recalcula, asi que tampoco se edita: lo
+    que paso de verdad —que se cerro por error y se reabrio— queda escrito.
+    """
+
+    def _abierto(self, cliente) -> str:
+        for job_id in sorted(set(re.findall(r'href="/fletes/([^"?#]+)', cliente.get("/").text))):
+            if "Marcar realizado" in cliente.get(f"/fletes/{job_id}").text:
+                return job_id
+        pytest.skip("ningun flete abierto en los fixtures")
+
+    def test_reabrir_devuelve_el_flete_a_donde_estaba(self, cliente):
+        job_id = self._abierto(cliente)
+        antes = cliente.get(f"/fletes/{job_id}").text.split("quien-estado")[1][:300]
+        cliente.post(f"/fletes/{job_id}/realizado", data={"cobrado": "45000"})
+        assert "Realizado" in cliente.get(f"/fletes/{job_id}").text.split("quien-estado")[1][:300]
+        cliente.post(f"/fletes/{job_id}/reabrir")
+        despues = cliente.get(f"/fletes/{job_id}").text.split("quien-estado")[1][:300]
+        assert re.findall(r'chip tono-\w+">([^<]+)', antes) == \
+               re.findall(r'chip tono-\w+">([^<]+)', despues)
+
+    def test_no_borra_la_accion_anterior(self, cliente, db):
+        """Las dos cosas pasaron y las dos quedan anotadas."""
+        job_id = self._abierto(cliente)
+        cliente.post(f"/fletes/{job_id}/realizado", data={"cobrado": "45000"})
+        cliente.post(f"/fletes/{job_id}/reabrir")
+        conn = connect(db)
+        acciones = [f["action"] for f in conn.execute(
+            "SELECT action FROM job_actions WHERE job_id = ? ORDER BY id", (job_id,))]
+        conn.close()
+        assert "realizado" in acciones and "anulado" in acciones
+
+    def test_un_flete_abierto_no_se_puede_reabrir(self, cliente):
+        assert cliente.post(f"/fletes/{self._abierto(cliente)}/reabrir").status_code == 409
+
+    def test_el_boton_aparece_solo_cuando_esta_cerrado(self, cliente):
+        job_id = self._abierto(cliente)
+        assert "Reabrir el flete" not in cliente.get(f"/fletes/{job_id}").text
+        cliente.post(f"/fletes/{job_id}/realizado", data={"cobrado": "45000"})
+        assert "Reabrir el flete" in cliente.get(f"/fletes/{job_id}").text
+
+
+class TestBorrarSoloElSpam:
+    """Lo unico de Estiba que destruye datos, y solo para una cosa.
+
+    El resto del sistema se apoya en que `messages` no se toca nunca. Que
+    el boton no se dibuje no alcanza: lo tiene que negar el servidor.
+    """
+
+    def test_el_servidor_no_deja_borrar_lo_que_no_es_spam(self, cliente, db):
+        from estiba.storage.repositories import ClaseRepository
+
+        chat = "5491122223333"
+        for clase in ("lead", "cliente", "privado"):
+            conn = connect(db)
+            ClaseRepository(conn).corregir(chat, clase, JUEVES_18)
+            conn.close()
+            cliente.post("/sincronizar")
+            assert cliente.post(f"/clientes/{chat}/borrar").status_code == 409, clase
+
+    def test_y_si_lo_es_lo_borra(self, cliente, db):
+        from estiba.storage.repositories import ClaseRepository
+
+        chat = "5491122223333"
+        conn = connect(db)
+        ClaseRepository(conn).corregir(chat, "spam", JUEVES_18)
+        conn.close()
+        cliente.post("/sincronizar")
+        assert cliente.post(f"/clientes/{chat}/borrar").status_code in (200, 303)
+        conn = connect(db)
+        quedan = conn.execute(
+            "SELECT count(*) FROM messages WHERE chat_id = ?", (chat,)).fetchone()[0]
+        conn.close()
+        assert quedan == 0
+
+    def test_el_boton_de_borrar_solo_existe_en_la_pestaña_spam(self, cliente):
+        for ruta in ("/", "/?f=perdidos", "/?f=privados", "/?f=sin-clasificar"):
+            assert "/borrar" not in cliente.get(ruta).text, ruta
+
+
+class TestPreciosEnMiles:
+    def test_un_numero_suelto_se_lee_como_miles(self, cliente, db):
+        """"35" es treinta y cinco mil. No existe un flete de $35.
+
+        Habia uno anotado asi en la base real, corriendo la mediana con la
+        que Estiba sugiere precios.
+        """
+        job_id = next(
+            j for j in sorted(set(re.findall(r'href="/fletes/([^"?#]+)', cliente.get("/").text)))
+            if "Marcar realizado" in cliente.get(f"/fletes/{j}").text
+        )
+        cliente.post(f"/fletes/{job_id}/realizado", data={"cobrado": "35"})
+        conn = connect(db)
+        monto = conn.execute(
+            "SELECT monto FROM job_actions WHERE job_id = ? AND action = 'realizado'",
+            (job_id,)).fetchone()[0]
+        conn.close()
+        assert monto == "35000"
+
+    def test_lo_que_ya_viene_completo_no_se_multiplica(self, cliente, db):
+        job_id = next(
+            j for j in sorted(set(re.findall(r'href="/fletes/([^"?#]+)', cliente.get("/").text)))
+            if "Marcar realizado" in cliente.get(f"/fletes/{j}").text
+        )
+        cliente.post(f"/fletes/{job_id}/realizado", data={"cobrado": "45.000"})
+        conn = connect(db)
+        monto = conn.execute(
+            "SELECT monto FROM job_actions WHERE job_id = ? AND action = 'realizado'",
+            (job_id,)).fetchone()[0]
+        conn.close()
+        assert monto == "45000"

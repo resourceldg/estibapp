@@ -53,6 +53,7 @@ from estiba.jobs.engine import (
     MOTIVOS_PERDIDA,
     PERDIDO,
     REALIZADO,
+    ANULADO,
     JobEngine,
 )
 from estiba.storage.db import connect
@@ -756,15 +757,27 @@ def create_app(
             )
         return RedirectResponse(request.headers.get("referer", "/"), status_code=303)
 
+    #: Debajo de esto nadie esta hablando de pesos sueltos: esta diciendo
+    #: miles. No existe un flete de $35 ni de $500.
+    EN_MILES = Decimal(1000)
+
     def _monto(texto: str | None) -> Decimal | None:
-        """Un precio escrito como se escribe: "45.000", "45000", "$45 mil"."""
+        """Un precio escrito como se escribe: "45.000", "45000", "45", "45 mil".
+
+        El fletero dice "treinta y cinco" y escribe "35". Antes eso se
+        guardaba como treinta y cinco pesos: hay un flete real anotado en
+        $35 que ensucia el precio que Estiba aprende a sugerir. Ahora un
+        numero suelto por debajo de mil se lee como miles, que es la unica
+        lectura posible de un precio de flete.
+
+        Con separador o con cuatro cifras se respeta tal cual: "45.000" y
+        "45000" son cuarenta y cinco mil, no cuarenta y cinco millones.
+        """
         limpio = re.sub(r"[^\d]", "", (texto or ""))
         if not limpio:
             return None
         valor = Decimal(limpio)
-        if "mil" in (texto or "").lower() and valor < 1000:
-            valor *= 1000
-        return valor
+        return valor * EN_MILES if valor < EN_MILES else valor
 
     def _accion(job_id: str, tipo: str, nota: str | None, monto: Decimal | None = None) -> None:
         if job_id not in estado.resultado.fletes:
@@ -774,8 +787,12 @@ def create_app(
             REALIZADO: ev.job.state not in (JobState.DONE, JobState.CANCELLED),
             PERDIDO: ev.job.state not in (JobState.DONE, JobState.CANCELLED),
             COTIZADO: True,
+            # Anular es lo contrario: solo tiene sentido si esta cerrado.
+            ANULADO: ev.job.state in (JobState.DONE, JobState.CANCELLED),
         }[tipo]
         if not permitido:
+            if tipo == ANULADO:
+                raise HTTPException(409, "este flete no está cerrado: no hay nada que reabrir")
             raise HTTPException(409, f"un flete {ev.job.state.value} no se puede marcar {tipo}")
         conn = estado.conectar()
         try:
@@ -898,6 +915,17 @@ def create_app(
         if nota.strip():
             texto = f"{texto}: {nota.strip()}" if texto else nota.strip()
         _accion(job_id, PERDIDO, texto)
+        return _volver(request, f"/fletes/{job_id}")
+
+    @app.post("/fletes/{job_id}/reabrir", include_in_schema=False)
+    def reabrir_form(request: Request, job_id: str):
+        """Deshacer un cierre marcado por error.
+
+        No borra nada: agrega una accion que anula la anterior. El estado se
+        vuelve a deducir desde los mensajes, asi que el flete queda donde
+        estaba antes de cerrarlo, y el historial conserva las dos cosas.
+        """
+        _accion(job_id, ANULADO, None)
         return _volver(request, f"/fletes/{job_id}")
 
     @app.post("/clientes/{chat_id}/clase", include_in_schema=False)
