@@ -792,7 +792,7 @@ def create_app(
             raise HTTPException(404, f"no hay un flete {job_id}")
         ev, _ = estado.resultado.fletes[job_id]
         permitido = {
-            REALIZADO: ev.job.state not in (JobState.DONE, JobState.CANCELLED),
+            REALIZADO: P.puede_realizarse(ev),
             PERDIDO: ev.job.state not in (JobState.DONE, JobState.CANCELLED),
             COTIZADO: True,
             # Anular es lo contrario: solo tiene sentido si esta cerrado.

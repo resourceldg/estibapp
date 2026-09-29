@@ -70,6 +70,18 @@ _ORDEN_DATOS = ("origin", "destination", "when", "hour", "daypart", "items",
                 "floors_no_lift", "helpers", "quoted_price")
 
 
+def puede_realizarse(ev: Evaluacion) -> bool:
+    """Abierto, o perdido solo porque el chat se callo.
+
+    El flete de Alex del 21/09 se hizo, pero despues de reabrirlo para
+    corregir lo cobrado ya no se podia volver a cerrar: cuatro dias sin
+    mensajes lo daban por perdido, y un perdido no se marcaba realizado.
+    """
+    if ev.job.state not in (JobState.DONE, JobState.CANCELLED):
+        return True
+    return ev.job.state is JobState.CANCELLED and ev.perdido_por_silencio
+
+
 def fecha_corta(d: date) -> str:
     return f"{nombre_dia(d)[:3]} {d:%d/%m}"
 
@@ -455,10 +467,13 @@ def detalle(
         mensajes=mensajes,
         borradores=[borrador(b) for b in borradores],
         otros=otros or [],
-        puede_realizar=ev.job.state not in (JobState.DONE, JobState.CANCELLED),
+        puede_realizar=puede_realizarse(ev),
         puede_perder=ev.job.state not in (JobState.DONE, JobState.CANCELLED),
         cerrar_es_lo_que_sigue=ev.job.state in (JobState.CONFIRMED, JobState.SCHEDULED),
-        puede_reabrir=ev.job.state in (JobState.DONE, JobState.CANCELLED),
+        # Perdido por silencio no tiene un cierre que deshacer: lo que se
+        # ofrece es marcarlo realizado, que es lo que paso si se hizo.
+        puede_reabrir=ev.job.state is JobState.DONE
+        or (ev.job.state is JobState.CANCELLED and not ev.perdido_por_silencio),
     )
 
 

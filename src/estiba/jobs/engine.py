@@ -132,6 +132,11 @@ class Evaluacion:
     presupuesto: Presupuesto | None = None
     #: El cliente dejo de responder y todavia no es para darlo por perdido.
     requiere_seguimiento: bool = False
+    #: Se perdio solo porque nadie escribio mas, no porque alguien lo dijera.
+    #: Muchos fletes se arreglan por telefono y el chat se calla justo cuando
+    #: se hacen: ese silencio no es un "no", y marcarlo realizado tiene que
+    #: poder pisarlo.
+    perdido_por_silencio: bool = False
 
 
 class JobEngine:
@@ -160,6 +165,7 @@ class JobEngine:
         alertas: list[str] = []
         aceptacion_trabada: str | None = None
         seguimiento = False
+        por_silencio = False
 
         def mover(hacia: JobState, at: datetime, causa: str, message_id: str | None) -> None:
             nonlocal estado
@@ -221,6 +227,7 @@ class JobEngine:
                 cuando = "recién" if silencio < timedelta(minutes=1) else f"hace {_hace(silencio)}"
                 alertas.append(f"te escribió {cuando} y espera respuesta")
             elif silencio >= self.politica.abandono:
+                por_silencio = True
                 mover(
                     JobState.CANCELLED,
                     ultimo.sent_at + self.politica.abandono,
@@ -245,6 +252,7 @@ class JobEngine:
             preguntas=preguntas(final, estado),
             presupuesto=self.pricing.estimate(job),
             requiere_seguimiento=seguimiento,
+            perdido_por_silencio=por_silencio,
         )
 
     def _impide_confirmar(self, ex: Extraccion) -> list[str]:
