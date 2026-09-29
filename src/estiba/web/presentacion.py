@@ -848,3 +848,255 @@ def a_json(obj) -> dict:
     if isinstance(obj, Flete):
         datos["ruta"] = obj.ruta
     return datos
+
+
+# --------------------------------------------------------------------------
+# Objetivos: costos, precio minimo y lo que hace falta para la meta
+# --------------------------------------------------------------------------
+
+
+def _signo(monto) -> str:
+    """pesos() no sabe de negativos: "$-5.000" no se lee como una perdida."""
+    from decimal import Decimal
+
+    m = Decimal(monto)
+    return f"−{pesos(-m)}" if m < 0 else pesos(m)
+
+
+def _pct(x: float | None) -> str:
+    if x is None:
+        return "—"
+    return f"−{-x:.0%}" if x < 0 else f"{x:.0%}"
+
+
+@dataclass
+class Campo:
+    clave: str
+    etiqueta: str
+    valor: str
+    unidad: str
+    ayuda: str | None = None
+
+
+@dataclass
+class GrupoCampos:
+    titulo: str
+    ayuda: str
+    campos: list[Campo]
+    total: str | None = None
+
+
+#: El formulario, en el orden en que se piensa: lo que se paga siempre, lo
+#: que gasta la camioneta, la publicidad, la meta y lo que se cobra.
+_GRUPOS = [
+    ("Fijos por mes", "Se pagan aunque no salga ningún flete.", [
+        ("seguro", "Seguro de la camioneta", "$"),
+        ("monotributo", "Monotributo", "$"),
+        ("vtv_gnc", "VTV y prueba del GNC", "$", "Lo anual, dividido por 12."),
+        ("patente", "Patente", "$"),
+        ("celular", "Celular y datos", "$"),
+        ("otros_fijos", "Otros fijos", "$", "Cochera, contador, lo que sea que pagues todos los meses."),
+    ]),
+    ("La camioneta", "Lo que se gasta por kilómetro andado.", [
+        ("gnc_cada_100km", "GNC cada 100 km", "$"),
+        ("aceite_km", "Aceite y filtros", "$/km", "Un cambio de $60.000 cada 3.000 km son $20 por km."),
+        ("cubiertas_km", "Cubiertas", "$/km"),
+        ("arreglos_km", "Arreglos y roturas", "$/km", "Frenos, embrague, tren delantero: un fondo para cuando toque."),
+        ("km_por_flete", "Km por flete", "km", "Ida y vuelta, promedio."),
+    ]),
+    ("Publicidad", "Para calcular cuánto cuesta conseguir un flete.", [
+        ("costo_por_consulta", "Costo por conversación", "$", "Lo que dice Meta como costo por resultado."),
+        ("cierre", "De cada 100 consultas, se hacen", "%"),
+        ("impuestos_publicidad", "Impuestos sobre lo gastado", "%", "IVA y percepciones: fijate en la factura de Meta."),
+    ]),
+    ("La meta", "", [
+        ("ganancia_objetivo", "Ganancia limpia por mes", "$"),
+        ("fletes_por_mes_max", "Fletes que entran en un mes", "", "Con una camioneta y una persona."),
+    ]),
+    ("Tu tarifa", "Una base por el trabajo y un tanto por kilómetro.", [
+        ("tarifa_base", "Base: carga, descarga y tu tiempo", "$"),
+        ("tarifa_km", "Por kilómetro", "$/km"),
+    ]),
+]
+
+
+def _mostrar_numero(v) -> str:
+    """Como se escribe en el campo: sin signo pesos y con punto de miles."""
+    from decimal import Decimal
+
+    d = Decimal(v)
+    if d == d.to_integral_value():
+        return f"{int(d):,}".replace(",", ".")
+    return f"{d:.2f}".rstrip("0").rstrip(".").replace(".", ",")
+
+
+def grupos_de_costos(c) -> list[GrupoCampos]:
+    salida = []
+    for titulo, ayuda, campos in _GRUPOS:
+        grupo = GrupoCampos(titulo, ayuda, [
+            Campo(clave, etiqueta, _mostrar_numero(getattr(c, clave)), unidad, *resto)
+            for clave, etiqueta, unidad, *resto in campos
+        ])
+        if titulo == "Fijos por mes":
+            grupo.total = f"{pesos(c.fijos_mes)} por mes"
+        elif titulo == "La camioneta":
+            grupo.total = f"{pesos(c.costo_km)} por km · {pesos(c.camioneta_por_flete)} por flete"
+        elif titulo == "Publicidad" and c.publicidad_por_flete is not None:
+            grupo.total = f"{pesos(c.publicidad_por_flete)} por flete hecho, con impuestos"
+        salida.append(grupo)
+    return salida
+
+
+@dataclass
+class Renglon:
+    etiqueta: str
+    monto: str
+    nota: str
+    tono: str = ""
+
+
+@dataclass
+class PlanVista:
+    titulo: str
+    fletes: str
+    precio: str
+    consultas: str
+    publicidad_mes: str
+    publicidad_dia: str
+    aviso: str | None
+
+
+@dataclass
+class Gasto:
+    id: str
+    periodo: str
+    monto: str
+
+
+@dataclass
+class Objetivos:
+    kpis: list[Kpi]
+    renglones: list[Renglon]
+    avisos: list[str]
+    ritmo: dict | None
+    planes: list[PlanVista]
+    minimos: list[Renglon]
+    tarifas: list[Renglon]
+    grupos: list[GrupoCampos]
+    gastos: list[Gasto]
+    cierre_medido: str | None
+    ritmo_actual: float
+    meta: str
+
+
+def _plan_vista(titulo: str, p, c) -> PlanVista:
+    aviso = None
+    if not p.entra:
+        aviso = (f"Son más de los {int(c.fletes_por_mes_max)} fletes que entran en un mes: "
+                 "así no se llega, hay que cobrar más.")
+    return PlanVista(
+        titulo=titulo,
+        fletes=str(p.fletes),
+        precio=pesos(p.precio),
+        consultas=str(p.consultas),
+        publicidad_mes=pesos(p.publicidad_mes),
+        publicidad_dia=pesos(p.publicidad_dia),
+        aviso=aviso,
+    )
+
+
+def objetivos(c, b, mes, gastos, ahora: datetime, cierre_medido: tuple[int, int] | None) -> Objetivos:
+    """`b` es el balance del periodo elegido; `mes`, el del 1 a hoy."""
+    from decimal import Decimal
+
+    from estiba.finanzas import costos as F
+
+    kpis = [
+        Kpi("Ganancia limpia", _signo(b.ganancia), f"en {b.dias} días, con todos los costos"),
+        Kpi("Facturado", pesos(b.ingresos), f"{b.fletes} {'flete' if b.fletes == 1 else 'fletes'} hechos"),
+        Kpi("Margen", _pct(b.margen), "de lo facturado te queda"),
+        Kpi("Te queda por flete", _signo(b.por_flete(b.ganancia)) if b.fletes else "—",
+            f"cobrando {pesos(b.ticket)} en promedio" if b.ticket else "sin fletes cobrados"),
+        Kpi("Retorno de la publicidad",
+            f"{b.retorno_publicidad:.1f}×".replace(".", ",") if b.retorno_publicidad else "—",
+            "facturado por cada $1 en Meta" if b.retorno_publicidad else "sin gasto cargado"),
+    ]
+    renglones = [
+        Renglon("Facturado", pesos(b.ingresos), f"{b.fletes} fletes", "ok"),
+        Renglon("Camioneta", _signo(-b.camioneta),
+                f"{b.fletes} × {_mostrar_numero(c.km_por_flete)} km × {pesos(c.costo_km)}/km"),
+        Renglon("Publicidad", _signo(-b.publicidad),
+                f"lo gastado + {_mostrar_numero(c.impuestos_publicidad)}% de impuestos"),
+        Renglon("Fijos", _signo(-b.fijos), f"{pesos(c.fijos_mes)} por mes, {b.dias} días"),
+        Renglon("Te queda", _signo(b.ganancia), _pct(b.margen) + " de margen",
+                "ok" if b.ganancia >= 0 else "mal"),
+    ]
+    avisos = []
+    if not gastos:
+        avisos.append("No cargaste gasto en publicidad: la ganancia sale más alta de lo que fue.")
+    elif b.publicidad == 0 and b.fletes:
+        avisos.append("Ningún gasto en publicidad cae en este período.")
+    if b.sin_monto:
+        avisos.append(f"{b.sin_monto} {'flete hecho no tiene' if b.sin_monto == 1 else 'fletes hechos no tienen'} "
+                      "monto: no suman. Anotá lo cobrado desde el flete.")
+
+    ritmo = None
+    if mes.fletes or mes.publicidad:
+        r = F.ritmo_del_mes(c, mes, ahora.date())
+        ritmo = {
+            "ganancia": _signo(r.ganancia),
+            "esperado": pesos(r.esperado_a_hoy),
+            "proyectado": _signo(r.proyectado),
+            "objetivo": pesos(c.ganancia_objetivo),
+            "ancho": min(100.0, 100 * r.avance),
+            "avance": _pct(r.avance),
+        }
+
+    ritmo_actual = b.fletes * 30 / b.dias if b.dias else 0.0
+    planes = []
+    if (p := F.plan_a_capacidad(c)) is not None:
+        planes.append(_plan_vista(f"Trabajando a pleno ({int(c.fletes_por_mes_max)} fletes)", p, c))
+    if b.ticket:
+        p = F.plan_con_precio(c, b.ticket)
+        if p is None:
+            planes.append(PlanVista(f"Cobrando lo de ahora ({pesos(b.ticket)})", "—", pesos(b.ticket), "—", "—", "—",
+                                    "A este precio cada flete pierde plata: no hay volumen que lo arregle."))
+        else:
+            planes.append(_plan_vista(f"Cobrando lo de ahora ({pesos(b.ticket)})", p, c))
+    tarifa_tipica = c.tarifa(c.km_por_flete)
+    if (p := F.plan_con_precio(c, tarifa_tipica)) is not None:
+        planes.append(_plan_vista(f"Con tu tarifa ({pesos(tarifa_tipica)} el flete típico)", p, c))
+
+    volumenes = sorted({10, 20, 30, int(c.fletes_por_mes_max), max(1, round(ritmo_actual))})
+    minimos = []
+    for n in volumenes:
+        m = F.precio_minimo(c, n)
+        if m is None:
+            continue
+        nota = "tu ritmo de ahora" if n == max(1, round(ritmo_actual)) else (
+            "a pleno" if n == int(c.fletes_por_mes_max) else "")
+        minimos.append(Renglon(f"{n} fletes por mes", pesos(F.redondear(m)), nota,
+                               "aviso" if nota == "tu ritmo de ahora" else ""))
+
+    minimo_hoy = F.precio_minimo(c, max(1, round(ritmo_actual)))
+    tarifas = []
+    for km in sorted({Decimal(20), c.km_por_flete, Decimal(100)}):
+        precio = c.tarifa(km)
+        costo = c.costo_km * km + (c.publicidad_por_flete or 0) + c.fijos_mes / max(1, round(ritmo_actual))
+        queda = precio - costo
+        tarifas.append(Renglon(
+            f"Flete de {_mostrar_numero(km)} km", pesos(precio),
+            f"te quedan {_signo(queda)}" if minimo_hoy else "",
+            "ok" if queda > 0 else "mal"))
+
+    filas = [
+        Gasto(g["id"], f"{date.fromisoformat(g['period_start']):%d/%m} al "
+                       f"{date.fromisoformat(g['period_end']):%d/%m/%Y}", pesos(Decimal(g["spend"])))
+        for g in gastos
+    ]
+    medido = None
+    if cierre_medido and cierre_medido[1]:
+        hechos, consultas = cierre_medido
+        medido = f"Estiba midió {hechos / consultas:.0%}: {hechos} de {consultas} consultas en el período."
+    return Objetivos(kpis, renglones, avisos, ritmo, planes, minimos, tarifas,
+                     grupos_de_costos(c), filas, medido, ritmo_actual, pesos(c.ganancia_objetivo))

@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icono %}
+{% block contenido %}
+<div class="encabezado">
+  <h1>Números</h1>
+  {% include "_numeros_tabs.html" %}
+</div>
+
+{% if o.ritmo %}
+<section class="panel ritmo" aria-label="Este mes">
+  <h2>Este mes, contra la meta</h2>
+  <p class="ritmo-cifra"><span class="num">{{ o.ritmo.ganancia }}</span> <small>de {{ o.ritmo.objetivo }}</small></p>
+  <div class="ritmo-pista" role="img" aria-label="{{ o.ritmo.avance }} de lo que tendrías que llevar a hoy">
+    <span class="ritmo-marca" style="width: {{ '%.1f'|format(o.ritmo.ancho) }}%"></span>
+  </div>
+  <p class="ayuda">A hoy tendrías que llevar {{ o.ritmo.esperado }} ({{ o.ritmo.avance }}). Si el mes sigue así, cerrás en <strong>{{ o.ritmo.proyectado }}</strong>.</p>
+</section>
+{% endif %}
+
+<div class="encabezado-periodo">
+  <h2 class="seccion-titulo">Lo que dejó</h2>
+  <nav class="periodos" aria-label="Período">
+    {% for clave, etiqueta in periodos.items() %}
+    <a href="?periodo={{ clave }}" {% if clave == periodo %}aria-current="true"{% endif %}>{{ etiqueta }}</a>
+    {% endfor %}
+  </nav>
+</div>
+
+{% for a in o.avisos %}
+<p class="aviso">{{ icono("aviso") }}<span>{{ a }}</span></p>
+{% endfor %}
+
+<section class="kpis" aria-label="Resumen">
+  {% for k in o.kpis %}
+  <div class="kpi">
+    <span class="kpi-etq">{{ k.etiqueta }}</span>
+    <span class="kpi-val num">{{ k.valor }}</span>
+    <span class="kpi-nota">{{ k.nota }}</span>
+  </div>
+  {% endfor %}
+</section>
+
+<section class="panel">
+  <h2>De dónde sale</h2>
+  <table class="cuentas">
+    {% for r in o.renglones %}
+    <tr class="{{ 'total' if loop.last }}">
+      <th scope="row">{{ r.etiqueta }}<small>{{ r.nota }}</small></th>
+      <td class="num {{ 'tono-' ~ r.tono if r.tono }}">{{ r.monto }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</section>
+
+<section class="panel">
+  <h2>Cómo llegar a la meta</h2>
+  <p class="ayuda">Para ganar {{ o.meta }} limpios por mes, con los costos de abajo.</p>
+  <div class="planes">
+    {% for p in o.planes %}
+    <article class="plan{% if p.aviso %} plan-no{% endif %}">
+      <h3>{{ p.titulo }}</h3>
+      <dl>
+        <div><dt>Fletes por mes</dt><dd class="num">{{ p.fletes }}</dd></div>
+        <div><dt>Precio promedio</dt><dd class="num">{{ p.precio }}</dd></div>
+        <div><dt>Consultas que hacen falta</dt><dd class="num">{{ p.consultas }}</dd></div>
+        <div><dt>Publicidad por mes</dt><dd class="num">{{ p.publicidad_mes }}</dd></div>
+        <div><dt>Presupuesto diario en Meta</dt><dd class="num">{{ p.publicidad_dia }}</dd></div>
+      </dl>
+      {% if p.aviso %}<p class="plan-aviso">{{ p.aviso }}</p>{% endif %}
+    </article>
+    {% endfor %}
+  </div>
+  <p class="nota">La zona es chica: si subís la publicidad, cada conversación probablemente salga más cara. Subí de a poco y mirá cuánto te sale cada flete en cada paso.</p>
+</section>
+
+<section class="panel">
+  <h2>Qué cobrar</h2>
+  <h3 class="sub-titulo">Precio mínimo</h3>
+  <p class="ayuda">Con ese precio no ganás ni perdés. Baja cuantos más fletes hacés, porque los fijos se reparten.</p>
+  <table class="cuentas">
+    {% for r in o.minimos %}
+    <tr><th scope="row">{{ r.etiqueta }}{% if r.nota %}<small>{{ r.nota }}</small>{% endif %}</th>
+        <td class="num {{ 'tono-' ~ r.tono if r.tono }}">{{ r.monto }}</td></tr>
+    {% endfor %}
+  </table>
+  <h3 class="sub-titulo">Tu tarifa</h3>
+  <p class="ayuda">Base + kilómetros. Lo que te queda está calculado con tu ritmo de ahora.</p>
+  <table class="cuentas">
+    {% for r in o.tarifas %}
+    <tr><th scope="row">{{ r.etiqueta }}{% if r.nota %}<small class="{{ 'tono-texto-' ~ r.tono if r.tono }}">{{ r.nota }}</small>{% endif %}</th>
+        <td class="num">{{ r.monto }}</td></tr>
+    {% endfor %}
+  </table>
+</section>
+
+<section class="panel" id="publicidad">
+  <h2>Gasto en publicidad</h2>
+  <p class="ayuda">Lo que Meta muestra como gastado, sin impuestos. Si un período corta un gasto por la mitad, se cuenta la parte de esos días.</p>
+  {% if o.gastos %}
+  <ul class="gastos">
+    {% for g in o.gastos %}
+    <li>
+      <span>{{ g.periodo }}</span>
+      <strong class="num">{{ g.monto }}</strong>
+      <form method="post" action="/numeros/objetivos/gasto/{{ g.id }}/borrar"
+            onsubmit="return confirm('¿Borrar este gasto?')">
+        <button class="btn-icono" type="submit" title="Borrar" aria-label="Borrar gasto {{ g.periodo }}">{{ icono("cruz") }}</button>
+      </form>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  <form class="form-gasto" method="post" action="/numeros/objetivos/gasto">
+    <label>Desde<input type="date" name="desde" required></label>
+    <label>Hasta<input type="date" name="hasta" required></label>
+    <label>Gastado<input name="monto" inputmode="decimal" placeholder="53.608" required></label>
+    <button class="btn secundario" type="submit">Cargar</button>
+  </form>
+</section>
+
+<section class="panel costos" id="costos">
+  <h2>Tus costos</h2>
+  <p class="ayuda">Los números que vienen puestos son una estimación para arrancar: cambialos por lo que pagás de verdad. Todo lo de arriba se recalcula con esto.</p>
+  <form method="post" action="/numeros/objetivos">
+    {% for g in o.grupos %}
+    <fieldset>
+      <legend>{{ g.titulo }}</legend>
+      {% if g.ayuda %}<p class="ayuda">{{ g.ayuda }}</p>{% endif %}
+      {% if g.titulo == "Publicidad" and o.cierre_medido %}<p class="ayuda">{{ o.cierre_medido }}</p>{% endif %}
+      {% for c in g.campos %}
+      <div class="campo">
+        <label for="c-{{ c.clave }}">{{ c.etiqueta }}{% if c.ayuda %}<small>{{ c.ayuda }}</small>{% endif %}</label>
+        <span class="entrada">
+          {% if c.unidad.startswith("$") %}<span class="unidad">$</span>{% endif %}
+          <input id="c-{{ c.clave }}" name="{{ c.clave }}" value="{{ c.valor }}" inputmode="decimal" autocomplete="off">
+          {% if c.unidad and c.unidad != "$" %}<span class="unidad">{{ c.unidad.removeprefix("$") }}</span>{% endif %}
+        </span>
+      </div>
+      {% endfor %}
+      {% if g.total %}<p class="total-grupo">{{ g.total }}</p>{% endif %}
+    </fieldset>
+    {% endfor %}
+    <button class="btn primario ancho" type="submit">{{ icono("check") }}<span>Guardar y recalcular</span></button>
+  </form>
+</section>
+{% endblock %}

@@ -832,3 +832,48 @@ class SettingsRepository:
         with self.conn:
             self.conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (clave, nuevo))
         return self.conn.execute("SELECT value FROM settings WHERE key = ?", (clave,)).fetchone()["value"]
+
+    def json(self, clave: str) -> dict | None:
+        fila = self.conn.execute("SELECT value FROM settings WHERE key = ?", (clave,)).fetchone()
+        return json.loads(fila["value"]) if fila else None
+
+    def guardar_json(self, clave: str, valor: dict) -> None:
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO settings (key, value) VALUES (?, ?) "
+                "ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+                (clave, json.dumps(valor, ensure_ascii=False)),
+            )
+
+
+class GastoRepository:
+    """Lo que se gasto en publicidad, cargado a mano desde lo que dice Meta.
+
+    Vive en `campaigns`, que estaba vacia esperando el adaptador de Meta.
+    Cuando ese adaptador exista va a escribir aca mismo, con `platform` y
+    `external_id` de verdad; lo cargado a mano queda como "manual".
+    """
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self.conn = conn
+
+    def cargar(self, desde: date, hasta: date, monto: Decimal, campania: str | None = None) -> str:
+        import secrets
+
+        gasto_id = secrets.token_hex(6)
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO campaigns (id, platform, external_id, period_start, period_end, spend) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (gasto_id, "meta", campania or "manual", desde.isoformat(), hasta.isoformat(), str(monto)),
+            )
+        return gasto_id
+
+    def borrar(self, gasto_id: str) -> bool:
+        with self.conn:
+            cur = self.conn.execute("DELETE FROM campaigns WHERE id = ?", (gasto_id,))
+        return cur.rowcount == 1
+
+    def todos(self) -> list[sqlite3.Row]:
+        return self.conn.execute(
+            "SELECT * FROM campaigns ORDER BY period_start DESC, period_end DESC").fetchall()

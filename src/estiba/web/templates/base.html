@@ -21,7 +21,7 @@
     <nav class="nav-escritorio" aria-label="Secciones">
       <a href="/" {% if ruta == "/" or ruta.startswith("/fletes") %}aria-current="page"{% endif %}>Hoy{% if pendientes %}<span class="cuenta">{{ pendientes }}</span>{% endif %}</a>
       <a href="/agenda" {% if ruta in ("/agenda", "/fletes") %}aria-current="page"{% endif %}>Agenda</a>
-      <a href="/numeros" {% if ruta in ("/numeros", "/clientes") %}aria-current="page"{% endif %}>Números</a>
+      <a href="/numeros" {% if ruta.startswith("/numeros") or ruta == "/clientes" %}aria-current="page"{% endif %}>Números</a>
       <a href="/whatsapp" {% if ruta == "/whatsapp" %}aria-current="page"{% endif %}>WhatsApp</a>
     </nav>
     {% if whatsapp is not none %}
@@ -62,7 +62,7 @@
       <span class="tab-ico">{{ icono("agenda") }}</span>
       Agenda
     </a>
-    <a href="/numeros" {% if ruta in ("/numeros", "/clientes") %}aria-current="page"{% endif %}>
+    <a href="/numeros" {% if ruta.startswith("/numeros") or ruta == "/clientes" %}aria-current="page"{% endif %}>
       <span class="tab-ico">{{ icono("numeros") }}</span>
       Números
     </a>

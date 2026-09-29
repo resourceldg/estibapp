@@ -23,7 +23,7 @@ from collections.abc import Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from decimal import Decimal
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Literal
 
@@ -48,6 +48,7 @@ from estiba.bandeja.servicio import Resultado, sincronizar
 from estiba.conversation.store import ConversationStore
 from estiba.core.models import JobState
 from estiba.crm import embudo
+from estiba.finanzas import costos as F
 from estiba.formato import telefono
 from estiba.jobs import aprendido, episodios
 from estiba.jobs.engine import (
@@ -57,6 +58,7 @@ from estiba.jobs.engine import (
     REALIZADO,
     ANULADO,
     JobEngine,
+    sin_anuladas,
 )
 from estiba.storage.db import connect
 from estiba.storage.repositories import (
@@ -65,6 +67,7 @@ from estiba.storage.repositories import (
     DraftRepository,
     ClaseRepository,
     CorteRepository,
+    GastoRepository,
     PanelRepository,
     SettingsRepository,
     SnoozeRepository,
@@ -645,6 +648,132 @@ def create_app(
             request, "numeros.html",
             _contexto(request, n=n, periodo=periodo, periodos=PERIODOS, titulo="Números"),
         )
+
+    # ------------------------------------------------------------------
+    # Objetivos: lo que cuesta un flete y lo que hace falta para la meta
+    # ------------------------------------------------------------------
+
+    def _costos() -> F.Costos:
+        conn = estado.conectar()
+        try:
+            return F.Costos.desde_dict(SettingsRepository(conn).json("costos"))
+        finally:
+            conn.close()
+
+    def _fletes_hechos() -> list[F.FleteHecho]:
+        """Los realizados, con lo cobrado si se anoto o lo cotizado si no.
+
+        El dia es el del flete si el chat lo dice, y si no el del ultimo
+        mensaje: marcar realizado una semana despues no lo mueve de mes.
+        """
+        conn = estado.conectar()
+        try:
+            acciones = ActionRepository(conn)
+            hechos = []
+            for job_id, (ev, conv) in estado.resultado.fletes.items():
+                if ev.job.state is not JobState.DONE:
+                    continue
+                cierres = [a for a in sin_anuladas(acciones.for_job(job_id)) if a.tipo == REALIZADO]
+                cobrado = cierres[-1].monto if cierres and cierres[-1].monto else None
+                if cobrado is None and ev.job.quoted_price:
+                    cobrado = ev.job.quoted_price.value
+                dia = ev.job.when.value if ev.job.when else conv.messages[-1].sent_at.date()
+                hechos.append(F.FleteHecho(job_id, dia, cobrado))
+            return hechos
+        finally:
+            conn.close()
+
+    def _gastos() -> tuple[list, list[F.GastoPublicidad]]:
+        conn = estado.conectar()
+        try:
+            filas = GastoRepository(conn).todos()
+        finally:
+            conn.close()
+        return filas, [
+            F.GastoPublicidad(date.fromisoformat(g["period_start"]), date.fromisoformat(g["period_end"]),
+                              Decimal(g["spend"]))
+            for g in filas
+        ]
+
+    @app.get("/numeros/objetivos", response_class=HTMLResponse, include_in_schema=False)
+    def pagina_objetivos(request: Request, periodo: str = "30d"):
+        periodo = _periodo(periodo)
+        ahora = estado.ahora()
+        hoy = ahora.date()
+        desde = {
+            "7d": hoy - timedelta(days=6),
+            "30d": hoy - timedelta(days=29),
+            "mes": hoy.replace(day=1),
+            "todo": None,
+        }[periodo]
+        c = _costos()
+        hechos = _fletes_hechos()
+        filas, gastos = _gastos()
+        e, _ = _embudo(periodo)
+        cierre = (e.pasos[-1].cantidad, e.pasos[0].cantidad) if e.pasos else None
+        o = P.objetivos(
+            c,
+            F.balance(c, hechos, gastos, desde, hoy),
+            F.balance(c, hechos, gastos, hoy.replace(day=1), hoy),
+            filas, ahora, cierre,
+        )
+        return templates.TemplateResponse(
+            request, "objetivos.html",
+            _contexto(request, o=o, periodo=periodo, periodos=PERIODOS, titulo="Objetivos"),
+        )
+
+    def _numero(texto: str) -> Decimal | None:
+        """"8.700", "$ 8700", "17", "0,5": como se escribe un numero aca.
+
+        No pasa por `_monto`: un 20 en "aceite por km" son veinte pesos, no
+        veinte mil.
+        """
+        limpio = re.sub(r"[^\d,]", "", texto or "").replace(",", ".")
+        if not limpio or limpio.count(".") > 1:
+            return None
+        return Decimal(limpio)
+
+    @app.post("/numeros/objetivos", include_in_schema=False)
+    async def guardar_costos(request: Request):
+        form = await request.form()
+        actual = _costos().a_dict()
+        for clave in actual:
+            if clave in form and (valor := _numero(str(form[clave]))) is not None:
+                actual[clave] = str(valor)
+        conn = estado.conectar()
+        try:
+            SettingsRepository(conn).guardar_json("costos", actual)
+        finally:
+            conn.close()
+        return RedirectResponse("/numeros/objetivos#costos", status_code=303)
+
+    @app.post("/numeros/objetivos/gasto", include_in_schema=False)
+    def cargar_gasto(desde: str = Form(...), hasta: str = Form(...), monto: str = Form(...)):
+        try:
+            d, h = date.fromisoformat(desde), date.fromisoformat(hasta)
+        except ValueError as e:
+            raise HTTPException(422, "las fechas no se entienden") from e
+        valor = _numero(monto)
+        if h < d:
+            raise HTTPException(422, "la fecha de fin es anterior a la de inicio")
+        if not valor:
+            raise HTTPException(422, "falta cuánto se gastó")
+        conn = estado.conectar()
+        try:
+            GastoRepository(conn).cargar(d, h, valor)
+        finally:
+            conn.close()
+        return RedirectResponse("/numeros/objetivos#publicidad", status_code=303)
+
+    @app.post("/numeros/objetivos/gasto/{gasto_id}/borrar", include_in_schema=False)
+    def borrar_gasto(gasto_id: str):
+        conn = estado.conectar()
+        try:
+            if not GastoRepository(conn).borrar(gasto_id):
+                raise HTTPException(404, "ese gasto ya no está")
+        finally:
+            conn.close()
+        return RedirectResponse("/numeros/objetivos#publicidad", status_code=303)
 
     # ------------------------------------------------------------------
     # Panel: analitica y exportacion, fuera de la mensajeria

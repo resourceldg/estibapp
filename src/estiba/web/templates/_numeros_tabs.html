@@ -1,0 +1,7 @@
+{# Números tiene dos caras: cómo viene la venta y cuánta plata deja.
+   Van juntas porque se miran juntas, pero no en la misma pantalla: la
+   segunda tiene un formulario largo que no tiene que empujar el embudo. #}
+<nav class="periodos subtabs" aria-label="Números">
+  <a href="/numeros" {% if ruta == "/numeros" %}aria-current="true"{% endif %}>Cómo viene</a>
+  <a href="/numeros/objetivos" {% if ruta == "/numeros/objetivos" %}aria-current="true"{% endif %}>Plata y objetivos</a>
+</nav>

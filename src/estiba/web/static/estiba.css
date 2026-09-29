@@ -1168,3 +1168,70 @@ summary::-webkit-details-marker { display: none; }
 }
 .mes-pie .marca { margin-left: 6px; }
 .mes-pie .marca:first-child { margin-left: 0; }
+
+/* ------------------------------------------- numeros: plata y objetivos */
+/* Las dos caras de Numeros. Mismo control que el de los periodos, pero es
+   navegacion y no filtro: va arriba y sin el margen del periodo. */
+.subtabs { display: flex; width: fit-content; margin-top: 12px; }
+.subtabs + .periodos { display: flex; width: fit-content; }
+.encabezado-periodo { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin: 22px 0 12px; }
+.encabezado-periodo .seccion-titulo { margin: 0; }
+.encabezado-periodo .periodos { margin-top: 0; }
+.panel h2 { font-size: 17px; }
+.sub-titulo { margin: 16px 0 0; font-size: 14px; font-weight: 700; color: var(--tinta-2); }
+
+.ritmo-cifra { margin: 8px 0 10px; font-size: 32px; font-weight: 750; letter-spacing: -0.02em; line-height: 1.1; }
+.ritmo-cifra small { font-size: 15px; font-weight: 600; color: var(--tenue); letter-spacing: 0; }
+.ritmo-pista { height: 10px; border-radius: 5px; background: var(--grafico-pista); overflow: hidden; }
+.ritmo-marca { display: block; height: 100%; background: var(--grafico); border-radius: 5px; }
+.ritmo .ayuda strong { color: var(--tinta); }
+
+
+/* Una cuenta que se lee de arriba abajo: concepto a la izquierda, plata a la
+   derecha, el total separado por una linea. */
+.cuentas { width: 100%; margin-top: 10px; border-collapse: collapse; font-size: 15px; }
+.cuentas th { text-align: left; font-weight: 600; padding: 8px 0; }
+.cuentas th small { display: block; font-size: 12px; font-weight: 400; color: var(--tenue); }
+.cuentas td { text-align: right; font-weight: 700; padding: 8px 0 8px 12px; white-space: nowrap; vertical-align: top; }
+.cuentas tr + tr { border-top: 1px solid var(--linea); }
+.cuentas tr.total { border-top: 1.5px solid var(--linea-2); }
+.cuentas tr.total td { font-size: 18px; }
+.cuentas td.tono-ok, .cuentas th small.tono-texto-ok { color: var(--ok); background: none; }
+.cuentas td.tono-mal, .cuentas th small.tono-texto-mal { color: var(--mal); background: none; }
+.cuentas td.tono-aviso { color: var(--aviso); background: none; }
+
+.planes { display: grid; gap: 10px; margin-top: 12px; }
+@media (min-width: 640px) { .planes { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); } }
+.plan { padding: 12px 14px; border-radius: var(--radio-chico); background: var(--superficie-2); }
+.plan h3 { margin: 0 0 8px; font-size: 14px; font-weight: 700; }
+.plan dl { margin: 0; display: grid; gap: 4px; }
+.plan dl div { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; }
+.plan dt { color: var(--tinta-2); }
+.plan dd { margin: 0; font-weight: 700; }
+.plan.plan-no { opacity: .75; }
+.plan-aviso { margin: 8px 0 0; font-size: 13px; color: var(--aviso); }
+
+.gastos { list-style: none; margin: 12px 0 0; padding: 0; }
+.gastos li { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-top: 1px solid var(--linea); }
+.gastos li span { flex: 1; color: var(--tinta-2); font-size: 14px; }
+.form-gasto { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; align-items: end; }
+.form-gasto label { display: grid; gap: 4px; font-size: 13px; color: var(--tinta-2); min-width: 0; }
+.form-gasto input, .costos input {
+  width: 100%; min-width: 0; min-height: 44px; padding: 0 10px;
+  border: 1.5px solid var(--linea-2); border-radius: 10px;
+  background: var(--superficie); color: var(--tinta); font: inherit; font-variant-numeric: tabular-nums;
+}
+.form-gasto .btn { min-height: 44px; }
+@media (min-width: 560px) { .form-gasto { grid-template-columns: 1fr 1fr 1fr auto; } }
+
+.costos fieldset { margin: 16px 0 0; padding: 0; border: 0; }
+.costos legend { padding: 0; font-size: 15px; font-weight: 700; }
+.costos .campo { display: grid; grid-template-columns: 1fr minmax(120px, 42%); gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--linea); }
+.costos .campo label { font-size: 14px; }
+.costos .campo label small { display: block; font-size: 12px; color: var(--tenue); }
+.entrada { display: flex; align-items: center; gap: 6px; }
+.unidad { color: var(--tenue); font-size: 13px; flex: none; }
+.costos input { text-align: right; }
+.costos input:focus, .form-gasto input:focus { outline: none; border-color: var(--primario); }
+.total-grupo { margin: 6px 0 0; font-size: 13px; font-weight: 650; color: var(--acento); text-align: right; }
+.costos .btn { margin-top: 18px; width: 100%; }
