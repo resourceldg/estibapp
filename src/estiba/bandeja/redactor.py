@@ -161,8 +161,12 @@ def proponer(ev: Evaluacion, conv: Conversation, ahora: datetime) -> Propuesta |
     if d.accion is Accion.COTIZAR:
         p = ev.presupuesto
         # Sin tarifa no hay numero, pero el mensaje se arma igual: el hueco
-        # se completa con el campo de precio, no editando el texto.
-        cuanto = pesos(p.total) if p is not None and p.completo else SIN_PRECIO
+        # se completa con el campo de precio, no editando el texto. Si el
+        # fletero ya confirmo un precio, ese es el que va.
+        if ev.precio_confirmado is not None:
+            cuanto = pesos(ev.precio_confirmado)
+        else:
+            cuanto = pesos(p.total) if p is not None and p.completo else SIN_PRECIO
         texto = (
             f"Te sale {cuanto}, de {job.origin.value} a {job.destination.value}, "
             f"con carga y descarga de {_cosas(job.items.value)}."
@@ -173,11 +177,14 @@ def proponer(ev: Evaluacion, conv: Conversation, ahora: datetime) -> Propuesta |
 
     # PEDIR_DATOS: reconocer lo entendido y pedir a lo sumo dos cosas. Tres
     # ya es un formulario, y el cliente contesta una sola.
+    # `d.preguntas` ya viene sin lo que se pidio antes: si vos mandaste tu
+    # plantilla a mano, Estiba no vuelve a preguntar el origen ni el destino.
+    pide = list(d.preguntas) or list(ev.preguntas)
     reconocido = _reconocer(job)
     if not reconocido and _primer_contacto(conv, ahora):
         texto = APERTURA
     else:
-        texto = _juntar([reconocido or "¡Buenas!", *ev.preguntas[:2]])
+        texto = _juntar([reconocido or "¡Buenas!", *pide[:2]])
     faltan = [ETIQUETAS[campo] for campo in job.missing]
     razon = f"Falta {_cosas(faltan)}" if faltan else d.razon
     return Propuesta(d.accion.value, razon, texto, ultimo.id)

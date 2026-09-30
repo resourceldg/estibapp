@@ -394,3 +394,78 @@ class TestUnaPreguntaNoEsUnaConsulta:
     def test_pero_en_un_primer_contacto_la_pregunta_se_supone_del_oficio(self):
         r = _clase(("c", "hola, cuánto me saldría?"))
         assert r.clase is Clase.LEAD
+
+
+# --------------------------------------------------------------------------
+# Lo que ya preguntaste vos tambien es contexto
+# --------------------------------------------------------------------------
+
+
+class TestNoRepreguntar:
+    """Real: el fletero contesto a mano a las 20:41 con su plantilla de cinco
+    preguntas, WhatsApp tardo un dia en sincronizar ese mensaje, y Estiba
+    mando "¿desde que barrio seria?" a las 00:43. El cliente vio lo mismo
+    dos veces."""
+
+    PLANTILLA = (
+        "🚚 ¡Hola! Gracias por consultar por el flete. Para poder pasarte un precio "
+        "completame estos datos:\n1 Retiro: ¿desde dónde hay que buscarlo?\n"
+        "2 Entrega: ¿hasta dónde lo llevamos?\n3 Carga: ¿qué cosas hay que transportar?\n"
+        "4 Ayuda: ¿necesitás ayuda para cargar o descargar?\n"
+        "5 Acceso: ¿hay escalera, ascensor o alguna dificultad?"
+    )
+
+    def _decision(self, *lineas):
+        from estiba.bandeja.accion import decidir
+        from estiba.jobs.engine import JobEngine
+
+        conv = _chat(*lineas)
+        ahora = datetime(2026, 9, 20, 12)
+        return decidir(JobEngine().evaluar(conv, ahora), conv, ahora)
+
+    def test_reconoce_lo_que_pediste_a_mano(self):
+        from estiba.bandeja.ya_preguntado import campos_ya_pedidos
+
+        conv = _chat(("c", "quiero más información"), ("v", self.PLANTILLA))
+        pedidos = campos_ya_pedidos(conv)
+        assert {"origin", "destination", "items", "floors_no_lift"} <= pedidos
+
+    def test_no_repite_lo_que_ya_pediste(self):
+        """Tu plantilla no pregunta la fecha: eso si, lo demas no."""
+        d = self._decision(("c", "quiero más información"), ("v", self.PLANTILLA),
+                           ("c", "dale, gracias"))
+        junto = " ".join(d.preguntas).lower()
+        assert "día" in junto or "cuando" in junto      # la fecha no la pediste
+        assert "barrio" not in junto and "hasta dónde" not in junto
+
+    def test_lo_ya_pedido_no_vuelve_ni_aunque_quede_otra_cosa(self):
+        """Tu plantilla no pregunta la hora: queda esa y solo esa."""
+        d = self._decision(("c", "quiero un flete el viernes"), ("v", self.PLANTILLA),
+                           ("c", "dale, gracias"))
+        junto = " ".join(d.preguntas).lower()
+        assert "hora" in junto
+        for repetida in ("barrio", "hasta dónde", "qué cosas", "ascensor"):
+            assert repetida not in junto
+
+    def test_si_ya_pediste_todo_lo_que_falta_no_insiste(self):
+        completa = self.PLANTILLA + " ¿Para qué día lo necesitás? ¿A qué hora te queda bien?"
+        d = self._decision(("c", "quiero más información"), ("v", completa),
+                           ("c", "dale, gracias"))
+        assert d.accion.value == "respuesta"
+        assert "ya le pediste" in d.razon.lower()
+
+    def test_tampoco_si_vuelve_a_preguntar_el(self):
+        d = self._decision(("c", "quiero más información"), ("v", self.PLANTILLA),
+                           ("c", "hola? estás?"))
+        assert d.accion.value != "preguntas"
+
+    def test_si_todavia_no_pediste_nada_si_pregunta(self):
+        d = self._decision(("c", "quiero más información"))
+        assert d.accion.value == "preguntas"
+
+    def test_lo_que_falta_y_no_pediste_si_se_pregunta(self):
+        """La plantilla no pregunta la fecha: eso si se puede pedir."""
+        d = self._decision(("c", "llevo una heladera de Almagro a Boedo, hay ascensor"),
+                           ("v", "¿desde dónde hay que buscarlo? ¿hasta dónde lo llevamos?"),
+                           ("c", "eso mismo"))
+        assert d.accion.value in ("preguntas", "cotizacion")

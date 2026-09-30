@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from enum import Enum
 
+from estiba.bandeja.ya_preguntado import campos_ya_pedidos, sin_lo_ya_pedido
 from estiba.core.models import Conversation, JobState
 from estiba.extraction.intencion import Intencion
 from estiba.jobs.engine import Evaluacion
@@ -42,6 +43,8 @@ class Decision:
     razon: str
     #: Para POSPONER: hasta cuando conviene no molestar.
     hasta: date | None = None
+    #: Lo que queda por preguntar, sin lo que ya se pidio antes.
+    preguntas: tuple[str, ...] = ()
 
 
 def _intencion_del_ultimo(ev: Evaluacion, message_id: str) -> Intencion | None:
@@ -120,5 +123,16 @@ def decidir(ev: Evaluacion, conv: Conversation, ahora: datetime) -> Decision:
             return Decision(Accion.RESPONDER, "Te hizo una pregunta")
 
     if ev.preguntas:
-        return Decision(Accion.PEDIR_DATOS, "Faltan datos para avanzar")
+        # No repreguntar lo que ya se pidio, lo haya pedido Estiba o vos a
+        # mano desde el celular. Al cliente le da igual quien escribio: ve la
+        # misma pregunta dos veces y piensa que no lo leyeron.
+        # No repreguntar lo que ya se pidio, lo haya pedido Estiba o vos a
+        # mano desde el celular. Al cliente le da igual quien escribio: ve la
+        # misma pregunta dos veces y piensa que no lo leyeron.
+        quedan = sin_lo_ya_pedido(ev.preguntas, campos_ya_pedidos(conv))
+        if not quedan:
+            # Escribio pero no contesto lo que se le pidio. Mandarle lo mismo
+            # de nuevo no ayuda: te toca leer que dijo.
+            return Decision(Accion.RESPONDER, "Ya le pediste esos datos y volvió a escribir")
+        return Decision(Accion.PEDIR_DATOS, "Faltan datos para avanzar", preguntas=tuple(quedan))
     return Decision(Accion.RESPONDER, "Te escribió y espera respuesta")
