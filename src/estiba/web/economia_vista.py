@@ -299,7 +299,7 @@ def vista_mes(m, economico, prioridades_texto: dict[str, str], cat=None) -> dict
         ("La camioneta se pagó", _pct(m.autonomia) if m.autonomia is not None else "—",
          "de lo que cuesta sostenerla y conservarla este mes"),
         ("Horas para que se pague sola", horas(m.horas_para_autofinanciar) if m.horas_para_autofinanciar else "—",
-         f"todavía no se pagó" if m.dia_autofinanciado is None else f"hasta el {m.dia_autofinanciado:%d/%m} · {tipo_h}"),
+         "todavía no se pagó" if m.dia_autofinanciado is None else f"hasta el {m.dia_autofinanciado:%d/%m} · {tipo_h}"),
         ("Horas trabajadas", horas(m.horas),
          f"de {horas(m.horas_deseadas)} que querés · {tipo_h}" if m.horas_deseadas else tipo_h),
         ("Resultado real por hora", plata(horas_eco),
@@ -414,7 +414,6 @@ def vista_historia(segmentos, canales, jornadas, conclusion_jornadas, valores, o
 
 def despues_del_credito(e, hoy: date) -> dict | None:
     """Como cambia la estructura cuando termina el credito, y que hacer con esa plata."""
-    from dataclasses import replace as _replace
 
     ultima = e.credito.ultima()
     if e.costos.credito <= 0:

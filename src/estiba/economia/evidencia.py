@@ -160,7 +160,7 @@ def validar(e: Economia, cat: Catalogo, hoy: date, meta: Decimal = Decimal(1_000
     elif lado == -1:
         en_contra.append(f"Los fletes no cubren ni el uso de la camioneta (margen {rango_m}).")
     r = cat.recurrencia
-    if (lr := _lado(r.lo, r.hi, 0.0)) == 1 and r.fuerte:
+    if _lado(r.lo, r.hi, 0.0) == 1 and r.fuerte:
         a_favor.append(f"Hay clientes que vuelven ({r.valor:.0%} de los que tuvieron tiempo).")
     c = cat.conversion
     if c.valor is not None:

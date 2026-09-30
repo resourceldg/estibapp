@@ -10,7 +10,6 @@ from dataclasses import replace
 from datetime import date, datetime
 from decimal import Decimal
 
-import pytest
 
 from estiba.adapters.fixtures import FixtureMessageSource
 from estiba.bandeja.servicio import sincronizar

@@ -138,7 +138,6 @@ def evaluar(e: Economia, mes: date, p: Pedido, cliente: Cliente, *, objetivo_cum
     margen = P - p.km * uso - p.directos - (cac.monto or CERO)
     margen_hora = margen / horas if horas > 0 else None
     km_vacios = (p.tramos["ida"] + p.tramos["vuelta"]) if p.tramos else None
-    w = contribucion_por_hora(e, mes)
     d = e.disponibilidad
 
     if pr.recomendado is None or pr.minimo is None:

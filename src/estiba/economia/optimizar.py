@@ -27,7 +27,7 @@ import random
 from dataclasses import dataclass, field, replace
 from decimal import Decimal
 
-from estiba.economia.config import CONSERVACION, PERSONAL, Economia, Fondo
+from estiba.economia.config import CONSERVACION, PERSONAL, Economia
 from estiba.economia.estructura import costo_uso_km, cuota_mes, estructura_mes, fondos_mes, ganancia_libre
 from estiba.economia.mes import PRIORIDADES
 from estiba.economia.modelo import CERO, suma
