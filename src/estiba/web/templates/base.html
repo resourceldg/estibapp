@@ -46,7 +46,7 @@
   {% if espejo_error %}
   <div class="banda-error" role="status">No se pudo copiar la agenda al CalDAV: {{ espejo_error }}. Se reintenta en la próxima actualización.</div>
   {% endif %}
-  <main class="contenido">
+  <main class="contenido{% if ruta.startswith('/numeros') %} con-lateral{% endif %}">
     {% block contenido %}{% endblock %}
   </main>
 

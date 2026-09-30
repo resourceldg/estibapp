@@ -277,3 +277,27 @@ document.addEventListener("input", (e) => {
   const form = e.target.closest("[data-ajustar]");
   if (form && e.target.matches("[data-slider]")) pintarSlider(form);
 });
+
+// Numeros en la compu: cada grafico chico se agranda a la fila entera con
+// un clic en la tarjeta, y vuelve con otro (o con Esc). Los clics en
+// enlaces, botones, formularios y "Ver como tabla" hacen lo suyo.
+if (matchMedia("(min-width: 1100px)").matches) {
+  const cerrar = (t) => { t.classList.remove("expandida"); t.setAttribute("aria-expanded", "false"); };
+  document.querySelectorAll(".con-lateral .grafico-tarjeta:not(.ancho)").forEach((t) => {
+    t.setAttribute("aria-expanded", "false");
+    t.title = "Clic para agrandar";
+    t.addEventListener("click", (e) => {
+      if (e.target.closest("a, button, input, select, textarea, label, summary, details[open] > :not(summary), form")) return;
+      const abrir = !t.classList.contains("expandida");
+      document.querySelectorAll(".con-lateral .expandida").forEach(cerrar);
+      if (abrir) {
+        t.classList.add("expandida");
+        t.setAttribute("aria-expanded", "true");
+        t.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+    });
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") document.querySelectorAll(".con-lateral .expandida").forEach(cerrar);
+  });
+}

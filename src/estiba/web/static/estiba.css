@@ -1155,13 +1155,15 @@ summary::-webkit-details-marker { display: none; }
 .grilla td.hoy .dia-num { color: var(--acento); }
 
 .marcas { display: flex; gap: 3px; flex-wrap: wrap; justify-content: center; }
-.marca {
+/* Acotado a su contenedor: suelto, `.marca` pisaba el logo de la barra
+   (le ponia 6px de ancho y "Estiba" se montaba sobre "Hoy"). */
+.marcas .marca, .mes-pie .marca {
   width: 6px; height: 6px; border-radius: 50%;
   background: var(--ok); border: 1px solid var(--ok);
 }
 /* Hueca, no solo de otro color: sin confirmar tiene que distinguirse
    tambien de forma, no unicamente por el tono. */
-.marca.sin-cerrar { background: transparent; border-color: var(--aviso); }
+.marcas .marca.sin-cerrar, .mes-pie .marca.sin-cerrar { background: transparent; border-color: var(--aviso); }
 .mes-pie {
   display: flex; align-items: center; gap: 6px; margin-top: 10px;
   color: var(--tenue); font-size: 12px;
@@ -1504,11 +1506,11 @@ details > summary { cursor: pointer; margin-top: 10px; color: var(--tinta-2); fo
 .grafico .g-grilla { stroke: var(--linea); stroke-width: 1; }
 .grafico .g-cero { stroke: var(--linea-2); stroke-width: 1.2; }
 .grafico .g-ref { stroke: var(--tinta-2); stroke-width: 1; }
-.grafico .g-s1 { fill: #3987e5; stroke: #3987e5; }
-.grafico .g-s2 { fill: #d95926; stroke: #d95926; }
-.grafico .g-s3 { fill: #199e70; stroke: #199e70; }
+.grafico .g-s1 { fill: #3d8bff; stroke: #3d8bff; }
+.grafico .g-s2 { fill: #ec5f1a; stroke: #ec5f1a; }
+.grafico .g-s3 { fill: #10ab76; stroke: #10ab76; }
 .grafico .g-s4 { fill: #c98500; stroke: #c98500; }
-.grafico .g-s5 { fill: #d55181; stroke: #d55181; }
+.grafico .g-s5 { fill: #e5528f; stroke: #e5528f; }
 .grafico .g-apagado { fill: #6b6873; stroke: #6b6873; }
 .grafico .g-contexto { fill: #4a4852; stroke: #4a4852; }
 .grafico .g-pista { fill: var(--superficie-3); }
@@ -1527,10 +1529,273 @@ details > summary { cursor: pointer; margin-top: 10px; color: var(--tinta-2); fo
 .leyenda-escalera .monto { margin-left: auto; font-variant-numeric: tabular-nums; }
 .pips { display: inline-flex; gap: 3px; vertical-align: middle; margin-right: 6px; }
 .pips i { width: 9px; height: 9px; border-radius: 50%; background: var(--superficie-3); }
-.pips i.on { background: #3987e5; }
+.pips i.on { background: #3d8bff; }
 .firmeza { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
 .firmeza li { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; font-size: 14px; }
 .firmeza li small { grid-column: 1 / -1; color: var(--tenue); font-size: 12px; }
 .medidor { height: 8px; border-radius: 4px; background: var(--superficie-3); overflow: hidden; margin: 6px 0; }
-.medidor span { display: block; height: 100%; background: #3987e5; border-radius: 4px; }
+.medidor span { display: block; height: 100%; background: #3d8bff; border-radius: 4px; }
 .como-tabla > summary { font-size: 12px; }
+
+/* ------------------------------------------- numeros: jerarquia y escritorio
+
+   Primero la respuesta (una linea, grande), despues los numeros que la
+   sostienen, despues los graficos y recien al final el porque, plegado.
+   En el celular es una sola columna; desde 1100px, Numeros se abre en una
+   columna de secciones fija a la izquierda y una grilla de dos graficos. */
+
+.veredicto { margin: 0 0 16px; padding: 4px 2px 0; }
+.veredicto-pregunta { margin: 0; font-size: 13px; font-weight: 650; letter-spacing: .02em; color: var(--tenue); }
+.veredicto-titular { margin: 4px 0 0; font-size: 21px; line-height: 1.3; font-weight: 700; letter-spacing: -0.01em; text-wrap: balance; }
+.veredicto-detalle { margin: 6px 0 0; font-size: 15px; line-height: 1.45; color: var(--tinta-2); max-width: 72ch; }
+.veredicto-pie { margin: 8px 0 0; font-size: 13px; color: var(--tenue); max-width: 90ch; }
+.veredicto-pie a { color: var(--tinta-2); }
+.veredicto-pie strong { color: var(--tinta-2); font-weight: 650; }
+.veredicto .leer { margin-top: 4px; }
+
+.subtabs-grupo { display: none; }
+
+.kpis-eco .kpi-hero .kpi-val { font-size: 34px; }
+.kpis-eco { margin-bottom: 10px; }
+.kpis-mini {
+  list-style: none; margin: 0 0 4px; padding: 0 2px;
+  display: flex; flex-wrap: wrap; gap: 6px 22px; font-size: 13px; color: var(--tenue);
+}
+.kpis-mini strong { color: var(--tinta); font-weight: 700; font-size: 14px; }
+.kpis-mini small { display: none; }
+
+.eco-grilla { display: grid; gap: 16px; margin-top: 16px; }
+.eco-grilla > .panel + .panel { margin-top: 0; }
+.eco-grilla + .eco-grilla { margin-top: 16px; }
+.seccion-eco { margin: 28px 2px 0; font-size: 18px; font-weight: 700; }
+.seccion-eco-ayuda { margin: 4px 2px 0; }
+.seccion-eco + .eco-grilla { margin-top: 12px; }
+.tarjeta-h { margin: 0; font-size: 16px; font-weight: 700; }
+.frases-chicas { font-size: 14px; color: var(--tinta-2); }
+
+/* El porque, plegado debajo del grafico: se abre si hace falta. */
+details.leer > summary { margin-top: 8px; font-size: 12px; color: var(--tenue); }
+details.leer > p { margin: 6px 0 0; font-size: 13px; line-height: 1.5; color: var(--tinta-2); }
+
+.evidencia { display: grid; gap: 12px; margin-top: 8px; }
+.ev-grupo .sub-titulo { margin: 0; display: inline-flex; align-items: center; gap: 8px; }
+.ev-grupo .frases { font-size: 14px; margin-top: 6px; }
+.ev-favor .frases li::marker { color: var(--ok); }
+.ev-contra .frases li::marker { color: var(--mal); }
+.ev-falta > summary { margin-top: 0; list-style: none; }
+.ev-falta > summary::-webkit-details-marker { display: none; }
+.ev-falta > summary .sub-titulo::after { content: "›"; color: var(--tenue); transition: transform .15s; }
+.ev-falta[open] > summary .sub-titulo::after { transform: rotate(90deg); }
+.cuenta-tenue {
+  display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px;
+  border-radius: 10px; background: var(--superficie-3); color: var(--tinta-2); font-size: 12px; font-weight: 650;
+}
+
+@media (min-width: 1100px) {
+  .contenido.con-lateral {
+    max-width: 1400px;
+    display: grid; grid-template-columns: 200px minmax(0, 1fr); column-gap: 36px; align-items: start;
+  }
+  .con-lateral > * { grid-column: 2; min-width: 0; }
+  .con-lateral > .encabezado {
+    grid-column: 1; grid-row: 1 / span 60; max-width: none; margin: 0;
+    position: sticky; top: 84px; align-self: start;
+  }
+  .con-lateral > .panel, .con-lateral > .aviso, .con-lateral .aviso,
+  .con-lateral > .vacio, .con-lateral .kpis { max-width: none; }
+  .con-lateral .encabezado h1 { font-size: 24px; margin-bottom: 4px; }
+  .con-lateral .subtabs {
+    display: grid; width: 100%; gap: 1px; padding: 0; margin-top: 10px;
+    background: none; overflow: visible;
+  }
+  .con-lateral .subtabs a { padding: 8px 12px; font-size: 14px; }
+  .con-lateral .subtabs a:hover { background: var(--superficie); color: var(--tinta); }
+  .con-lateral .subtabs-grupo {
+    display: block; margin: 14px 12px 4px; font-size: 11px; font-weight: 700;
+    letter-spacing: .08em; text-transform: uppercase; color: var(--tenue);
+  }
+  .con-lateral .subtabs-grupo:first-child { margin-top: 4px; }
+  /* El periodo del embudo queda debajo de las secciones, a mano. */
+  .con-lateral .encabezado .periodos:not(.subtabs) { display: flex; flex-wrap: wrap; margin-top: 16px; }
+
+  .veredicto { margin-bottom: 20px; }
+  .veredicto-titular { font-size: 26px; max-width: 40ch; }
+
+  .con-lateral .kpis { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+  .con-lateral .kpis .kpi:first-child { grid-column: auto; }
+  .con-lateral .kpis .kpi:first-child .kpi-val { font-size: 24px; }
+  .con-lateral .kpis-eco { grid-template-columns: 1.4fr repeat(3, 1fr); }
+  .con-lateral .kpis-eco .kpi.kpi-hero .kpi-val { font-size: 34px; }
+.kpis-eco { margin-bottom: 10px; }
+.kpis-mini {
+  list-style: none; margin: 0 0 4px; padding: 0 2px;
+  display: flex; flex-wrap: wrap; gap: 6px 22px; font-size: 13px; color: var(--tenue);
+}
+.kpis-mini strong { color: var(--tinta); font-weight: 700; font-size: 14px; }
+.kpis-mini small { display: none; }
+  .con-lateral .tablero-kpis { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+
+  /* Graficos chicos, varios por fila: se ven de un vistazo y el que
+     interesa se agranda (ocupa la fila entera) con el boton de la esquina. */
+  .contenido.con-lateral { grid-template-columns: 184px minmax(0, 1fr); column-gap: 28px; }
+  .eco-grilla, .con-lateral .tablero-grilla {
+    grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); align-items: start; gap: 14px;
+  }
+  .eco-grilla > .ancho, .con-lateral .expandida { grid-column: 1 / -1; }
+  .con-lateral .grafico-tarjeta { position: relative; padding: 14px; }
+  .con-lateral .grafico-tarjeta h2, .con-lateral .grafico-tarjeta .tarjeta-h { font-size: 15px; }
+  .con-lateral .expandida svg.grafico, .con-lateral .expandida .svg svg { max-width: 920px; margin-left: auto; margin-right: auto; }
+  .con-lateral .expandida { box-shadow: var(--sombra-alta); border-color: var(--linea-2); }
+
+  /* Formularios de configuracion: campos del tamano del dato, no de un pulgar. */
+  .eco-forms { grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); }
+  .con-lateral .costos .campo { grid-template-columns: 1fr 170px; padding: 5px 0; }
+  .con-lateral .costos input, .con-lateral .form-gasto input, .con-lateral .form-gasto select { min-height: 36px; border-radius: 8px; }
+  .con-lateral .costos .btn { width: auto; margin-top: 12px; }
+  .con-lateral .costos fieldset { margin-top: 10px; }
+  .evidencia { gap: 14px; }
+  .contenido.con-lateral:has(.tablero-grilla) { max-width: 1400px; }
+}
+
+@media (min-width: 1600px) {
+  .contenido.con-lateral { max-width: 1560px; }
+}
+.grafico .g-hito-num { fill: var(--fondo); }
+.hitos { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--tinta-2); }
+.hitos li { display: inline-flex; align-items: baseline; gap: 6px; }
+.hitos .hito-num {
+  display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%;
+  background: var(--tinta); color: var(--fondo); font-size: 11px; font-weight: 700; flex: none;
+}
+.hitos time { color: var(--tenue); font-variant-numeric: tabular-nums; }
+.chip-explora { display: inline-block; margin-left: 8px; padding: 2px 8px; border-radius: 999px; background: var(--aviso-fondo); color: var(--aviso); font-size: 11px; font-weight: 650; vertical-align: middle; }
+/* La linea de tiempo es ancha: en el celular se desliza en vez de achicar la letra. */
+.scroll-x { overflow-x: auto; margin: 0 -4px; padding: 0 4px; }
+.scroll-x .grafico-ancho { min-width: 680px; }
+
+/* ------------------------------------------------------ vida en Numeros
+   El gris dice informacion; el color dice como estas. La respuesta lleva el
+   tono de lo que dice, las cifras negativas se ven rojas, y la seccion en la
+   que estas tiene su acento. Nada de color decorativo. */
+.veredicto {
+  position: relative; padding: 16px 18px 16px 20px; border-radius: var(--radio);
+  background: linear-gradient(100deg, var(--neutro-fondo), transparent 75%);
+  border: 1px solid var(--linea);
+}
+.veredicto::before { content: ""; position: absolute; left: 0; top: 12px; bottom: 12px; width: 4px; border-radius: 0 4px 4px 0; background: var(--tinta-2); }
+.veredicto.tono-ok { background: linear-gradient(100deg, var(--ok-fondo), transparent 75%); }
+.veredicto.tono-ok::before { background: var(--ok); }
+.veredicto.tono-aviso { background: linear-gradient(100deg, var(--aviso-fondo), transparent 75%); }
+.veredicto.tono-aviso::before { background: var(--aviso); }
+.veredicto.tono-mal { background: linear-gradient(100deg, var(--mal-fondo), transparent 75%); }
+.veredicto.tono-mal::before { background: var(--mal); }
+.veredicto.tono-ok .veredicto-pregunta { color: var(--ok); }
+.veredicto.tono-aviso .veredicto-pregunta { color: var(--aviso); }
+.veredicto.tono-mal .veredicto-pregunta { color: var(--mal); }
+
+.kpi .kpi-val.negativo, .kpis-mini strong.negativo, .probas strong.negativo { color: var(--mal); }
+.kpi .kpi-val.positivo { color: var(--ok); }
+.kpi-hero { background: linear-gradient(160deg, color-mix(in srgb, var(--acento) 14%, var(--superficie)), var(--superficie) 60%); border-color: color-mix(in srgb, var(--acento) 30%, var(--linea)); }
+
+.seccion-eco { display: flex; align-items: center; gap: 10px; }
+.seccion-eco::before { content: ""; width: 10px; height: 10px; border-radius: 3px; background: var(--acento); }
+
+.grafico-tarjeta:not(.ancho) { cursor: zoom-in; transition: border-color .15s, box-shadow .15s; }
+.grafico-tarjeta:not(.ancho):hover { border-color: var(--linea-2); }
+.con-lateral .expandida { cursor: zoom-out; border-color: color-mix(in srgb, #3d8bff 45%, var(--linea)); }
+
+@media (min-width: 1100px) {
+  .con-lateral .subtabs a { position: relative; }
+  .con-lateral .subtabs a[aria-current] { background: var(--superficie); color: var(--tinta); }
+  .con-lateral .subtabs a[aria-current]::before {
+    content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 3px; border-radius: 3px; background: var(--acento);
+  }
+}
+/* Lo accionable se distingue: es lo unico del tablero que pide hacer algo. */
+.accion-semana { border-color: color-mix(in srgb, var(--primario) 40%, var(--linea)); background: linear-gradient(160deg, color-mix(in srgb, var(--primario) 10%, var(--superficie)), var(--superficie) 70%); }
+.accion-semana h2 { color: var(--ok); }
+.con-lateral .calculadora, .con-lateral #escenarios { margin-top: 16px; }
+
+/* ------------------------------------ tres columnas: menu · graficos · textos
+   Al centro solo lo que se mira (respuesta, numeros, graficos por orden de
+   importancia); a la derecha, fija, lo que se lee: que hacer, conclusiones,
+   evidencia, avisos. En el celular el texto queda donde esta en el HTML. */
+.lateral-texto { display: grid; gap: 14px; margin: 16px 0; align-content: start; }
+.lateral-texto > .panel + .panel { margin-top: 0; }
+.lateral-texto .panel { padding: 14px; }
+.lateral-texto .panel h2, .lateral-texto .tarjeta-h { font-size: 15px; }
+.lateral-texto .frases, .lateral-texto .hallazgos { font-size: 14px; }
+.lateral-texto .aviso { margin: 0; }
+.lateral-texto .veredicto-detalle { margin: 0; font-size: 14px; color: var(--tinta-2); }
+.lateral-texto .texto-suelto { padding: 0 2px; display: grid; gap: 8px; }
+.lateral-texto .texto-suelto p { margin: 0; font-size: 13px; color: var(--tenue); line-height: 1.5; }
+.lateral-titulo { margin: 0 2px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--tenue); }
+
+@media (min-width: 1280px) {
+  .contenido.con-lateral:has(> .lateral-texto) {
+    max-width: 1680px; grid-template-columns: 184px minmax(0, 1fr) 330px;
+  }
+  .con-lateral > .lateral-texto {
+    grid-column: 3; grid-row: 1 / span 60; margin: 0;
+    position: sticky; top: 84px; max-height: calc(100dvh - 100px); overflow-y: auto;
+    padding-right: 4px; scrollbar-width: thin;
+  }
+}
+.comparar-lateral .cuentas { font-size: 13px; }
+.comparar-lateral .cuentas th, .comparar-lateral .cuentas td { padding-left: 4px; padding-right: 4px; }
+.lateral-texto .evidencia { margin-top: 4px; }
+.veredicto .veredicto-titular { color: var(--tinta); }
+@media (min-width: 1100px) {
+  .con-lateral .tablero-kpis { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+  .con-lateral .tablero-kpis .kpi-val { font-size: 21px; }
+}
+.eco-grilla > * { min-width: 0; }
+@media (min-width: 1100px) {
+  .contenido.con-lateral .kpis.tablero-kpis { grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); }
+}
+
+/* El lateral nunca se ensancha por su contenido: la columna manda y el
+   texto se acomoda (sin scroll horizontal). */
+.lateral-texto { grid-template-columns: minmax(0, 1fr); overflow-x: hidden; }
+.lateral-texto .panel { min-width: 0; overflow-wrap: anywhere; }
+.comparar-lateral .cuentas { width: 100%; table-layout: fixed; font-size: 12.5px; }
+.comparar-lateral .cuentas th[scope="row"] { width: 34%; }
+.comparar-lateral .delta { white-space: normal; }
+
+@media (min-width: 1100px) {
+  /* Las tarjetas de una misma fila, de la misma altura. */
+  .eco-grilla, .con-lateral .tablero-grilla { align-items: stretch; }
+  .eco-grilla > .grafico-tarjeta { display: flex; flex-direction: column; }
+  .eco-grilla > .grafico-tarjeta > details.leer { margin-top: auto; padding-top: 6px; }
+
+  /* Periodo, filtros e informe en una sola linea; los filtros se abren
+     flotando debajo, sin empujar la pagina. */
+  .con-lateral .filtros { position: relative; flex-wrap: nowrap; gap: 12px; margin-bottom: 14px; }
+  .con-lateral .filtro-mas { flex-basis: auto; order: 0; }
+  .con-lateral .filtro-mas summary { margin-top: 0; padding: 8px 12px; border-radius: 10px; background: var(--neutro-fondo); }
+  .con-lateral .filtro-mas[open] .filtro-campos {
+    position: absolute; z-index: 15; left: 0; right: 0; top: calc(100% + 8px);
+    padding: 14px; border-radius: var(--radio); background: var(--superficie-2);
+    border: 1px solid var(--linea-2); box-shadow: var(--sombra-alta);
+  }
+  .con-lateral .descargar { margin-left: auto; }
+}
+.lecturas li strong { color: var(--tinta); font-weight: 650; }
+.frases-p { margin: 8px 0 0; font-size: 14px; line-height: 1.5; color: var(--tinta-2); }
+.en-curso-resumen { margin: 6px 0 0; font-size: 14px; color: var(--tinta-2); }
+.en-curso-resumen strong { font-size: 20px; color: var(--tinta); }
+.en-curso-resumen small { display: block; color: var(--tenue); font-size: 12px; }
+.en-curso .aviso { margin-top: 10px; font-size: 13px; }
+.curso-lista, .fuentes-lista { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
+.curso-lista li { display: grid; grid-template-columns: 1fr auto; gap: 1px 8px; padding: 8px 10px; border-radius: var(--radio-chico); background: var(--superficie-2); font-size: 14px; }
+.curso-lista li a { color: var(--tinta); text-decoration: none; }
+.curso-lista li a:hover { text-decoration: underline; }
+.curso-lista li small { grid-column: 1 / -1; color: var(--tenue); font-size: 12px; }
+.curso-lista li.vencido { box-shadow: inset 3px 0 0 var(--aviso); }
+.fuentes-lista li { display: grid; grid-template-columns: auto 1fr; gap: 1px 8px; font-size: 13.5px; }
+.fuentes-lista li small { grid-column: 2; color: var(--tenue); font-size: 12px; }
+.nivel { align-self: start; padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+.nivel-firme { background: var(--ok-fondo); color: var(--ok); }
+.nivel-estimado { background: var(--info-fondo); color: var(--info); }
+.nivel-supuesto, .nivel-desactualizado { background: var(--aviso-fondo); color: var(--aviso); }
+.nivel-falta { background: var(--mal-fondo); color: var(--mal); }

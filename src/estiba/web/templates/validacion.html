@@ -6,72 +6,101 @@
   {% include "_numeros_tabs.html" %}
 </div>
 
-<section class="panel">
-  <h2>¿Vale la pena seguir invirtiendo tiempo y capital?</h2>
-  <p class="ayuda">Estiba no responde sí o no antes de tiempo. Esto es lo que dicen los datos, y cuánto creerles.</p>
-  <h3 class="sub-titulo">Evidencia a favor</h3>
-  <ul class="frases">{% for x in v.a_favor %}<li>{{ x }}</li>{% else %}<li>Todavía nada firme.</li>{% endfor %}</ul>
-  <h3 class="sub-titulo">Evidencia en contra</h3>
-  <ul class="frases">{% for x in v.en_contra %}<li>{{ x }}</li>{% else %}<li>Nada firme en contra.</li>{% endfor %}</ul>
-  <h3 class="sub-titulo">Lo que todavía no sabemos</h3>
-  <ul class="frases">{% for x in v.no_sabemos %}<li>{{ x }}</li>{% else %}<li>Nada importante.</li>{% endfor %}</ul>
-  {% if v.proximo_dato %}
-  <h3 class="sub-titulo">El próximo dato que más reduciría la incertidumbre</h3>
-  <p class="eval-titular">{{ v.proximo_dato }}</p>
-  {% endif %}
+<section class="veredicto">
+  <h2 class="veredicto-pregunta">¿Puede reemplazar {{ "${:,.0f}".format(v.meta).replace(",", ".") }} por mes sin pedirte más tiempo?</h2>
+  <p class="veredicto-titular">{{ v.conclusion|titular }}</p>
 </section>
 
-<section class="panel">
-  <h2>¿Puede reemplazar {{ "${:,.0f}".format(v.meta).replace(",", ".") }} por mes sin pedirte más tiempo?</h2>
-  <p class="eval-titular">{{ v.conclusion }}</p>
+<aside class="lateral-texto" aria-label="Evidencia">
+  <p class="lateral-titulo">Lo que dice</p>
+  <div class="texto-suelto">
+    {% if v.conclusion|detalle %}<p class="veredicto-detalle">{{ v.conclusion|detalle }}</p>{% endif %}
+    {% if v.proximo_dato %}<p><strong>El próximo dato que más reduciría la incertidumbre:</strong> {{ v.proximo_dato }}</p>{% endif %}
+  </div>
+  <section class="panel">
+  <h2>¿Vale la pena seguir invirtiendo tiempo y capital?</h2>
+  <div class="evidencia">
+    <div class="ev-grupo ev-favor">
+      <h3 class="sub-titulo">Evidencia a favor</h3>
+      <ul class="frases">{% for x in v.a_favor %}<li>{{ x }}</li>{% else %}<li>Todavía nada firme.</li>{% endfor %}</ul>
+    </div>
+    <div class="ev-grupo ev-contra">
+      <h3 class="sub-titulo">Evidencia en contra</h3>
+      <ul class="frases">{% for x in v.en_contra %}<li>{{ x }}</li>{% else %}<li>Nada firme en contra.</li>{% endfor %}</ul>
+    </div>
+    <details class="ev-grupo ev-falta">
+      <summary><h3 class="sub-titulo">Lo que todavía no sabemos <span class="cuenta-tenue">{{ v.no_sabemos|length }}</span></h3></summary>
+      <ul class="frases">{% for x in v.no_sabemos %}<li>{{ x }}</li>{% else %}<li>Nada importante.</li>{% endfor %}</ul>
+    </details>
+  </div>
+  <details class="leer"><summary>Cómo responde Estiba</summary>
+    <p>Estiba no responde sí o no antes de tiempo. Esto es lo que dicen los datos, y cuánto creerles.</p>
+  </details>
+</section>
+  <section class="panel">
+    <h3 class="tarjeta-h">Qué tan firme es cada dato</h3>
+    <ul class="firmeza">
+      {% for x in metricas %}
+      <li><span><span class="pips" aria-label="{{ x.estado }}">{% for i in range(4) %}<i class="{{ 'on' if i < x.pips }}"></i>{% endfor %}</span>{{ x.metrica }}</span><span class="num">{{ x.valor }}</span>
+          <small>{{ x.estado }}{% if x.razones %} · {{ x.razones }}{% endif %}</small></li>
+      {% endfor %}
+    </ul>
+    <p class="nota"><strong>Costo de oportunidad.</strong> {{ h.oportunidad }}</p>
+    <details class="leer"><summary>Cómo se mide la firmeza</summary>
+      <p>Cuatro pasos: exploratorio, emergente, utilizable, robusto. No depende solo de cuántos casos hay: también de cuánto varían, de qué tan viejos son, de si vienen de pocos clientes y de si son medidos o estimados.</p>
+    </details>
+  </section>
+</aside>
+
+<div class="eco-grilla">
+<section class="panel grafico-tarjeta">
+  <h2>Horas que pediría la meta</h2>
   {{ grafico_horas | safe }}
-  <p class="nota">En naranja, las horas por mes que pediría con el margen de hoy (el punto, lo más probable; la banda, lo que permiten los datos).</p>
   <ul class="firmeza">
     {% for c in v.compatibilidad %}
     <li><span><span class="pips" aria-label="{{ c.estado.etiqueta }}">{% for i in range(4) %}<i class="{{ 'on' if i <= c.estado.value }}"></i>{% endfor %}</span><strong>{{ c.dimension|capitalize }}</strong></span><small>{{ c.frase }}</small></li>
     {% endfor %}
   </ul>
+  <details class="leer"><summary>Cómo leerlo</summary>
+    <p>En naranja, las horas por mes que pediría con el margen de hoy (el punto, lo más probable; la banda, lo que permiten los datos).</p>
+  </details>
 </section>
 
-<section class="panel">
-  <h2>Qué tan firme es cada dato</h2>
-  <p class="ayuda">Cuatro pasos: exploratorio, emergente, utilizable, robusto. No depende solo de cuántos casos hay: también de cuánto varían, de qué tan viejos son, de si vienen de pocos clientes y de si son medidos o estimados.</p>
-  <ul class="firmeza">
-    {% for x in metricas %}
-    <li><span><span class="pips" aria-label="{{ x.estado }}">{% for i in range(4) %}<i class="{{ 'on' if i < x.pips }}"></i>{% endfor %}</span>{{ x.metrica }}</span><span class="num">{{ x.valor }}</span>
-        <small>{{ x.estado }}{% if x.razones %} · {{ x.razones }}{% endif %}</small></li>
-    {% endfor %}
-  </ul>
-</section>
 
-<section class="panel">
-  <h2>Lo que se aprende de tu historia</h2>
-  <p class="ayuda">Margen por hora, por tipo de flete, por cómo llegó el cliente y por cuántos fletes hubo ese día. Nada se afirma sin datos suficientes.</p>
-  <p class="nota">Cada punto es el margen por hora; la línea, lo que permiten los datos. En gris, lo que todavía no alcanza para concluir.</p>
+</div>
+
+<h2 class="seccion-eco">Lo que se aprende de tu historia</h2>
+<p class="ayuda seccion-eco-ayuda">Margen por hora. Cada punto es el valor; la línea, lo que permiten los datos. En gris, lo que todavía no alcanza para concluir.</p>
+<div class="eco-grilla">
   {% for titulo, clave, filas in [("Por tipo de flete", "segmentos", h.segmentos), ("Por cómo llegó el cliente", "canales", h.canales), ("Por anuncio", "anuncios", h.anuncios), ("Por jornada", "jornadas", h.jornadas)] %}
-  <h3 class="sub-titulo">{{ titulo }}</h3>
-  {% if h.graficos[clave] %}{{ h.graficos[clave] | safe }}{% else %}<p class="ayuda">Sin fletes todavía.</p>{% endif %}
-  <details class="como-tabla"><summary>Ver como tabla</summary>
-  <table class="cuentas">
-    {% for g in filas %}
-    <tr><th scope="row">{{ g.nombre|capitalize }}<small>{{ g.n }} {{ "flete" if g.n == 1 else "fletes" }} · {{ g.estado }}{% if g.nota %} · {{ g.nota }}{% endif %}</small></th>
-        <td class="num">{{ g.valor }}</td></tr>
-    {% endfor %}
-  </table>
-  </details>
+  <section class="panel grafico-tarjeta">
+    <h3 class="tarjeta-h">{{ titulo }}</h3>
+    {% if h.graficos[clave] %}{{ h.graficos[clave] | safe }}{% else %}<p class="ayuda">Sin fletes todavía.</p>{% endif %}
+    {% if clave == "jornadas" %}<p class="lectura">{{ h.conclusion_jornadas }}</p>{% endif %}
+    <details class="como-tabla"><summary>Ver como tabla</summary>
+    <table class="cuentas">
+      {% for g in filas %}
+      <tr><th scope="row">{{ g.nombre|capitalize }}<small>{{ g.n }} {{ "flete" if g.n == 1 else "fletes" }} · {{ g.estado }}{% if g.nota %} · {{ g.nota }}{% endif %}</small></th>
+          <td class="num">{{ g.valor }}</td></tr>
+      {% endfor %}
+    </table>
+    </details>
+  </section>
   {% endfor %}
-  <p class="ayuda">{{ h.conclusion_jornadas }}</p>
+
   {% if h.ltv %}
-  <h3 class="sub-titulo">Lo que dejó cada cliente (LTV)</h3>
-  {{ h.graficos.ltv | safe }}
-  <details class="como-tabla"><summary>Ver como tabla</summary>
-  <table class="cuentas">
-    <tr><th>Cliente</th><th>Fletes</th><th>Margen</th><th>Costó conseguirlo</th><th>Deja</th></tr>
-    {% for c in h.ltv %}<tr><td>{{ c.cliente }}</td><td class="num">{{ c.fletes }}</td><td class="num">{{ c.margen }}</td><td class="num">{{ c.cac }}</td><td class="num">{{ c.ltv }}</td></tr>{% endfor %}
-  </table>
-  </details>
+  <section class="panel grafico-tarjeta">
+    <h3 class="tarjeta-h">Lo que dejó cada cliente (LTV)</h3>
+    {{ h.graficos.ltv | safe }}
+    <details class="como-tabla"><summary>Ver como tabla</summary>
+    <table class="cuentas">
+      <tr><th>Cliente</th><th>Fletes</th><th>Margen</th><th>Costó conseguirlo</th><th>Deja</th></tr>
+      {% for c in h.ltv %}<tr><td>{{ c.cliente }}</td><td class="num">{{ c.fletes }}</td><td class="num">{{ c.margen }}</td><td class="num">{{ c.cac }}</td><td class="num">{{ c.ltv }}</td></tr>{% endfor %}
+    </table>
+    </details>
+  </section>
   {% endif %}
-  <h3 class="sub-titulo">Costo de oportunidad</h3>
-  <p class="ayuda">{{ h.oportunidad }}</p>
-</section>
+
+  
+</div>
 {% endblock %}

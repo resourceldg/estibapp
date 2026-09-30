@@ -299,6 +299,10 @@ def create_app(
         return str(int(max((f.stat().st_mtime for f in estaticos), default=0)))
     templates = Jinja2Templates(directory=AQUI / "templates")
     templates.env.filters["pesos"] = lambda v: P.pesos(Decimal(v))
+    # Una cifra negativa se pinta roja: la clase sale del texto ya formateado.
+    templates.env.filters["signo"] = lambda t: "negativo" if str(t).strip().startswith(("−", "-", "~−")) else ""
+    templates.env.filters["titular"] = lambda f: EV.partir(f)[0]
+    templates.env.filters["detalle"] = lambda f: EV.partir(f)[1]
 
     # ------------------------------------------------------------------
     # Clave: obligatoria si el dashboard se abre a la red
@@ -1768,14 +1772,102 @@ def create_app(
         c = cuentas_economia(e, hoy, Actividad(m.ingresos, m.km, m.publicidad, m.directos, m.horas), fraccion)
         return m, c
 
+    def _evolucion(e, cat, hoy: date) -> dict | None:
+        """Semana a semana desde la primera actividad, con los hitos que la explican."""
+        from estiba.economia import evolucion as evo
+        from estiba.economia.estructura import contribucion_por_hora, estructura_mes
+
+        fletes = _fletes_eco(e)
+        _, gastos = _gastos()
+        inicios = [f.dia for f in fletes] + [g.desde for g in gastos]
+        if not inicios:
+            return None
+        desde = min(inicios)
+        publicidad = eco_mes.publicidad_diaria(gastos, e.costos.impuestos_publicidad, desde, hoy)
+        fijos = sum((p_.monto for p_ in estructura_mes(e)), Decimal(0)) + (e.credito.interes_mes or Decimal(0))
+        ss = evo.semanas(fletes, publicidad, e.costos.costo_km, fijos, hoy, desde)
+        hitos = []
+        if fletes:
+            hitos.append(evo.Hito(fletes[0].dia, "Primer flete", "flete"))
+        hitos += evo.hitos_de_publicidad(publicidad)
+        conn = estado.conectar()
+        try:
+            precios = list(reversed(EconomiaRepository(conn).historial_precio_base()))
+            reps = ReparacionRepository(conn).todas()
+            decisiones = DecisionRepository(conn).todas()
+        finally:
+            conn.close()
+        for i, f in enumerate(precios):
+            hitos.append(evo.Hito(date.fromisoformat(f["desde"]),
+                                  f"Precio base {EV.plata(Decimal(f['monto']))}" if i else
+                                  f"Precio base inicial {EV.plata(Decimal(f['monto']))}", "precio"))
+        for r in reps:
+            hitos.append(evo.Hito(r.fecha, f"Reparación: {r.componente}", "reparacion"))
+        for d in decisiones:
+            if d["aplicada"]:
+                hitos.append(evo.Hito(datetime.fromisoformat(d["aplicada"]).date(), f"Decisión: {d['nombre']}",
+                                      "decision"))
+        return EV.vista_evolucion(ss, evo.ordenar(hitos, ss[0].inicio if ss else desde, hoy),
+                                  contribucion_por_hora(e, hoy).minima, not cat.margen.fuerte)
+
+    def _en_curso(e, hoy: date) -> dict | None:
+        """Las consultas abiertas, cuanto pueden dejar y con que probabilidad."""
+        from estiba.economia import en_curso
+
+        leads = estado.resultado.leads
+        dias = (hoy - min(l.creado.date() for l in leads)).days if leads else 0
+        probs = en_curso.probabilidades(leads, dias)
+        abiertos = []
+        for lead in leads:
+            par = estado.resultado.fletes.get(lead.job_id)
+            ev = par[0] if par else None
+            p = ev.presupuesto if ev else None
+            calculado = p.total if p is not None and p.total else None
+            cuando = ev.job.when.value if ev and ev.job.when else None
+            abiertos.append((lead, calculado, cuando, bool(p is not None and p.completo)))
+        ps = en_curso.posibles(abiertos, probs, e.precio_base, hoy)
+        quien = {j: f.quien for j, f in _fletes().items()}
+        return EV.vista_en_curso(ps, quien)
+
+    def _fuentes(e, hoy: date) -> list[dict]:
+        """De donde sale cada numero de los tableros, y cuanto creerle."""
+        from estiba.economia.estructura import estructura_mes
+
+        conn = estado.conectar()
+        try:
+            acciones, reales = ActionRepository(conn), FleteRealRepository(conn).todos()
+            hechos = anotado = cotizado = medidos = dia_chat = 0
+            for job_id, (ev, _) in estado.resultado.fletes.items():
+                if ev.job.state is not JobState.DONE:
+                    continue
+                hechos += 1
+                cierres = [a for a in sin_anuladas(acciones.for_job(job_id)) if a.tipo == REALIZADO]
+                if cierres and cierres[-1].monto:
+                    anotado += 1
+                elif ev.job.quoted_price:
+                    cotizado += 1
+                r = reales.get(job_id)
+                medidos += bool(r and r.km is not None and r.horas is not None)
+                dia_chat += bool(ev.job.when)
+        finally:
+            conn.close()
+        _, gastos = _gastos()
+        fijos = sum((p_.monto for p_ in estructura_mes(e)), Decimal(0))
+        return EV.vista_fuentes(hechos, anotado, cotizado, medidos, dia_chat,
+                                max((g.hasta for g in gastos), default=None), hoy,
+                                P.hace(estado.sincronizado_at, estado.ahora()) if estado.sincronizado_at else None,
+                                fijos)
+
     @app.get("/numeros/mes", response_class=HTMLResponse, include_in_schema=False)
     def pagina_mes(request: Request):
         m, c = _mes_actual()
-        _, cat, _ = _evidencia()
+        e, cat, hoy = _evidencia()
         textos = {k: v[0] for k, v in eco_mes.PRIORIDADES.items()}
         return templates.TemplateResponse(
             request, "mes.html",
-            _contexto(request, v=EV.vista_mes(m, c, textos, cat), opciones=list(textos.items()),
+            _contexto(request, v=EV.vista_mes(m, c, textos, cat), evo=_evolucion(e, cat, hoy),
+                      curso=_en_curso(e, hoy), fuentes=_fuentes(e, hoy),
+                      opciones=list(textos.items()),
                       elegidas=list(m.prioridades), titulo="¿Cómo estoy?"),
         )
 

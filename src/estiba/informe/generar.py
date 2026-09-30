@@ -176,7 +176,9 @@ def datos(*, negocio: str, periodo: str, desde: date | None, hoy: date, ahora: d
         "conclusiones": conclusiones,
         "kpis": [
             ("Facturado", pesos(b.ingresos), f"{b.fletes} fletes"),
-            ("Ganancia limpia", _signo(b.ganancia), f"margen {_pct(b.margen)}"),
+            # Descuenta la cuota entera (caja). El "resultado real" de ¿Cómo estoy?
+            # no: la parte de capital no es un gasto. Se dice para que no choquen.
+            ("Ganancia limpia", _signo(b.ganancia), f"margen {_pct(b.margen)} · con la cuota entera"),
             ("Por flete", pesos(b.ticket.quantize(Decimal(1))) if b.ticket else "—", "cobrado promedio"),
             ("Retorno publicidad", f"{b.retorno_publicidad:.1f}×".replace(".", ",") if b.retorno_publicidad else "—",
              "facturado por $1"),

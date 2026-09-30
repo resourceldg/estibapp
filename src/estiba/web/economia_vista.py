@@ -9,7 +9,7 @@ km a la unidad.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
 from estiba.economia.config import CONSERVACION, Economia
@@ -264,6 +264,26 @@ def estimado_cierre(ev) -> dict | None:
 # --------------------------------------------------------------------------
 
 
+def partir(frase: str) -> tuple[str, str]:
+    """Una frase larga en dos: la idea que responde y el resto.
+
+    En escritorio la respuesta va arriba y grande, y tiene que entrar en una
+    linea o dos; la explicacion queda debajo, chica. Se corta en el primer
+    ": ", ". " o " (", lo que llegue antes.
+    """
+    frase = (frase or "").strip()
+    cortes = [(i, sep) for sep in (": ", ". ", " (") if (i := frase.find(sep)) > 0]
+    if not cortes:
+        return frase, ""
+    i, sep = min(cortes)
+    cabeza, resto = frase[:i].rstrip(), frase[i + len(sep):].strip()
+    if sep == " (":
+        resto = resto.rstrip(".").removesuffix(")") + "."
+    if not resto:
+        return frase, ""
+    return cabeza + ".", resto[0].upper() + resto[1:]
+
+
 def _pct(x: float | None) -> str:
     return "—" if x is None else f"{x:.0%}"
 
@@ -303,6 +323,15 @@ def frase_mes(m, rango: tuple[int, int] | None = None) -> str:
                 "sola este mes (todavía hay pocos datos para decirlo más preciso).")
     return (f"Faltan unos {m.fletes_que_faltan} fletes como los últimos para que la camioneta se pague sola "
             "este mes.")
+
+
+def tono_mes(m) -> str:
+    """El color de la respuesta: verde si se pago, rojo si no entra en el mes, ambar si falta."""
+    if m.objetivo_cumplido or m.dia_autofinanciado is not None:
+        return "ok"
+    if m.fletes_que_faltan is not None and m.fletes_que_faltan > m.capacidad_restante:
+        return "mal"
+    return "aviso"
 
 
 #: Nombres cortos para los graficos: la etiqueta tiene que entrar entera.
@@ -376,6 +405,7 @@ def vista_mes(m, economico, prioridades_texto: dict[str, str], cat=None) -> dict
         "graficos": graficos,
         "pasos": [(n, plata(Decimal(str(v)))) for n, v in pasos],
         "frase": frase_mes(m, rango),
+        "tono": tono_mes(m),
         "aprender": aprender,
         "nota": f"Cuenta de caja: la cuota entra entera. ({confianza})",
         "escalones": [{"nivel": x.nivel, "nombre": x.nombre, "monto": plata(x.monto), "detalle": x.detalle,
@@ -569,3 +599,99 @@ def vista_reparaciones(reps) -> list[dict]:
     return [{"fecha": r.fecha.strftime("%d/%m/%Y"), "componente": r.componente, "tipo": r.tipo,
              "costo": plata(r.costo), "dias": r.dias_parada,
              "pago": f"fondo {r.fondo}" if r.fondo else "caja"} for r in reps[:10]]
+
+
+# --------------------------------------------------------------------------
+# Evolucion: semana a semana, con hitos
+# --------------------------------------------------------------------------
+
+
+def vista_evolucion(ss, hitos, ref_hora: Decimal | None, exploratorio: bool) -> dict | None:
+    """El grafico de linea de tiempo, los hitos numerados y una frase que lo resume."""
+    from estiba.economia.evolucion import acumulado
+
+    if not ss:
+        return None
+    acum = acumulado(ss)
+    filas = [(s.inicio, s.inicio + timedelta(days=6), float(s.resultado),
+              float(a), float(s.por_hora) if s.por_hora is not None else None, s.fletes) for s, a in zip(ss, acum)]
+    numerados = [(h.dia, i, h.texto) for i, h in enumerate(hitos, start=1)]
+    con_horas = [s for s in ss if s.por_hora is not None]
+    frase = f"En {len(ss)} {'semana' if len(ss) == 1 else 'semanas'} el resultado real acumulado es {plata(acum[-1])}."
+    if con_horas:
+        mejor = max(con_horas, key=lambda s: s.por_hora)
+        frase += f" La semana que más rindió fue la del {mejor.inicio:%d/%m}: {plata(mejor.por_hora)} por hora."
+    return {
+        "grafico": G.evolucion(filas, numerados, G.pesos_cortos,
+                               ref_hora=float(ref_hora) if ref_hora else None, exploratorio=exploratorio,
+                               titulo="Evolución semana a semana"),
+        "hitos": [{"n": i, "fecha": d.strftime("%d/%m"), "texto": t} for d, i, t in numerados],
+        "frase": frase,
+        "exploratorio": exploratorio,
+        "tabla": [{"semana": s.inicio.strftime("%d/%m"), "fletes": s.fletes, "cobrado": plata(s.cobrado),
+                   "publicidad": plata(s.publicidad), "fijos": plata(s.fijos), "resultado": plata(s.resultado),
+                   "acumulado": plata(a), "por_hora": plata(s.por_hora) if s.por_hora is not None else "—"}
+                  for s, a in zip(ss, acum)],
+    }
+
+
+# --------------------------------------------------------------------------
+# En curso y de donde salen los numeros
+# --------------------------------------------------------------------------
+
+ETAPA_CORTA = {"nuevo": "consulta", "calificado": "con datos", "presupuestado": "presupuestado",
+               "confirmado": "confirmado"}
+
+
+def vista_en_curso(ps, quien: dict[str, str]) -> dict | None:
+    from estiba.economia.en_curso import rango
+
+    if not ps:
+        return None
+    lo, medio, hi = rango(ps)
+    filas = []
+    for x in ps:
+        p = x.p
+        prob = "—" if p.valor is None else (f"{p.valor:.0%}" + (f" (entre {p.lo:.0%} y {p.hi:.0%})"
+                                                               if p.lo is not None else ""))
+        filas.append({"job": x.job_id, "quien": quien.get(x.job_id, x.job_id.split("@")[0][-6:]),
+                      "etapa": ETAPA_CORTA.get(x.etapa.value, x.etapa.value), "monto": plata(x.monto),
+                      "fuente": x.fuente, "prob": prob, "firmeza": p.estado.etiqueta,
+                      "cuando": x.cuando.strftime("%d/%m") if x.cuando else None, "vencido": x.vencido})
+    return {"filas": filas, "n": len(ps), "total": plata(sum((x.monto for x in ps), Decimal(0))),
+            "esperado": plata(medio), "lo": plata(lo), "hi": plata(hi),
+            "vencidos": sum(1 for x in ps if x.vencido),
+            "exploratorio": not all(x.p.fuerte for x in ps)}
+
+
+def vista_fuentes(hechos: int, cobro_anotado: int, cobro_cotizado: int, medidos: int, dia_chat: int,
+                  publicidad_hasta: date | None, hoy: date, ultimo_mensaje: str | None, fijos: Decimal) -> list[dict]:
+    """Cada dato de los tableros con su origen y cuanto creerle (firme, estimado, supuesto, falta)."""
+    def fila(dato, origen, nivel):
+        return {"dato": dato, "origen": origen, "nivel": nivel}
+    salida = []
+    if hechos:
+        salida.append(fila("Lo cobrado",
+                           f"{cobro_anotado} de {hechos} anotados al cerrar el flete"
+                           + (f"; {cobro_cotizado} con lo cotizado" if cobro_cotizado else ""),
+                           "firme" if cobro_anotado == hechos else "estimado"))
+        salida.append(fila("Km y horas de cada flete",
+                           f"{medidos} de {hechos} confirmados al cerrar; el resto, tu promedio"
+                           if medidos < hechos else "todos confirmados al cerrar",
+                           "firme" if medidos == hechos else ("estimado" if medidos else "supuesto")))
+        salida.append(fila("El día de cada flete",
+                           f"{dia_chat} de {hechos} con la fecha que dice el chat; el resto, el último mensaje",
+                           "firme" if dia_chat == hechos else "estimado"))
+    else:
+        salida.append(fila("Fletes hechos", "ninguno marcado como realizado", "falta"))
+    if publicidad_hasta is None:
+        salida.append(fila("Publicidad", "sin cargar", "falta"))
+    else:
+        atraso = (hoy - publicidad_hasta).days - 1
+        salida.append(fila("Publicidad", f"cargada hasta el {publicidad_hasta:%d/%m}"
+                           + (f": faltan {atraso} días" if atraso > 0 else ", al día"),
+                           "firme" if atraso <= 0 else "desactualizado"))
+    salida.append(fila("Conversaciones", f"última leída {ultimo_mensaje}" if ultimo_mensaje else "sin leer todavía",
+                       "firme" if ultimo_mensaje else "falta"))
+    salida.append(fila("Costos fijos", f"{plata(fijos)} por mes, los que cargaste en Costos y metas", "firme"))
+    return salida

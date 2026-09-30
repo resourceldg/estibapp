@@ -21,6 +21,7 @@ Reglas (skill de dataviz):
 from __future__ import annotations
 
 import math
+from datetime import timedelta
 from html import escape
 
 ANCHO = 480
@@ -248,6 +249,7 @@ def escalera(escalones: list[tuple[str, float]], disponible: float, fv, *, titul
     fin = max(total, disponible)
     w = ANCHO - 2 * 8
     X = lambda v: 8 + v / fin * w
+    xd = X(max(0.0, disponible))
     c, acum = [], 0.0
     for n, v, numero in con:
         x0, x1 = X(acum), X(acum + v)
@@ -257,10 +259,10 @@ def escalera(escalones: list[tuple[str, float]], disponible: float, fv, *, titul
         if lleno > 0:
             c.append(f"<rect x='{x0:.1f}' y='26' width='{max(X(acum + lleno) - x0 - 2, 0.5):.1f}' height='24' "
                      f"rx='3' class='g-s1'><title>{escape(f'{n}: cubierto {fv(lleno)} de {fv(v)}')}</title></rect>")
-        if x1 - x0 > 22:
+        # El numero no se dibuja encima de la marca de "llego a": no se lee.
+        if x1 - x0 > 22 and abs((x0 + x1) / 2 - xd) > 10:
             c.append(_t((x0 + x1) / 2 - 1, 42, str(numero), "g-sobre", ancla="middle", tam=11.5, peso=600))
         acum += v
-    xd = X(max(0.0, disponible))
     c.append(f"<line x1='{xd:.1f}' x2='{xd:.1f}' y1='18' y2='58' class='g-marca-linea'/>")
     ancla = "end" if xd > ANCHO * 0.7 else "start"
     c.append(_t(xd + (-5 if ancla == "end" else 5), 13, f"Llegó a {fv(disponible)}", "g-t", ancla=ancla,
@@ -372,3 +374,117 @@ def histograma(valores: list[float], fv, *, ref: tuple[float, str] | None = None
     for v in (lo, (lo + hi) / 2, hi):
         c.append(_t(X(v), alto - 8, fv(v), ancla="middle", tam=11))
     return _svg(alto, c, titulo)
+
+
+# --------------------------------------------------------------------------
+# Evolucion: la linea de tiempo con hitos (ancho completo)
+# --------------------------------------------------------------------------
+
+
+def evolucion(semanas: list[tuple], hitos: list[tuple], fv, *, ref_hora: float | None = None,
+              exploratorio: bool = False, titulo: str = "") -> str:
+    """Dos paneles con el mismo eje de tiempo, uno sobre otro (nunca dos escalas
+    en el mismo eje): arriba el resultado de cada semana (barras) y el
+    acumulado (linea); abajo lo que dejo cada hora trabajada contra lo que
+    tiene que aportar. Los hitos cruzan los dos paneles con su numero.
+
+    `semanas`: (lunes, fin, resultado, acumulado, por_hora | None, fletes).
+    `hitos`: (dia, numero, texto).
+    """
+    if not semanas:
+        return ""
+    W, izq, der = 960, 70, 24
+    arr_a, alto_a = 44, 180
+    arr_b, alto_b = arr_a + alto_a + 40, 110
+    alto = arr_b + alto_b + 30
+    w = W - izq - der
+    x0, x1 = semanas[0][0], semanas[-1][1] + timedelta(days=1)
+    total_dias = max(1, (x1 - x0).days)
+    X = lambda d: izq + (d - x0).days / total_dias * w
+    c = []
+
+    # ---- panel A: resultado semanal y acumulado (misma unidad, un eje)
+    valores = [s[2] for s in semanas] + [s[3] for s in semanas]
+    ticks = _nice(min(0.0, *valores), max(0.0, *valores))
+    lo, hi = ticks[0], ticks[-1]
+    Ya = lambda v: arr_a + alto_a - (v - lo) / ((hi - lo) or 1) * alto_a
+    for v in ticks:
+        c.append(f"<line x1='{izq}' x2='{W - der}' y1='{Ya(v):.1f}' y2='{Ya(v):.1f}' class='g-grilla'/>")
+        c.append(_t(izq - 8, Ya(v) + 4, fv(v), ancla="end", tam=11))
+    c.append(f"<line x1='{izq}' x2='{W - der}' y1='{Ya(0):.1f}' y2='{Ya(0):.1f}' class='g-cero'/>")
+    c.append(_t(izq, 14, "Resultado real", "g-t", tam=12.5, peso=650))
+    # leyenda
+    lx = W - der - 300
+    c.append(f"<rect x='{lx}' y='5' width='12' height='10' rx='2' class='g-s1'/>")
+    c.append(_t(lx + 17, 14, "de la semana", "g-t2", tam=11.5))
+    c.append(f"<line x1='{lx + 120}' x2='{lx + 136}' y1='10' y2='10' class='g-s2 g-linea'/>")
+    c.append(_t(lx + 141, 14, "acumulado", "g-t2", tam=11.5))
+    ancho_barra = max(3.0, w / len(semanas) * 0.5)
+    for ini, fin, res, acum, ph, n in semanas:
+        cx = (X(ini) + X(fin + timedelta(days=1))) / 2
+        y0, y1 = Ya(0), Ya(res)
+        top, h = min(y0, y1), max(abs(y1 - y0), 0.8)
+        c.append(f"<rect x='{cx - ancho_barra / 2:.1f}' y='{top:.1f}' width='{ancho_barra:.1f}' height='{h:.1f}' "
+                 f"rx='2' class='g-s1'/>")
+    pts = [((X(s[0]) + X(s[1] + timedelta(days=1))) / 2, Ya(s[3])) for s in semanas]
+    if len(pts) > 1:
+        c.append("<path d='M" + "L".join(f"{x:.1f},{y:.1f}" for x, y in pts) + "' class='g-s2 g-linea' fill='none'/>")
+    px, py = pts[-1]
+    c.append(f"<circle cx='{px:.1f}' cy='{py:.1f}' r='4.5' class='g-s2 g-punto'/>")
+    ult = semanas[-1][3]
+    c.append(_t(px - 8, py - 9, f"{fv(ult)}", "g-t", ancla="end", tam=12, peso=650))
+
+    # ---- panel B: lo que dejo cada hora
+    ph_vals = [s[4] for s in semanas if s[4] is not None] + ([ref_hora] if ref_hora else [])
+    c.append(_t(izq, arr_b - 12, "Lo que dejó cada hora trabajada" + (" · exploratorio" if exploratorio else ""),
+                "g-t", tam=12.5, peso=650))
+    if ph_vals:
+        tb = _nice(min(0.0, *ph_vals), max(0.0, *ph_vals), 3)
+        lb, hb = tb[0], tb[-1]
+        Yb = lambda v: arr_b + alto_b - (v - lb) / ((hb - lb) or 1) * alto_b
+        for v in tb:
+            c.append(f"<line x1='{izq}' x2='{W - der}' y1='{Yb(v):.1f}' y2='{Yb(v):.1f}' class='g-grilla'/>")
+            c.append(_t(izq - 8, Yb(v) + 4, fv(v), ancla="end", tam=11))
+        if lb < 0 < hb:
+            c.append(f"<line x1='{izq}' x2='{W - der}' y1='{Yb(0):.1f}' y2='{Yb(0):.1f}' class='g-cero'/>")
+        if ref_hora:
+            c.append(f"<line x1='{izq}' x2='{W - der}' y1='{Yb(ref_hora):.1f}' y2='{Yb(ref_hora):.1f}' "
+                     "class='g-ref' stroke-dasharray='5 4'/>")
+            c.append(_t(W - der, Yb(ref_hora) - 5, f"Tiene que aportar {fv(ref_hora)}", "g-t", ancla="end", tam=11))
+        pb = [((X(s[0]) + X(s[1] + timedelta(days=1))) / 2, Yb(s[4]), s) for s in semanas if s[4] is not None]
+        if len(pb) > 1:
+            c.append("<path d='M" + "L".join(f"{x:.1f},{y:.1f}" for x, y, _ in pb)
+                     + "' class='g-s1 g-linea' fill='none' stroke-opacity='.55'/>")
+        for x, y, s in pb:
+            # Hueco si es exploratorio: el punto existe, pero no es firme.
+            estilo = "fill='var(--superficie)' stroke-width='2'" if exploratorio else ""
+            c.append(f"<circle cx='{x:.1f}' cy='{y:.1f}' r='4.5' class='g-s1 g-punto' {estilo}/>")
+    else:
+        c.append(_t(izq, arr_b + 30, "Todavía no hay horas trabajadas.", "g-t2", tam=12))
+
+    # ---- eje x: el lunes de cada semana
+    paso = max(1, math.ceil(len(semanas) / 10))
+    for i in range(0, len(semanas), paso):
+        d = semanas[i][0]
+        c.append(_t(X(d) + 2, alto - 10, f"{d:%d/%m}", ancla="start", tam=11))
+
+    # ---- hitos: una linea que cruza los dos paneles, con su numero arriba
+    for dia, numero, texto in hitos:
+        if not (x0 <= dia <= x1):
+            continue
+        hx = X(dia)
+        c.append(f"<line x1='{hx:.1f}' x2='{hx:.1f}' y1='26' y2='{arr_b + alto_b}' class='g-ref' "
+                 "stroke-dasharray='2 4' stroke-opacity='.8'/>")
+        c.append(f"<circle cx='{hx:.1f}' cy='30' r='8' class='g-marca'><title>{escape(f'{dia:%d/%m}: {texto}')}"
+                 "</title></circle>")
+        c.append(_t(hx, 34, str(numero), "g-hito-num", ancla="middle", tam=10.5, peso=700))
+
+    # ---- hover: una columna por semana con todo lo de esa semana
+    for ini, fin, res, acum, ph, n in semanas:
+        a, b = X(ini), X(fin + timedelta(days=1))
+        txt = (f"Semana del {ini:%d/%m}: {n} {'flete' if n == 1 else 'fletes'} · resultado {fv(res)} · "
+               f"acumulado {fv(acum)}" + (f" · {fv(ph)} por hora" if ph is not None else ""))
+        c.append(f"<rect x='{a:.1f}' y='{arr_a}' width='{b - a:.1f}' height='{arr_b + alto_b - arr_a}' "
+                 f"class='g-toque'><title>{escape(txt)}</title></rect>")
+    return (f"<svg class='grafico grafico-ancho' viewBox='0 0 {W} {alto}' width='100%' role='img' "
+            f"aria-label='{escape(titulo)}' xmlns='http://www.w3.org/2000/svg'>{''.join(c)}</svg>")

@@ -6,14 +6,26 @@
   {% include "_numeros_tabs.html" %}
 </div>
 
-<section class="panel">
-  <h2>¿Cuál es la forma más simple de cumplir este mes?</h2>
-  <p class="eval-titular">{{ v.frase }}</p>
-  {% if v.cumple %}<p class="ayuda">Cumple: {{ v.cumple|join(", ") }}.</p>{% endif %}
-  <p class="nota">Orden de preferencia: cumplir tus prioridades, con la menor cantidad de horas, de km vacíos, de desgaste y de días pico; recién después, más ganancia.</p>
+<section class="veredicto">
+  <h2 class="veredicto-pregunta">¿Cuál es la forma más simple de cumplir este mes?</h2>
+  <p class="veredicto-titular">{{ v.frase|titular }}</p>
 </section>
 
-{% if encadenar %}
+
+
+
+
+<aside class="lateral-texto" aria-label="Lectura del plan">
+  <p class="lateral-titulo">Lo que dice</p>
+  <div class="texto-suelto">
+  {% if v.frase|detalle %}<p class="veredicto-detalle">{{ v.frase|detalle }}</p>{% endif %}
+  {% if v.cumple %}<p class="veredicto-detalle">Cumple: {{ v.cumple|join(", ") }}.</p>{% endif %}
+  <details class="leer"><summary>Cómo elige</summary>
+    <p>Orden de preferencia: cumplir tus prioridades, con la menor cantidad de horas, de km vacíos, de desgaste y de días pico; recién después, más ganancia.</p>
+  </details>
+  </div>
+  {% if v.exploratorio %}<p class="aviso">{{ icono("aviso") }}<span>Escenarios exploratorios: el margen, las horas o la conversión todavía tienen pocos datos. Sirven para comparar, no para decidir.</span></p>{% endif %}
+  {% if encadenar %}
 <section class="panel">
   <h2>Fletes que se pueden encadenar</h2>
   <ul class="frases">
@@ -21,12 +33,19 @@
   </ul>
 </section>
 {% endif %}
+  <section class="panel">
+    <h2>La simulación</h2>
+    <p class="frases-p">En 8 de cada 10 meses simulados, lo que deja el mes cae entre <strong>{{ v.sim.p10 }}</strong> y <strong>{{ v.sim.p90 }}</strong> (el del medio: {{ v.sim.p50 }}). La camioneta se paga sola en el {{ v.sim.se_paga }} de los meses; en el {{ v.sim.rotura }} hay una rotura grande.</p>
+  </section>
+</aside>
 
-<section class="panel">
+<div class="eco-grilla">
+<section class="panel grafico-tarjeta">
   <h2>¿Qué pasa si…?</h2>
-  {% if v.exploratorio %}<p class="aviso">{{ icono("aviso") }}<span>Escenarios exploratorios: el margen, las horas o la conversión todavía tienen pocos datos. Sirven para comparar, no para decidir.</span></p>{% endif %}
-  <p class="ayuda">Lo que queda en el mes después de uso, publicidad, estructura y cuota. En naranja, tu punto de partida.</p>
   {{ v.graficos.escenarios | safe }}
+  <details class="leer"><summary>Cómo leerlo</summary>
+    <p>Lo que queda en el mes después de uso, publicidad, estructura y cuota. En naranja, tu punto de partida.</p>
+  </details>
   <details class="como-tabla"><summary>Ver como tabla (horas, km, cuota y viajes cubiertos)</summary>
   <div class="tabla-scroll">
   <table class="cuentas">
@@ -40,13 +59,35 @@
   </details>
 </section>
 
-<section class="panel">
-  <h2>¿Dónde deja de tener sentido agregar trabajo?</h2>
-  <h3 class="sub-titulo">Lo que deja el mes según las horas</h3>
+<section class="panel grafico-tarjeta">
+  <h2>Simulación del mes (exploración, no pronóstico)</h2>
+  {% if v.sim.exploratoria %}<p class="aviso">{{ icono("aviso") }}<span>Escenario exploratorio: hay insumos críticos con pocos datos.</span></p>{% endif %}
+  {{ v.graficos.sim | safe }}
+  <div class="probas">
+    <div><strong class="num">{{ v.sim.p50 }}</strong><span>el mes del medio</span></div>
+    <div><strong class="num">{{ v.sim.se_paga }}</strong><span>de los meses se paga sola</span></div>
+    <div><strong class="num">{{ v.sim.rotura }}</strong><span>con una rotura grande</span></div>
+  </div>
+  <details>
+    <summary>Con qué calidad entra cada dato</summary>
+    <ul class="firmeza">{% for n, q in v.sim.entradas %}<li><span>{{ n|capitalize }}</span><span>{{ q }}</span></li>{% endfor %}</ul>
+  </details>
+</section>
+</div>
+
+<h2 class="seccion-eco">¿Dónde deja de tener sentido agregar trabajo?</h2>
+<div class="eco-grilla">
+<section class="panel grafico-tarjeta">
+  <h3 class="tarjeta-h">Lo que deja el mes según las horas</h3>
   {{ v.graficos.deja | safe }}
-  <h3 class="sub-titulo">Ganancia por hora según los fletes</h3>
+</section>
+
+<section class="panel grafico-tarjeta">
+  <h3 class="tarjeta-h">Ganancia por hora según los fletes</h3>
   {{ v.graficos.por_hora | safe }}
-  <p class="ayuda">El promedio puede seguir subiendo porque los fijos se reparten; lo que importa es cuánto agrega cada hora de más (naranja). Cargá cuánto vale para vos una hora libre en Camioneta y aparece como línea: donde la naranja la cruza hacia abajo, más trabajo ya no conviene.</p>
+  <details class="leer"><summary>Cómo leerlo</summary>
+    <p>El promedio puede seguir subiendo porque los fijos se reparten; lo que importa es cuánto agrega cada hora de más (naranja). Cargá cuánto vale para vos una hora libre en Camioneta y aparece como línea: donde la naranja la cruza hacia abajo, más trabajo ya no conviene.</p>
+  </details>
   <details class="como-tabla"><summary>Ver como tabla</summary>
   <div class="tabla-scroll">
   <table class="cuentas">
@@ -59,15 +100,5 @@
   </div>
   </details>
 </section>
-
-<section class="panel">
-  <h2>Simulación del mes (exploración, no pronóstico)</h2>
-  {% if v.sim.exploratoria %}<p class="aviso">{{ icono("aviso") }}<span>Escenario exploratorio: hay insumos críticos con pocos datos.</span></p>{% endif %}
-  {{ v.graficos.sim | safe }}
-  <p>En 8 de cada 10 meses simulados, lo que deja el mes cae entre <strong>{{ v.sim.p10 }}</strong> y <strong>{{ v.sim.p90 }}</strong> (el del medio: {{ v.sim.p50 }}). La camioneta se paga sola en el {{ v.sim.se_paga }} de los meses; en el {{ v.sim.rotura }} hay una rotura grande.</p>
-  <details>
-    <summary>Con qué calidad entra cada dato</summary>
-    <ul class="firmeza">{% for n, q in v.sim.entradas %}<li><span>{{ n|capitalize }}</span><span>{{ q }}</span></li>{% endfor %}</ul>
-  </details>
-</section>
+</div>
 {% endblock %}

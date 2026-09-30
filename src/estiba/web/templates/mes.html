@@ -1,48 +1,72 @@
 {% extends "base.html" %}
 {% from "_macros.html" import icono %}
 {% block contenido %}
+{# Al centro: la respuesta en una linea, los numeros que la sostienen y los
+   graficos por orden de importancia (evolucion, escalera, resultado, dia).
+   A la derecha, en la compu: el porque, los avisos y las prioridades. #}
 <div class="encabezado">
   <h1>Números</h1>
   {% include "_numeros_tabs.html" %}
 </div>
 
-<section class="panel" id="mes">
-  <h2>¿Cómo estoy este mes?</h2>
-  <p class="eval-titular">{{ v.frase }}</p>
-  <p class="nota">{{ v.nota }}</p>
-  {% if v.aprender %}<p class="ayuda">Lo que más necesitamos aprender ahora: {{ v.aprender }} <a href="/numeros/validacion">Ver la evidencia</a></p>{% endif %}
+<section class="veredicto tono-{{ v.tono }}" id="mes">
+  <h2 class="veredicto-pregunta">¿Cómo estoy este mes?</h2>
+  <p class="veredicto-titular">{{ v.frase|titular }}</p>
 </section>
 
-{% for a in v.avisos %}
-<p class="aviso">{{ icono("aviso") }}<span>{{ a }}</span></p>
-{% endfor %}
 
-<section class="panel" id="escalera">
-  <h2>Hasta dónde llegó</h2>
-  <p class="ayuda">Lo que dejaron los fletes ({{ v.disponible }}, después de ayudantes y publicidad) cubre estos escalones en orden.</p>
-  {{ v.graficos.escalera | safe }}
-  <ol class="leyenda-escalera">
-    {% for e in v.escalones %}
-    <li class="{{ 'alcanzado' if e.alcanzado }}"><span class="num-esc">{{ e.nivel }}</span><span>{{ "✓ " if e.alcanzado }}{{ e.nombre }}{% if e.sin_definir %} <small>· sin monto: definilo en Camioneta</small>{% endif %}</span><span class="monto">{{ e.monto }}</span></li>
-    {% endfor %}
-  </ol>
-</section>
 
-{% if v.graficos.dia %}
-<section class="panel" id="dia">
-  <h2>¿Cuándo se pagó?</h2>
-  {{ v.graficos.dia | safe }}
-  <p class="nota">Día del mes. Cuando la línea cruza "Se paga sola", lo que venga va a tus fondos y a lo que querés.</p>
-</section>
-{% endif %}
-
-<section class="kpis" aria-label="Indicadores">
-  {% for etq, valor, nota in v.indicadores %}
-  <div class="kpi"><span class="kpi-etq">{{ etq }}</span><span class="kpi-val num">{{ valor }}</span><span class="kpi-nota">{{ nota }}</span></div>
+<section class="kpis kpis-eco" aria-label="Indicadores">
+  <div class="kpi kpi-hero"><span class="kpi-etq">Resultado real del mes, a hoy</span><span class="kpi-val num {{ v.resultado|signo }}">{{ v.resultado }}</span><span class="kpi-nota">cobrado menos todo lo que cuesta</span></div>
+  {% for etq, valor, nota in v.indicadores[:3] %}
+  <div class="kpi"><span class="kpi-etq">{{ etq }}</span><span class="kpi-val num {{ valor|signo }}">{{ valor }}</span><span class="kpi-nota">{{ nota }}</span></div>
   {% endfor %}
 </section>
+{# Lo que sigue importa menos: una tira, no cuatro tarjetas mas. #}
+<ul class="kpis-mini" aria-label="Más indicadores">
+  {% if curso %}<li><span>En curso</span> <strong class="num">~{{ curso.esperado }}</strong> <small>esperado</small></li>{% endif %}
+  {% for etq, valor, nota in v.indicadores[3:] %}
+  <li title="{{ nota }}"><span>{{ etq }}</span> <strong class="num {{ valor|signo }}">{{ valor }}</strong>{% if nota %} <small>{{ nota }}</small>{% endif %}</li>
+  {% endfor %}
+</ul>
 
-<section class="panel" id="prioridades">
+<aside class="lateral-texto" aria-label="Lectura del mes">
+  <p class="lateral-titulo">Lo que dice</p>
+  <div class="texto-suelto">
+    {% if v.frase|detalle %}<p class="veredicto-detalle">{{ v.frase|detalle }}</p>{% endif %}
+    <p>{{ v.nota }}</p>
+    {% if evo %}<p class="veredicto-detalle">{{ evo.frase }}</p>{% endif %}
+    {% if v.aprender %}<p>Lo que más necesitamos aprender ahora: {{ v.aprender }} <a href="/numeros/validacion">Ver la evidencia</a></p>{% endif %}
+  </div>
+  {% if curso %}
+  <section class="panel en-curso" id="en-curso">
+    <h2>En curso{% if curso.exploratorio %}<span class="chip-explora">exploratorio</span>{% endif %}</h2>
+    <p class="en-curso-resumen"><strong class="num">~{{ curso.esperado }}</strong> esperado de {{ curso.n }} {{ "consulta abierta" if curso.n == 1 else "consultas abiertas" }} <small>(entre {{ curso.lo }} y {{ curso.hi }}; si se hicieran todas, {{ curso.total }})</small></p>
+    {% if curso.vencidos %}<p class="aviso">{{ icono("aviso") }}<span>{{ curso.vencidos }} {{ "tiene" if curso.vencidos == 1 else "tienen" }} fecha pasada y sigue{{ "n" if curso.vencidos > 1 }} abierto{{ "s" if curso.vencidos > 1 }}: si se hizo, cerralo para que cuente.</span></p>{% endif %}
+    <ul class="curso-lista">
+      {% for f in curso.filas %}
+      <li class="{{ 'vencido' if f.vencido }}">
+        <a href="/fletes/{{ f.job }}"><strong>{{ f.quien }}</strong></a>
+        <span class="num">{{ f.monto }}</span>
+        <small>{{ f.etapa }}{% if f.cuando %} · {{ "era el " if f.vencido else "para el " }}{{ f.cuando }}{% endif %} · {{ f.fuente }} · se hace {{ f.prob }}</small>
+      </li>
+      {% endfor %}
+    </ul>
+    <details class="leer"><summary>Cómo se calcula</summary>
+      <p>Cada consulta vale su precio por la probabilidad de terminar en flete. La probabilidad sale de tu historia en esa etapa: de las que llegaron hasta ahí y ya se resolvieron, cuántas se hicieron. El precio es lo que le cotizaste; si no, lo que calcula Estiba con la ruta; si no hay ruta, tu precio base.</p>
+    </details>
+  </section>
+  {% endif %}
+  <section class="panel fuentes" id="fuentes">
+    <h2>De dónde salen estos números</h2>
+    <ul class="fuentes-lista">
+      {% for f in fuentes %}<li><span class="nivel nivel-{{ f.nivel }}">{{ f.nivel }}</span><strong>{{ f.dato }}</strong><small>{{ f.origen }}</small></li>{% endfor %}
+    </ul>
+  </section>
+  {% for a in v.avisos %}
+<p class="aviso">{{ icono("aviso") }}<span>{{ a }}</span></p>
+{% endfor %}
+  <section class="panel" id="prioridades">
   <h2>Tus prioridades del mes</h2>
   <ul class="frases">
     {% for texto, ok in v.prioridades %}<li>{{ "✓ " if ok }}{{ texto }}</li>{% endfor %}
@@ -61,15 +85,71 @@
     </form>
   </details>
 </section>
+</aside>
 
-<section class="panel">
+<div class="eco-grilla">
+{% if evo %}
+{# La linea de tiempo: lo unico que ocupa la fila entera, porque es la que
+   explica las demas (que paso, cuando, y que cambio despues). #}
+<section class="panel grafico-tarjeta ancho evolucion" id="evolucion">
+  <h2>¿Cómo viene? Semana a semana{% if evo.exploratorio %}<span class="chip-explora">exploratorio</span>{% endif %}</h2>
+  <div class="scroll-x">{{ evo.grafico | safe }}</div>
+  {% if evo.hitos %}
+  <ol class="hitos" aria-label="Hitos">
+    {% for h in evo.hitos %}<li><span class="hito-num">{{ h.n }}</span><time>{{ h.fecha }}</time> {{ h.texto }}</li>{% endfor %}
+  </ol>
+  {% endif %}
+  <details class="leer"><summary>Cómo leerlo</summary>
+    <p>Arriba, el resultado real de cada semana (barras) y lo acumulado desde el primer día (línea): cobrado menos camioneta, ayudantes, publicidad pagada y fijos de esos días. Abajo, lo que dejó cada hora trabajada ya pagada la publicidad, contra lo que cada hora tiene que aportar para cubrir la estructura. Los números marcan los hitos. {% if evo.exploratorio %}Con tan pocos fletes, los puntos van huecos: la forma orienta, el valor todavía no es firme.{% endif %}</p>
+  </details>
+  <details class="como-tabla"><summary>Ver como tabla</summary>
+  <div class="tabla-scroll">
+  <table class="cuentas">
+    <tr><th>Semana</th><th>Fletes</th><th>Cobrado</th><th>Publicidad</th><th>Fijos</th><th>Resultado</th><th>Acumulado</th><th>Por hora</th></tr>
+    {% for s in evo.tabla %}<tr><th scope="row">{{ s.semana }}</th><td class="num">{{ s.fletes }}</td><td class="num">{{ s.cobrado }}</td><td class="num">{{ s.publicidad }}</td><td class="num">{{ s.fijos }}</td><td class="num">{{ s.resultado }}</td><td class="num">{{ s.acumulado }}</td><td class="num">{{ s.por_hora }}</td></tr>{% endfor %}
+  </table>
+  </div>
+  </details>
+</section>
+{% endif %}
+
+<section class="panel grafico-tarjeta" id="escalera">
+  <h2>Hasta dónde llegó</h2>
+  {{ v.graficos.escalera | safe }}
+  <ol class="leyenda-escalera">
+    {% for e in v.escalones %}
+    <li class="{{ 'alcanzado' if e.alcanzado }}"><span class="num-esc">{{ e.nivel }}</span><span>{{ "✓ " if e.alcanzado }}{{ e.nombre }}{% if e.sin_definir %} <small>· sin monto: definilo en Camioneta</small>{% endif %}</span><span class="monto">{{ e.monto }}</span></li>
+    {% endfor %}
+  </ol>
+  <details class="leer"><summary>Cómo leerlo</summary>
+    <p>Lo que dejaron los fletes ({{ v.disponible }}, después de ayudantes y publicidad) cubre estos escalones en orden.</p>
+  </details>
+</section>
+
+
+<section class="panel grafico-tarjeta" id="resultado">
   <h2>Resultado real del mes, a hoy</h2>
-  <p class="ritmo-cifra"><span class="num">{{ v.resultado }}</span></p>
   {% if v.graficos.resultado %}{{ v.graficos.resultado | safe }}{% endif %}
-  <p class="ayuda">Lo que ganaste de verdad: cobrado menos uso de la camioneta, publicidad, ayudantes y la parte de los fijos de estos días. No incluye la cuota entera (solo su interés, si lo cargaste) ni lo que apartás en fondos.</p>
-  {% for s in v.sin_contar %}<p class="nota">No cuenta {{ s }}.</p>{% endfor %}
+  <details class="leer"><summary>Qué cuenta y qué no</summary>
+    <p>Lo que ganaste de verdad: cobrado menos uso de la camioneta, publicidad, ayudantes y la parte de los fijos de estos días. No incluye la cuota entera (solo su interés, si lo cargaste) ni lo que apartás en fondos.</p>
+    {% for s in v.sin_contar %}<p>No cuenta {{ s }}.</p>{% endfor %}
+  </details>
   <details class="como-tabla"><summary>Ver como tabla</summary>
     <table class="cuentas">{% for n, m in v.pasos %}<tr><th scope="row">{{ n }}</th><td class="num">{{ m }}</td></tr>{% endfor %}</table>
   </details>
 </section>
+
+{% if v.graficos.dia %}
+<section class="panel grafico-tarjeta" id="dia">
+  <h2>¿Cuándo se pagó?</h2>
+  {{ v.graficos.dia | safe }}
+  <details class="leer"><summary>Cómo leerlo</summary>
+    <p>Día del mes. Cuando la línea cruza "Se paga sola", lo que venga va a tus fondos y a lo que querés.</p>
+  </details>
+</section>
+{% endif %}
+
+
+
+</div>
 {% endblock %}

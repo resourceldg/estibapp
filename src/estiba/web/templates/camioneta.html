@@ -6,27 +6,43 @@
   {% include "_numeros_tabs.html" %}
 </div>
 
-<section class="panel" id="rinde">
-  <h2>¿Hasta dónde rinde tu precio base?</h2>
-  <p class="ritmo-cifra"><span class="num">{{ v.precio_base }}</span> <small>precio base</small></p>
-  <p class="eval-titular">{{ v.rinde[0] }}</p>
-  {{ v.graficos.rinde | safe }}
-  <p class="nota">Lo que hace falta cobrar para cubrir la camioneta y lo que cada hora tiene que aportar. Mientras la línea queda debajo del precio base, el base alcanza.</p>
-  <ul class="frases">
-    {% for f in v.rinde[1:] %}<li>{{ f }}</li>{% endfor %}
-  </ul>
-  <p class="nota">Cuenta {{ v.rinde_tipo }}, con tus costos y tus horas deseadas: {{ v.horas_deseadas }}.</p>
+<section class="veredicto" id="rinde">
+  <h2 class="veredicto-pregunta">¿Hasta dónde rinde tu precio base?</h2>
+  <p class="veredicto-titular">{{ v.rinde[0] }}</p>
+  <p class="veredicto-pie">Precio base <strong class="num">{{ v.precio_base }}</strong> · Cuenta {{ v.rinde_tipo }}, con tus costos y tus horas deseadas: {{ v.horas_deseadas }}.</p>
 </section>
 
-{% for a in v.avisos %}
+
+
+<aside class="lateral-texto" aria-label="Lectura de la camioneta">
+  {% for a in v.avisos %}
 <p class="aviso">{{ icono("aviso") }}<span>{{ a }}</span></p>
 {% endfor %}
+  <section class="panel">
+    <h2>Hasta dónde rinde</h2>
+    <ul class="frases">
+      {% for f in v.rinde[1:] %}<li>{{ f }}</li>{% endfor %}
+    </ul>
+  </section>
+  <section class="panel">
+    <h2>Lo que aporta cada hora</h2>
+    <ul class="frases">
+      {% for f in v.contribucion %}<li>{{ f }}</li>{% endfor %}
+    </ul>
+  </section>
+</aside>
 
-<section class="panel" id="contribucion">
+<div class="eco-grilla">
+<section class="panel grafico-tarjeta">
+  <h2>Precio que hace falta según los km</h2>
+  {{ v.graficos.rinde | safe }}
+  <details class="leer"><summary>Cómo leerlo</summary>
+    <p>Lo que hace falta cobrar para cubrir la camioneta y lo que cada hora tiene que aportar. Mientras la línea queda debajo del precio base, el base alcanza.</p>
+  </details>
+</section>
+
+<section class="panel grafico-tarjeta" id="contribucion">
   <h2>Cuánto tiene que aportar cada hora</h2>
-  <ul class="frases">
-    {% for f in v.contribucion %}<li>{{ f }}</li>{% endfor %}
-  </ul>
   {{ v.graficos.reparto | safe }}
   <details class="como-tabla">
     <summary>Ver como tabla</summary>
@@ -38,7 +54,10 @@
     </table>
   </details>
 </section>
+</div>
 
+<h2 class="seccion-eco">Configurar</h2>
+<div class="eco-grilla eco-forms">
 <section class="panel costos" id="precio-base">
   <h2>Precio base</h2>
   <p class="ayuda">El valor de referencia desde el que se arma una cotización. No es el mínimo ni lo que cobrás en promedio. Cada cambio queda guardado.</p>
@@ -103,7 +122,7 @@
 </section>
 
 {% if despues %}
-<section class="panel" id="despues">
+<section class="panel ancho" id="despues">
   <h2>Cuando termines de pagar la camioneta</h2>
   <p>{{ despues.frase }}</p>
   {% if despues.sugerencia %}<p class="ayuda">{{ despues.sugerencia }}</p>{% endif %}
@@ -137,7 +156,7 @@
   {% endfor %}
 </section>
 
-<section class="panel costos" id="reparaciones">
+<section class="panel costos ancho" id="reparaciones">
   <h2>Reparaciones y días parada</h2>
   <p class="ayuda">Lo único nuevo que conviene anotar a mano. Una reparación grande (caja, motor, embrague…) es la que tiene que salir del fondo; los días parada se ven como fletes que no se pudieron hacer.</p>
   <form class="form-gasto" method="post" action="/numeros/camioneta/reparacion">
@@ -165,4 +184,5 @@
     <button class="btn secundario" type="submit">Guardar</button>
   </form>
 </section>
+</div>
 {% endblock %}
