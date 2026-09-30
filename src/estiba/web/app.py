@@ -60,7 +60,10 @@ from estiba.conversation.clasificacion import _DESDE_PUBLI
 from estiba.extraction.texto import plano
 from estiba.finanzas.precio import BASE_DEFAULT
 from estiba.economia import cargar as eco
+from estiba.economia import mes as eco_mes
 from estiba.economia import registro
+from estiba.economia.cuentas import Actividad
+from estiba.economia.cuentas import cuentas as cuentas_economia
 from estiba.economia.config import Camioneta, Credito, Disponibilidad, Fondo, a_json
 from estiba.web import economia_vista as EV
 from estiba.formato import pesos, telefono
@@ -696,8 +699,19 @@ def create_app(
         filtro = f if f in validos else "todos"
         return templates.TemplateResponse(
             request, "bandeja.html",
-            _contexto(request, **_conversaciones(filtro), por_confirmar=_por_confirmar(), titulo="Hoy"),
+            _contexto(request, **_conversaciones(filtro), por_confirmar=_por_confirmar(), titulo="Hoy",
+                      linea_mes=_linea_mes()),
         )
+
+    def _linea_mes() -> str | None:
+        """Una sola linea en Hoy: como va la camioneta este mes. Si algo falla,
+        no se muestra: Hoy es para trabajar, no para auditar."""
+        try:
+            m, _ = _mes_actual()
+        except Exception:
+            logging.getLogger(__name__).exception("no se pudo calcular el mes")
+            return None
+        return EV.frase_mes(m)
 
     @app.get("/agenda", response_class=HTMLResponse, include_in_schema=False)
     def pagina_agenda(request: Request, mes: str | None = None):
@@ -1470,6 +1484,73 @@ def create_app(
                                 Decimal(objetivo) if objetivo else None))
         _guardar_eco("fondos", a_json(tuple(fondos)))
         return RedirectResponse("/numeros/camioneta#fondos", status_code=303)
+
+
+    # ------------------------------------------------------------------
+    # ¿Como estoy? El mes de la camioneta
+    # ------------------------------------------------------------------
+
+    def _fletes_del_mes(e, hoy: date) -> tuple[list, list]:
+        """Los hechos del mes y los de los 60 dias anteriores, con lo mejor que se sepa
+        de cada uno: el cierre confirmado, si no la evaluacion, si no tu promedio."""
+        conn = estado.conectar()
+        try:
+            reales = FleteRealRepository(conn).todos()
+        finally:
+            conn.close()
+        uso_prom_km, uso_prom_h = e.costos.km_por_flete, e.costos.horas_flete
+        salida = []
+        for h in _fletes_hechos():
+            r = reales.get(h.job_id)
+            ev = estado.resultado.evaluaciones.get(h.job_id)
+            est = registro.desde_evaluacion(ev) if ev else None
+            km_ = (r.km if r and r.km is not None else None) or (est.km if est else None) or uso_prom_km
+            vacios = (r.km_vacios if r and r.km_vacios is not None else None) or (est.km_vacios if est else None)
+            horas_ = (r.horas if r and r.horas is not None else None) or (est.horas if est else None) or uso_prom_h
+            salida.append(eco_mes.FleteDelMes(
+                job_id=h.job_id, dia=h.dia, cobrado=h.cobrado or Decimal(0), km=km_, km_vacios=vacios,
+                horas=horas_ + (r.espera_h if r else Decimal(0)),
+                directos=r.directos if r else (est.ayudante_pagado if est else Decimal(0)),
+                recurrente=(r.canal == "recurrente") if r else bool(ev and ev.cliente.recurrente),
+                medido=bool(r and r.medido)))
+        desde = hoy.replace(day=1)
+        return ([f for f in salida if desde <= f.dia <= hoy],
+                sorted((f for f in salida if desde - timedelta(days=60) <= f.dia < desde), key=lambda f: f.dia))
+
+    def _prioridades() -> tuple[str, ...]:
+        conn = estado.conectar()
+        try:
+            return eco_mes.prioridades_desde(EconomiaRepository(conn).config("prioridades"))
+        finally:
+            conn.close()
+
+    def _mes_actual():
+        hoy = estado.ahora().date()
+        e = _economia()
+        del_mes, historia = _fletes_del_mes(e, hoy)
+        _, gastos = _gastos()
+        publicidad = eco_mes.publicidad_diaria(gastos, e.costos.impuestos_publicidad, hoy.replace(day=1), hoy)
+        m = eco_mes.calcular(e, hoy, del_mes, publicidad, historia, _prioridades())
+        fraccion = Decimal(hoy.day) / Decimal(m.dias_mes)
+        c = cuentas_economia(e, hoy, Actividad(m.ingresos, m.km, m.publicidad, m.directos, m.horas), fraccion)
+        return m, c
+
+    @app.get("/numeros/mes", response_class=HTMLResponse, include_in_schema=False)
+    def pagina_mes(request: Request):
+        m, c = _mes_actual()
+        textos = {k: v[0] for k, v in eco_mes.PRIORIDADES.items()}
+        return templates.TemplateResponse(
+            request, "mes.html",
+            _contexto(request, v=EV.vista_mes(m, c, textos), opciones=list(textos.items()),
+                      elegidas=list(m.prioridades), titulo="¿Cómo estoy?"),
+        )
+
+    @app.post("/numeros/mes/prioridades", include_in_schema=False)
+    async def guardar_prioridades(request: Request):
+        form = await request.form()
+        elegidas = [str(form.get(f"p{i}", "")) for i in range(3)]
+        _guardar_eco("prioridades", list(eco_mes.prioridades_desde([p for p in elegidas if p])))
+        return RedirectResponse("/numeros/mes#prioridades", status_code=303)
 
     # ------------------------------------------------------------------
     # Panel: analitica y exportacion, fuera de la mensajeria

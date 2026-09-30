@@ -228,3 +228,71 @@ def estimado_cierre(ev) -> dict | None:
     partes.append(horas(r.horas))
     partes.append(f"ayudantes {plata(r.ayudante_pagado)}" if r.ayudante_pagado else "sin ayudantes")
     return {"linea": " · ".join(partes), "canal": r.canal}
+
+
+# --------------------------------------------------------------------------
+# ¿Como estoy? El mes de la camioneta
+# --------------------------------------------------------------------------
+
+
+def _pct(x: float | None) -> str:
+    return "—" if x is None else f"{x:.0%}"
+
+
+def frase_mes(m) -> str:
+    """La linea que responde "¿como voy?". Nunca empuja a trabajar mas."""
+    if m.objetivo_cumplido:
+        return "Objetivo del mes alcanzado. No necesitás tomar más trabajos para cumplir lo que te propusiste."
+    if m.dia_autofinanciado is not None:
+        return (f"La camioneta se pagó el {m.dia_autofinanciado.day}. "
+                "Lo que venga ahora va a tus fondos y a lo que querés.")
+    if m.fletes_que_faltan is None:
+        return "Con los números de hoy no se puede decir cuánto falta: revisá tus costos."
+    if m.fletes_que_faltan > m.capacidad_restante:
+        # No se empuja a compensar: se muestra como un dato de la estructura.
+        return (f"Este mes la camioneta no llega a pagarse sola con tu ritmo cómodo: faltarían unos "
+                f"{m.fletes_que_faltan} fletes como los últimos y no entran en lo que queda. "
+                "No es para compensar trabajando más: es para revisar precio, costos o cuota.")
+    if not m.fletes:
+        return (f"Todavía no hay fletes este mes. Para que la camioneta se pague sola hacen falta unos "
+                f"{m.fletes_que_faltan} como los últimos.")
+    return (f"Faltan unos {m.fletes_que_faltan} fletes como los últimos para que la camioneta se pague sola "
+            "este mes.")
+
+
+def vista_mes(m, economico, prioridades_texto: dict[str, str]) -> dict:
+    from estiba.economia.mes import tipo_de_horas
+
+    tipo_h = ETIQUETA_TIPO[tipo_de_horas(m)]
+    horas_eco = economico.resultado_economico / m.horas if m.horas else None
+    por_100 = economico.resultado_economico / m.km * 100 if m.km else None
+    confianza = (f"el margen típico sale de {m.margen_tipico_casos} fletes"
+                 if m.margen_tipico_casos else "sin fletes todavía: se usa el precio base")
+    indicadores = [
+        ("La camioneta se pagó", _pct(m.autonomia) if m.autonomia is not None else "—",
+         "de lo que cuesta sostenerla y conservarla este mes"),
+        ("Horas para que se pague sola", horas(m.horas_para_autofinanciar) if m.horas_para_autofinanciar else "—",
+         f"todavía no se pagó" if m.dia_autofinanciado is None else f"hasta el {m.dia_autofinanciado:%d/%m} · {tipo_h}"),
+        ("Horas trabajadas", horas(m.horas),
+         f"de {horas(m.horas_deseadas)} que querés · {tipo_h}" if m.horas_deseadas else tipo_h),
+        ("Resultado real por hora", plata(horas_eco),
+         "a hoy, con los fijos del mes prorrateados; no es lo que cada hora tiene que aportar"),
+        ("Por cada 100 km", plata(por_100), "resultado real por 100 km de camioneta"),
+        ("Km", km(m.km), f"{_pct(m.deadhead)} sin carga" if m.deadhead is not None else "sin tramos"),
+        ("Fletes", str(len(m.fletes)),
+         f"ticket {plata(m.ticket)} · {_pct(m.recurrentes)} de clientes que vuelven" if m.fletes else ""),
+    ]
+    return {
+        "frase": frase_mes(m),
+        "nota": f"Cuenta de caja: la cuota entra entera. ({confianza})",
+        "escalones": [{"nivel": x.nivel, "nombre": x.nombre, "monto": plata(x.monto), "detalle": x.detalle,
+                       "lleno": round(x.lleno * 100), "alcanzado": x.nivel <= m.nivel,
+                       "sin_definir": x.nivel > 3 and x.monto == 0} for x in m.escalones],
+        "nivel": m.nivel,
+        "disponible": plata(m.disponible),
+        "indicadores": indicadores,
+        "prioridades": [(prioridades_texto[p], m.cumplidas.get(p, False)) for p in m.prioridades],
+        "avisos": m.avisos,
+        "sin_contar": economico.sin_contar,
+        "resultado": plata(economico.resultado_economico),
+    }

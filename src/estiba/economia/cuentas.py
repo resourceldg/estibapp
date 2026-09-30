@@ -62,21 +62,23 @@ class Cuentas:
         return suma(self.reserva)
 
 
-def cuentas(e: Economia, mes: date, a: Actividad) -> Cuentas:
+def cuentas(e: Economia, mes: date, a: Actividad, fraccion: Decimal = Decimal(1)) -> Cuentas:
+    """`fraccion`: que parte del mes se mira (los fijos, la cuota y los aportes se
+    prorratean; lo que paso en los fletes no)."""
     uso = costo_uso_km(e)
     ingreso = Parte("Cobrado", a.ingresos, Tipo.MEDIDO)
     usar = Parte(f"Uso de la camioneta ({a.km:.0f} km)", -a.km * uso.monto, uso.tipo)
     publi = Parte("Publicidad pagada", -a.publicidad_pagada, Tipo.MEDIDO)
     directos = Parte("Ayudantes y gastos de los fletes", -a.directos, Tipo.MEDIDO)
-    estructura = [Parte(p.nombre, -p.monto, p.tipo, p.detalle) for p in estructura_mes(e)]
+    estructura = [Parte(p.nombre, -p.monto * fraccion, p.tipo, p.detalle) for p in estructura_mes(e)]
     comunes = [ingreso, usar, publi, directos, *estructura]
 
-    reserva = [Parte(p.nombre, p.monto, p.tipo, p.detalle)
+    reserva = [Parte(p.nombre, p.monto * fraccion, p.tipo, p.detalle)
                for p in fondos_mes(e, CONSERVACION) + fondos_mes(e, PERSONAL)]
     caja = list(comunes)
     cuota = cuota_mes(e, mes)
     if cuota is not None:
-        caja.append(Parte(cuota.nombre, -cuota.monto, cuota.tipo, cuota.detalle))
+        caja.append(Parte(cuota.nombre, -cuota.monto * fraccion, cuota.tipo, cuota.detalle))
     caja += [Parte(f"Apartado para {p.nombre.lower()}", -p.monto, p.tipo) for p in reserva]
 
     economico = list(comunes)
@@ -87,10 +89,10 @@ def cuentas(e: Economia, mes: date, a: Actividad) -> Cuentas:
         if interes is None:
             sin_contar.append("el interés del crédito: no cargaste qué parte de la cuota es interés")
         else:
-            economico.append(Parte("Interés del crédito", -interes, Tipo.DECLARADO))
-            capital = cuota.monto - interes
+            economico.append(Parte("Interés del crédito", -interes * fraccion, Tipo.DECLARADO))
+            capital = (cuota.monto - interes) * fraccion
     if e.camioneta.depreciacion_mes is not None:
-        economico.append(Parte("Depreciación (supuesto)", -e.camioneta.depreciacion_mes, Tipo.SUPUESTO,
+        economico.append(Parte("Depreciación (supuesto)", -e.camioneta.depreciacion_mes * fraccion, Tipo.SUPUESTO,
                                "la cargaste como estimación"))
     else:
         sin_contar.append("la depreciación de la camioneta: no hay un criterio defendible todavía")

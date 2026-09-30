@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icono %}
+{% block contenido %}
+<div class="encabezado">
+  <h1>Números</h1>
+  {% include "_numeros_tabs.html" %}
+</div>
+
+<section class="panel" id="mes">
+  <h2>¿Cómo estoy este mes?</h2>
+  <p class="eval-titular">{{ v.frase }}</p>
+  <p class="nota">{{ v.nota }}</p>
+</section>
+
+{% for a in v.avisos %}
+<p class="aviso">{{ icono("aviso") }}<span>{{ a }}</span></p>
+{% endfor %}
+
+<section class="panel" id="escalera">
+  <h2>Hasta dónde llegó</h2>
+  <p class="ayuda">Lo que dejaron los fletes ({{ v.disponible }}, después de ayudantes y publicidad) sube por estos escalones, en orden.</p>
+  <ol class="escalera">
+    {% for e in v.escalones %}
+    <li class="{{ 'alcanzado' if e.alcanzado }}{{ ' sin-definir' if e.sin_definir }}">
+      <div class="esc-cab"><strong>{{ e.nombre }}</strong><span class="num">{{ e.monto }}</span></div>
+      <div class="esc-pista" role="img" aria-label="{{ e.lleno }}%"><span style="width: {{ e.lleno }}%"></span></div>
+      <small>{% if e.sin_definir %}sin monto: definilo en Camioneta{% else %}{{ e.detalle }}{% endif %}</small>
+    </li>
+    {% endfor %}
+  </ol>
+</section>
+
+<section class="kpis" aria-label="Indicadores">
+  {% for etq, valor, nota in v.indicadores %}
+  <div class="kpi"><span class="kpi-etq">{{ etq }}</span><span class="kpi-val num">{{ valor }}</span><span class="kpi-nota">{{ nota }}</span></div>
+  {% endfor %}
+</section>
+
+<section class="panel" id="prioridades">
+  <h2>Tus prioridades del mes</h2>
+  <ul class="frases">
+    {% for texto, ok in v.prioridades %}<li>{{ "✓ " if ok }}{{ texto }}</li>{% endfor %}
+  </ul>
+  <details>
+    <summary>Cambiar (hasta 3, en orden)</summary>
+    <form method="post" action="/numeros/mes/prioridades" class="form-gasto">
+      {% for i in range(3) %}
+      <label>{{ i + 1 }}.
+        <select name="p{{ i }}">
+          <option value="">—</option>
+          {% for clave, texto in opciones %}<option value="{{ clave }}"{% if elegidas|length > i and elegidas[i] == clave %} selected{% endif %}>{{ texto }}</option>{% endfor %}
+        </select></label>
+      {% endfor %}
+      <button class="btn secundario" type="submit">Guardar</button>
+    </form>
+  </details>
+</section>
+
+<section class="panel">
+  <h2>Resultado real del mes, a hoy</h2>
+  <p class="ritmo-cifra"><span class="num">{{ v.resultado }}</span></p>
+  <p class="ayuda">Lo que ganaste de verdad: cobrado menos uso de la camioneta, publicidad, ayudantes y la parte de los fijos de estos días. No incluye la cuota entera (solo su interés, si lo cargaste) ni lo que apartás en fondos.</p>
+  {% for s in v.sin_contar %}<p class="nota">No cuenta {{ s }}.</p>{% endfor %}
+</section>
+{% endblock %}
