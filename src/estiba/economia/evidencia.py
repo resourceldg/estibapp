@@ -125,6 +125,10 @@ class Validacion:
     meta: Decimal
     compatibilidad: list[Compatibilidad] = field(default_factory=list)
     conclusion: str = ""
+    #: Horas por mes que pediria la meta (lo, medio, hi), contra las deseadas y el maximo.
+    horas_meta: tuple[float, float, float] | None = None
+    horas_deseadas: float | None = None
+    horas_maximas: float | None = None
 
 
 def _rango_fletes(necesario: Decimal, s: Suficiencia) -> tuple[int | None, int | None, int | None]:
@@ -200,6 +204,10 @@ def validar(e: Economia, cat: Catalogo, hoy: date, meta: Decimal = Decimal(1_000
     necesario = meta + fijo
     lo, medio, hi = _rango_fletes(necesario, m)
     veredicto_horas = None
+    horas_meta = None
+    if medio is not None:
+        horas_meta = (float(Decimal(lo or medio) * h_flete), float(Decimal(medio) * h_flete),
+                      float(Decimal(hi or medio) * h_flete))
     if medio is None:
         comp.append(Compatibilidad("margen", "Sin margen medido no se puede estimar.", Estado.EXPLORATORIO))
     else:
@@ -241,4 +249,6 @@ def validar(e: Economia, cat: Catalogo, hoy: date, meta: Decimal = Decimal(1_000
         conclusion = "Aun en el peor caso de lo que se ve hoy, entra en tus horas."
     else:
         conclusion = "Todavía no tenemos suficiente evidencia para responder."
-    return Validacion(a_favor, en_contra, no_sabemos, prox.falta if prox else None, meta, comp, conclusion)
+    h_max = float(e.disponibilidad.fletes_mes(pico=True) * h_flete)
+    return Validacion(a_favor, en_contra, no_sabemos, prox.falta if prox else None, meta, comp, conclusion,
+                      horas_meta, float(h_des) if h_des else None, h_max)

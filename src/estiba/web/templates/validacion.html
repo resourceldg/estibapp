@@ -24,42 +24,52 @@
 <section class="panel">
   <h2>¿Puede reemplazar {{ "${:,.0f}".format(v.meta).replace(",", ".") }} por mes sin pedirte más tiempo?</h2>
   <p class="eval-titular">{{ v.conclusion }}</p>
-  <table class="cuentas">
+  {{ grafico_horas | safe }}
+  <p class="nota">En naranja, las horas por mes que pediría con el margen de hoy (el punto, lo más probable; la banda, lo que permiten los datos).</p>
+  <ul class="firmeza">
     {% for c in v.compatibilidad %}
-    <tr><th scope="row">{{ c.dimension|capitalize }}<small>{{ c.estado.etiqueta }}</small></th><td>{{ c.frase }}</td></tr>
+    <li><span><span class="pips" aria-label="{{ c.estado.etiqueta }}">{% for i in range(4) %}<i class="{{ 'on' if i <= c.estado.value }}"></i>{% endfor %}</span><strong>{{ c.dimension|capitalize }}</strong></span><small>{{ c.frase }}</small></li>
     {% endfor %}
-  </table>
+  </ul>
 </section>
 
 <section class="panel">
   <h2>Qué tan firme es cada dato</h2>
-  <p class="ayuda">Exploratorio · emergente · utilizable · robusto. No depende solo de cuántos casos hay: también de cuánto varían, de qué tan viejos son, de si vienen de pocos clientes y de si son medidos o estimados.</p>
-  <table class="cuentas">
+  <p class="ayuda">Cuatro pasos: exploratorio, emergente, utilizable, robusto. No depende solo de cuántos casos hay: también de cuánto varían, de qué tan viejos son, de si vienen de pocos clientes y de si son medidos o estimados.</p>
+  <ul class="firmeza">
     {% for x in metricas %}
-    <tr><th scope="row">{{ x.metrica }}<small>{{ x.estado }}{% if x.razones %} · {{ x.razones }}{% endif %}</small></th>
-        <td class="num">{{ x.valor }}</td></tr>
+    <li><span><span class="pips" aria-label="{{ x.estado }}">{% for i in range(4) %}<i class="{{ 'on' if i < x.pips }}"></i>{% endfor %}</span>{{ x.metrica }}</span><span class="num">{{ x.valor }}</span>
+        <small>{{ x.estado }}{% if x.razones %} · {{ x.razones }}{% endif %}</small></li>
     {% endfor %}
-  </table>
+  </ul>
 </section>
+
 <section class="panel">
   <h2>Lo que se aprende de tu historia</h2>
   <p class="ayuda">Margen por hora, por tipo de flete, por cómo llegó el cliente y por cuántos fletes hubo ese día. Nada se afirma sin datos suficientes.</p>
-  {% for titulo, filas in [("Por tipo de flete", h.segmentos), ("Por cómo llegó el cliente", h.canales), ("Por jornada", h.jornadas)] %}
+  <p class="nota">Cada punto es el margen por hora; la línea, lo que permiten los datos. En gris, lo que todavía no alcanza para concluir.</p>
+  {% for titulo, clave, filas in [("Por tipo de flete", "segmentos", h.segmentos), ("Por cómo llegó el cliente", "canales", h.canales), ("Por jornada", "jornadas", h.jornadas)] %}
   <h3 class="sub-titulo">{{ titulo }}</h3>
+  {% if h.graficos[clave] %}{{ h.graficos[clave] | safe }}{% else %}<p class="ayuda">Sin fletes todavía.</p>{% endif %}
+  <details class="como-tabla"><summary>Ver como tabla</summary>
   <table class="cuentas">
     {% for g in filas %}
     <tr><th scope="row">{{ g.nombre|capitalize }}<small>{{ g.n }} {{ "flete" if g.n == 1 else "fletes" }} · {{ g.estado }}{% if g.nota %} · {{ g.nota }}{% endif %}</small></th>
-        <td class="num">{{ g.valor }}{% if g.valor != "—" %}<small> por hora</small>{% endif %}</td></tr>
-    {% else %}<tr><td>Sin fletes todavía.</td></tr>{% endfor %}
+        <td class="num">{{ g.valor }}</td></tr>
+    {% endfor %}
   </table>
+  </details>
   {% endfor %}
   <p class="ayuda">{{ h.conclusion_jornadas }}</p>
   {% if h.ltv %}
-  <h3 class="sub-titulo">Lo que deja cada cliente (LTV)</h3>
+  <h3 class="sub-titulo">Lo que dejó cada cliente (LTV)</h3>
+  {{ h.graficos.ltv | safe }}
+  <details class="como-tabla"><summary>Ver como tabla</summary>
   <table class="cuentas">
     <tr><th>Cliente</th><th>Fletes</th><th>Margen</th><th>Costó conseguirlo</th><th>Deja</th></tr>
     {% for c in h.ltv %}<tr><td>{{ c.cliente }}</td><td class="num">{{ c.fletes }}</td><td class="num">{{ c.margen }}</td><td class="num">{{ c.cac }}</td><td class="num">{{ c.ltv }}</td></tr>{% endfor %}
   </table>
+  </details>
   {% endif %}
   <h3 class="sub-titulo">Costo de oportunidad</h3>
   <p class="ayuda">{{ h.oportunidad }}</p>

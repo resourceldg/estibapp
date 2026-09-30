@@ -121,6 +121,11 @@ class Mes:
     reparaciones_caja: Decimal = CERO
     dias_parada: int = 0
     fletes_perdidos: Decimal = CERO
+    #: Dia a dia: lo que dejaron los fletes (despues de uso y publicidad), acumulado.
+    acumulado: tuple[tuple[date, Decimal], ...] = ()
+    #: Lo que tiene que cubrir ese acumulado: estructura y estructura + cuota.
+    estructura: Decimal = CERO
+    obligacion: Decimal = CERO
     avisos: list[str] = field(default_factory=list)
 
     @property
@@ -204,6 +209,7 @@ def calcular(e: Economia, hoy: date, fletes: list[FleteDelMes], publicidad_por_d
     obligacion = escalones[1].monto + escalones[2].monto
     dia_ok, horas_ok = None, None
     acum_d, acum_h = CERO, CERO
+    serie = []
     d = desde
     while d <= hoy:
         hoy_fletes = [f for f in del_mes if f.dia == d]
@@ -211,6 +217,7 @@ def calcular(e: Economia, hoy: date, fletes: list[FleteDelMes], publicidad_por_d
         acum_h += sum((f.horas for f in hoy_fletes), CERO)
         if dia_ok is None and hoy_fletes and acum_d >= obligacion:
             dia_ok, horas_ok = d, acum_h
+        serie.append((d, acum_d))
         d += timedelta(days=1)
 
     # Cuanto falta, en fletes como los ultimos (la mediana: uno regalado no arrastra).
@@ -250,7 +257,8 @@ def calcular(e: Economia, hoy: date, fletes: list[FleteDelMes], publicidad_por_d
                       .replace(",", "."))
     return Mes(
         capacidad_restante=restantes, reparaciones_caja=reparaciones_caja, dias_parada=dias_parada,
-        fletes_perdidos=fletes_perdidos,
+        fletes_perdidos=fletes_perdidos, acumulado=tuple(serie), estructura=escalones[1].monto,
+        obligacion=obligacion,
         desde=desde, hasta=hoy, dias_mes=dias_mes, fletes=del_mes, ingresos=ingresos, publicidad=publicidad,
         directos=directos, disponible=disponible, km=km, km_vacios=km_vacios, horas=horas,
         horas_deseadas=h_des, escalones=escalones, nivel=nivel, autonomia=autonomia,

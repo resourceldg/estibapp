@@ -1492,3 +1492,45 @@ details > summary { cursor: pointer; margin-top: 10px; color: var(--tinta-2); fo
 .linea-mes { margin: 0 0 12px; font-size: 14px; color: var(--tinta-2); }
 .linea-mes a { color: inherit; }
 .tabla-scroll { overflow-x: auto; }
+
+/* Graficos del motor economico (web/graficos_eco.py). Paleta categorica
+   validada contra --superficie con la skill de dataviz: azul, naranja,
+   aqua, amarillo, magenta, siempre en ese orden. El texto usa tintas, nunca
+   el color de la serie. */
+.grafico { display: block; margin: 12px 0 4px; overflow: visible; }
+.grafico .g-t { fill: var(--tinta); }
+.grafico .g-t2 { fill: var(--tenue); }
+.grafico .g-sobre { fill: #fff; }
+.grafico .g-grilla { stroke: var(--linea); stroke-width: 1; }
+.grafico .g-cero { stroke: var(--linea-2); stroke-width: 1.2; }
+.grafico .g-ref { stroke: var(--tinta-2); stroke-width: 1; }
+.grafico .g-s1 { fill: #3987e5; stroke: #3987e5; }
+.grafico .g-s2 { fill: #d95926; stroke: #d95926; }
+.grafico .g-s3 { fill: #199e70; stroke: #199e70; }
+.grafico .g-s4 { fill: #c98500; stroke: #c98500; }
+.grafico .g-s5 { fill: #d55181; stroke: #d55181; }
+.grafico .g-apagado { fill: #6b6873; stroke: #6b6873; }
+.grafico .g-contexto { fill: #4a4852; stroke: #4a4852; }
+.grafico .g-pista { fill: var(--superficie-3); }
+.grafico .g-banda { fill-opacity: .35; stroke-width: 0; }
+.grafico .g-linea { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.grafico .g-bigote { stroke-width: 2; stroke-linecap: round; }
+.grafico .g-punto { stroke: var(--superficie); stroke-width: 2; }
+.grafico .g-marca { fill: var(--tinta); }
+.grafico .g-marca-linea { stroke: var(--tinta); stroke-width: 2; }
+.grafico .g-toque { fill: transparent; stroke: none; }
+.grafico .g-toque:hover { fill: rgb(255 255 255 / .04); }
+.leyenda-escalera { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; font-size: 13px; }
+.leyenda-escalera li { display: flex; gap: 8px; align-items: baseline; color: var(--tinta-2); }
+.leyenda-escalera li.alcanzado { color: var(--tinta); }
+.leyenda-escalera .num-esc { min-width: 1.4em; font-weight: 600; }
+.leyenda-escalera .monto { margin-left: auto; font-variant-numeric: tabular-nums; }
+.pips { display: inline-flex; gap: 3px; vertical-align: middle; margin-right: 6px; }
+.pips i { width: 9px; height: 9px; border-radius: 50%; background: var(--superficie-3); }
+.pips i.on { background: #3987e5; }
+.firmeza { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
+.firmeza li { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; font-size: 14px; }
+.firmeza li small { grid-column: 1 / -1; color: var(--tenue); font-size: 12px; }
+.medidor { height: 8px; border-radius: 4px; background: var(--superficie-3); overflow: hidden; margin: 6px 0; }
+.medidor span { display: block; height: 100%; background: #3987e5; border-radius: 4px; }
+.como-tabla > summary { font-size: 12px; }

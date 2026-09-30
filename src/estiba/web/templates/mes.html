@@ -19,17 +19,22 @@
 
 <section class="panel" id="escalera">
   <h2>Hasta dónde llegó</h2>
-  <p class="ayuda">Lo que dejaron los fletes ({{ v.disponible }}, después de ayudantes y publicidad) sube por estos escalones, en orden.</p>
-  <ol class="escalera">
+  <p class="ayuda">Lo que dejaron los fletes ({{ v.disponible }}, después de ayudantes y publicidad) cubre estos escalones en orden.</p>
+  {{ v.graficos.escalera | safe }}
+  <ol class="leyenda-escalera">
     {% for e in v.escalones %}
-    <li class="{{ 'alcanzado' if e.alcanzado }}{{ ' sin-definir' if e.sin_definir }}">
-      <div class="esc-cab"><strong>{{ e.nombre }}</strong><span class="num">{{ e.monto }}</span></div>
-      <div class="esc-pista" role="img" aria-label="{{ e.lleno }}%"><span style="width: {{ e.lleno }}%"></span></div>
-      <small>{% if e.sin_definir %}sin monto: definilo en Camioneta{% else %}{{ e.detalle }}{% endif %}</small>
-    </li>
+    <li class="{{ 'alcanzado' if e.alcanzado }}"><span class="num-esc">{{ e.nivel }}</span><span>{{ "✓ " if e.alcanzado }}{{ e.nombre }}{% if e.sin_definir %} <small>· sin monto: definilo en Camioneta</small>{% endif %}</span><span class="monto">{{ e.monto }}</span></li>
     {% endfor %}
   </ol>
 </section>
+
+{% if v.graficos.dia %}
+<section class="panel" id="dia">
+  <h2>¿Cuándo se pagó?</h2>
+  {{ v.graficos.dia | safe }}
+  <p class="nota">Día del mes. Cuando la línea cruza "Se paga sola", lo que venga va a tus fondos y a lo que querés.</p>
+</section>
+{% endif %}
 
 <section class="kpis" aria-label="Indicadores">
   {% for etq, valor, nota in v.indicadores %}
@@ -60,7 +65,11 @@
 <section class="panel">
   <h2>Resultado real del mes, a hoy</h2>
   <p class="ritmo-cifra"><span class="num">{{ v.resultado }}</span></p>
+  {% if v.graficos.resultado %}{{ v.graficos.resultado | safe }}{% endif %}
   <p class="ayuda">Lo que ganaste de verdad: cobrado menos uso de la camioneta, publicidad, ayudantes y la parte de los fijos de estos días. No incluye la cuota entera (solo su interés, si lo cargaste) ni lo que apartás en fondos.</p>
   {% for s in v.sin_contar %}<p class="nota">No cuenta {{ s }}.</p>{% endfor %}
+  <details class="como-tabla"><summary>Ver como tabla</summary>
+    <table class="cuentas">{% for n, m in v.pasos %}<tr><th scope="row">{{ n }}</th><td class="num">{{ m }}</td></tr>{% endfor %}</table>
+  </details>
 </section>
 {% endblock %}

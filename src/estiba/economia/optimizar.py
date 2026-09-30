@@ -313,6 +313,8 @@ class Simulacion:
     con_rotura: float
     exploratoria: bool
     entradas: list[tuple[str, str]]
+    #: Lo que dejo cada mes simulado, para dibujar la distribucion.
+    valores: tuple[float, ...] = ()
 
 
 def simular_mes(e: Economia, b: Base, mes, cobrados: list[float], kms: list[float], *,
@@ -348,7 +350,8 @@ def simular_mes(e: Economia, b: Base, mes, cobrados: list[float], kms: list[floa
     q = lambda x: orden[min(len(orden) - 1, int(x * len(orden)))]
     entradas = [(nombre, estado.etiqueta) for nombre, estado in b.calidad.items()]
     entradas += [("roturas", "escenario (supuesto)"), ("saturación de la publicidad", "supuesto")]
-    return Simulacion(q(0.1), q(0.5), q(0.9), pagas / meses, roturas / meses, b.exploratoria, entradas)
+    return Simulacion(q(0.1), q(0.5), q(0.9), pagas / meses, roturas / meses, b.exploratoria, entradas,
+                      tuple(resultados))
 
 
 def _poisson(r: random.Random, lam: float) -> int:

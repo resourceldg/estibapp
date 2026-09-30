@@ -23,6 +23,7 @@ from estiba.economia.estructura import (
 )
 from estiba.economia.modelo import Parte, Tipo
 from estiba.formato import pesos
+from estiba.web import graficos_eco as G
 
 ETIQUETA_TIPO = {
     Tipo.DECLARADO: "lo cargaste vos",
@@ -84,6 +85,7 @@ def renglones(partes: list[Parte]) -> list[Renglon]:
 
 @dataclass
 class VistaCamioneta:
+    graficos: dict
     precio_base: str
     #: La respuesta a "¿bajo que condiciones mi base sigue siendo rentable?".
     rinde: list[str]
@@ -94,6 +96,27 @@ class VistaCamioneta:
     historial: list[dict]
     credito: dict
     avisos: list[str] = field(default_factory=list)
+
+
+def _grafico_rinde(e: Economia, hoy: date, r: RindeBase, w: Contribucion) -> str:
+    """El precio que hace falta segun los km totales, contra el precio base."""
+    from estiba.economia.estructura import horas_de
+    from estiba.economia.pedido import Cliente, cac_de
+
+    if w.objetivo is None or r.km_max is None:
+        return ""
+    uso = e.costos.costo_km
+    cac = cac_de(e, Cliente(por_publicidad=True)).monto or Decimal(0)
+    tope = max(120, int(float(r.km_max) * 1.8) // 10 * 10)
+    xs = [float(k) for k in range(0, tope + 1, 5)]
+    necesario = lambda k, extra: float(Decimal(k) * uso + horas_de(e, Decimal(k)) * w.objetivo + extra)
+    series = [("Cliente que vuelve", [necesario(k, 0) for k in xs], "g-s1")]
+    if cac:
+        series.append(("Cliente nuevo por publicidad", [necesario(k, cac) for k in xs], "g-s2"))
+    return G.linea(xs, series, G.pesos_cortos, lambda k: f"{k:.0f} km",
+                   refs=[(float(e.precio_base), f"Precio base {plata(e.precio_base)}")],
+                   marcas=[(float(r.km_max), float(e.precio_base), f"Rinde hasta {km(r.km_max)}")],
+                   titulo="Precio que hace falta según los km del flete")
 
 
 def _frases_rinde(r: RindeBase) -> list[str]:
@@ -154,7 +177,11 @@ def vista_camioneta(e: Economia, hoy: date, historial) -> VistaCamioneta:
         "restantes": cr.restantes(hoy), "ultima": cr.ultima().strftime("%m/%Y") if cr.ultima() else None,
         "interes": _campo(cr.interes_mes),
     }
+    graficos = {"rinde": _grafico_rinde(e, hoy, r, w),
+                "reparto": G.apilada([(corto(p_.nombre), float(p_.monto)) for p_ in w.partes_objetivo],
+                                     G.pesos_cortos, titulo="Qué se reparte entre tus horas")}
     return VistaCamioneta(
+        graficos=graficos,
         precio_base=plata(e.precio_base),
         rinde=_frases_rinde(r),
         rinde_tipo=ETIQUETA_TIPO[r.tipo],
@@ -278,6 +305,22 @@ def frase_mes(m, rango: tuple[int, int] | None = None) -> str:
             "este mes.")
 
 
+#: Nombres cortos para los graficos: la etiqueta tiene que entrar entera.
+CORTOS = {
+    "Seguro, patente y VTV/GNC de la camioneta": "Seguro, patente, VTV",
+    "Monotributo, celular y otros del negocio": "Monotributo y celular",
+    "Ayudantes y gastos de los fletes": "Ayudantes",
+    "Publicidad pagada": "Publicidad",
+    "Interés del crédito": "Interés",
+    "Depreciación (supuesto)": "Depreciación (sup.)",
+}
+
+
+def corto(nombre: str) -> str:
+    base = nombre.split(" (")[0] if not nombre.startswith("Depreciación") else nombre
+    return CORTOS.get(nombre, CORTOS.get(base, base))
+
+
 def vista_mes(m, economico, prioridades_texto: dict[str, str], cat=None) -> dict:
     from estiba.economia.mes import tipo_de_horas
     from estiba.economia.suficiencia import lo_que_mas_falta
@@ -309,7 +352,29 @@ def vista_mes(m, economico, prioridades_texto: dict[str, str], cat=None) -> dict
         ("Fletes", str(len(m.fletes)),
          f"ticket {plata(m.ticket)} · {_pct(m.recurrentes)} de clientes que vuelven" if m.fletes else ""),
     ]
+    graficos = {
+        "escalera": G.escalera([(x.nombre, float(x.monto)) for x in m.escalones], float(m.disponible),
+                               G.pesos_cortos, titulo="Hasta dónde llegó el mes"),
+    }
+    if m.fletes and m.acumulado:
+        dias = [float(d.day) for d, _ in m.acumulado]
+        marcas = []
+        if m.dia_autofinanciado is not None:
+            valor = next(float(v) for d, v in m.acumulado if d == m.dia_autofinanciado)
+            marcas.append((float(m.dia_autofinanciado.day), valor, f"Se pagó el {m.dia_autofinanciado.day}"))
+        graficos["dia"] = G.linea(
+            dias, [("Lo que dejaron los fletes", [float(v) for _, v in m.acumulado], "g-s1")], G.pesos_cortos,
+            lambda x: f"{int(x)}", refs=[(float(m.estructura), "Paga su estructura"),
+                                         (float(m.obligacion), "Se paga sola")],
+            marcas=marcas, titulo="Lo que dejaron los fletes, día a día")
+    pasos = [("Cobrado", float(economico.economico[0].monto))]
+    pasos += [(corto(p_.nombre), float(p_.monto)) for p_ in economico.economico[1:] if p_.monto]
+    pasos.append(("Resultado real", float(economico.resultado_economico)))
+    if m.ingresos:
+        graficos["resultado"] = G.cascada(pasos, G.pesos_cortos, titulo="De lo cobrado al resultado real")
     return {
+        "graficos": graficos,
+        "pasos": [(n, plata(Decimal(str(v)))) for n, v in pasos],
         "frase": frase_mes(m, rango),
         "aprender": aprender,
         "nota": f"Cuenta de caja: la cuota entra entera. ({confianza})",
@@ -340,6 +405,7 @@ def vista_catalogo(cat) -> list[dict]:
         else:
             valor = "—"
         salida.append({"metrica": x.metrica.capitalize(), "estado": x.estado.etiqueta, "valor": valor,
+                       "pips": x.estado.value + 1,
                        "razones": "; ".join(x.razones), "falta": x.falta, "n": x.n})
     return salida
 
@@ -349,7 +415,7 @@ def vista_catalogo(cat) -> list[dict]:
 # --------------------------------------------------------------------------
 
 
-def vista_plan(rec, escenarios, puntos, marginales, conviene_hasta, mejor, sim, m) -> dict:
+def vista_plan(rec, escenarios, puntos, marginales, conviene_hasta, mejor, sim, m, valor_libre=None) -> dict:
     exploratorio = rec.exploratoria
     fmt = (lambda x: f"~{plata(x)}") if exploratorio else plata
     filas = []
@@ -373,7 +439,27 @@ def vista_plan(rec, escenarios, puntos, marginales, conviene_hasta, mejor, sim, 
                       "promedio": fmt(Decimal(str(p.por_hora))) if p.por_hora is not None else "—",
                       "marginal": fmt(Decimal(str(marg))) if marg is not None else "—",
                       "marca": " · ".join(marca)})
+    base = escenarios[0].nombre if escenarios else ""
+    graficos = {
+        "escenarios": G.barras(
+            [(x.nombre.replace("Fondo de mantenimiento", "Fondo mant."), x.deja,
+              "g-s2" if x.nombre == base else "g-s1") for x in escenarios],
+            G.pesos_cortos, titulo="Lo que deja el mes en cada escenario", izq=196),
+        "deja": G.linea([p.horas for p in puntos], [("Lo que deja el mes", [p.deja for p in puntos], "g-s1")],
+                        G.pesos_cortos, lambda h: f"{h:.0f} h", refs=[(0.0, "Se paga sola")],
+                        titulo="Lo que deja el mes según las horas trabajadas"),
+        "por_hora": G.linea(
+            [float(p.fletes) for p in puntos],
+            [("Promedio por hora", [p.por_hora for p in puntos], "g-s1"),
+             ("Cada hora de más", [None] + [m_ for m_ in marginales[1:]], "g-s2")],
+            G.pesos_cortos, lambda n: f"{n:.0f}",
+            refs=[(float(valor_libre), "Tu hora libre")] if valor_libre else [],
+            titulo="Ganancia por hora según los fletes del mes"),
+        "sim": G.histograma(list(sim.valores), G.pesos_cortos, ref=(0.0, "Se paga sola"),
+                            titulo="Lo que deja el mes en cada mes simulado"),
+    }
     return {
+        "graficos": graficos,
         "frase": rec.frase,
         "cumple": rec.cumple, "afuera": rec.afuera,
         "exploratorio": exploratorio,
@@ -399,14 +485,57 @@ def _fila_grupo(g) -> dict:
             "nota": "" if s.fuerte else (s.razones[0] if s.razones else s.falta)}
 
 
-def vista_historia(segmentos, canales, jornadas, conclusion_jornadas, valores, oportunidad) -> dict:
+def _con_nombre(g, nombre: str):
+    from dataclasses import replace as _r
+
+    return _r(g, nombre=nombre)
+
+
+def _intervalos(grupos, titulo: str) -> str:
+    filas = [(g.nombre, g.margen_hora.valor, g.margen_hora.lo, g.margen_hora.hi, g.margen_hora.fuerte,
+              f"{g.n} {'flete' if g.n == 1 else 'fletes'}, {g.margen_hora.estado.etiqueta}") for g in grupos]
+    return G.intervalos(filas, G.pesos_cortos, titulo=titulo)
+
+
+def grafico_horas_meta(v) -> str:
+    """Las horas que pediria la meta, como rango, contra lo que queres dar y tu maximo."""
+    if v.horas_meta is None:
+        return ""
+    lo, medio, hi = v.horas_meta
+    refs = []
+    if v.horas_deseadas:
+        refs.append((v.horas_deseadas, f"Querés dar {v.horas_deseadas:.0f} h"))
+    if v.horas_maximas:
+        refs.append((v.horas_maximas, f"Tu máximo {v.horas_maximas:.0f} h"))
+    return G.rango(lo, hi, medio, refs, lambda h: f"{h:.0f} h", etiqueta="Horas por mes que pediría",
+                   titulo="Horas por mes que pediría la meta")
+
+
+from estiba.economia.registro import CANALES as _CANALES
+
+CANAL_NOMBRE = dict(_CANALES)
+
+
+def vista_historia(segmentos, canales, jornadas, conclusion_jornadas, valores, oportunidad,
+                   nombres: dict[str, str] | None = None) -> dict:
+    from estiba.formato import telefono
+
     ok_oportunidad, porque = oportunidad
+    nombre = lambda c: ((nombres or {}).get(c) or telefono(c))[:18]
     return {
+        "graficos": {
+            "segmentos": _intervalos(segmentos, "Margen por hora por tipo de flete"),
+            "canales": _intervalos([_con_nombre(g, CANAL_NOMBRE.get(g.nombre, g.nombre)) for g in canales],
+                                   "Margen por hora por cómo llegó el cliente"),
+            "jornadas": _intervalos(jornadas, "Margen por hora por jornada"),
+            "ltv": G.barras([(nombre(v_.cliente), float(v_.ltv), "g-s1" if v_.ltv >= 0 else "g-s2")
+                             for v_ in valores[:8]], G.pesos_cortos, titulo="Lo que dejó cada cliente", izq=150),
+        },
         "segmentos": [_fila_grupo(g) for g in segmentos],
-        "canales": [_fila_grupo(g) for g in canales],
+        "canales": [_fila_grupo(_con_nombre(g, CANAL_NOMBRE.get(g.nombre, g.nombre))) for g in canales],
         "jornadas": [_fila_grupo(g) for g in jornadas],
         "conclusion_jornadas": conclusion_jornadas or "Todavía no hay jornadas suficientes para comparar.",
-        "ltv": [{"cliente": v.cliente, "fletes": v.fletes, "margen": plata(v.margen), "cac": plata(v.cac),
+        "ltv": [{"cliente": nombre(v.cliente), "fletes": v.fletes, "margen": plata(v.margen), "cac": plata(v.cac),
                  "ltv": plata(v.ltv)} for v in valores[:8]],
         "oportunidad": "Se calcula con la historia." if ok_oportunidad else f"Todavía no: {porque}.",
     }

@@ -9,8 +9,11 @@
 <section class="panel" id="rinde">
   <h2>¿Hasta dónde rinde tu precio base?</h2>
   <p class="ritmo-cifra"><span class="num">{{ v.precio_base }}</span> <small>precio base</small></p>
+  <p class="eval-titular">{{ v.rinde[0] }}</p>
+  {{ v.graficos.rinde | safe }}
+  <p class="nota">Lo que hace falta cobrar para cubrir la camioneta y lo que cada hora tiene que aportar. Mientras la línea queda debajo del precio base, el base alcanza.</p>
   <ul class="frases">
-    {% for f in v.rinde %}<li>{{ f }}</li>{% endfor %}
+    {% for f in v.rinde[1:] %}<li>{{ f }}</li>{% endfor %}
   </ul>
   <p class="nota">Cuenta {{ v.rinde_tipo }}, con tus costos y tus horas deseadas: {{ v.horas_deseadas }}.</p>
 </section>
@@ -24,8 +27,9 @@
   <ul class="frases">
     {% for f in v.contribucion %}<li>{{ f }}</li>{% endfor %}
   </ul>
-  <details>
-    <summary>Qué se reparte</summary>
+  {{ v.graficos.reparto | safe }}
+  <details class="como-tabla">
+    <summary>Ver como tabla</summary>
     <table class="cuentas">
       {% for r in v.partes_objetivo %}
       <tr><th scope="row">{{ r.nombre }}<small>{{ r.tipo }}{% if r.detalle %} · {{ r.detalle }}{% endif %}</small></th>
@@ -115,7 +119,8 @@
       <legend>{{ f.nombre }}</legend>
       <div class="campo"><label for="f-{{ f.clave }}-aporte">Aporte por mes</label>
         <span class="entrada"><span class="unidad">$</span><input id="f-{{ f.clave }}-aporte" name="{{ f.clave }}__aporte_mes" value="{{ f.aporte }}" inputmode="decimal"></span></div>
-      <p class="total-grupo">Saldo: {{ f.saldo }}</p>
+      <p class="total-grupo">Saldo: {{ f.saldo }}{% if f.avance is not none %} · {{ f.avance }}% del objetivo{% endif %}</p>
+      {% if f.avance is not none %}<div class="medidor" role="img" aria-label="{{ f.avance }}% del objetivo"><span style="width: {{ f.avance }}%"></span></div>{% endif %}
       <div class="campo"><label for="f-{{ f.clave }}-obj">Objetivo acumulado<small>opcional</small></label>
         <span class="entrada"><span class="unidad">$</span><input id="f-{{ f.clave }}-obj" name="{{ f.clave }}__objetivo" value="{{ f.objetivo }}" inputmode="decimal"></span></div>
     </fieldset>

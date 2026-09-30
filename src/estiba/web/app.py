@@ -1441,7 +1441,9 @@ def create_app(
         finally:
             conn.close()
         fondos = [{"clave": f.clave, "nombre": f.nombre, "aporte": EV.campo(f.aporte_mes) if f.aporte_mes else "",
-                   "objetivo": EV.campo(f.objetivo), "saldo": EV.plata(saldos[f.clave])} for f in e.fondos]
+                   "objetivo": EV.campo(f.objetivo), "saldo": EV.plata(saldos[f.clave]),
+                   "avance": (min(100, max(0, round(float(saldos[f.clave] / f.objetivo * 100))))
+                              if f.objetivo else None)} for f in e.fondos]
         return templates.TemplateResponse(
             request, "camioneta.html",
             _contexto(request, v=EV.vista_camioneta(e, hoy, historial), disp=disp, activo=activo, fondos=fondos,
@@ -1672,7 +1674,8 @@ def create_app(
                                                optimizar.hasta_donde_conviene(
                                                    puntos, float(e.disponibilidad.valor_hora_libre)
                                                    if e.disponibilidad.valor_hora_libre else None),
-                                               optimizar.mejor_por_hora(puntos), sim, m),
+                                               optimizar.mejor_por_hora(puntos), sim, m,
+                                               e.disponibilidad.valor_hora_libre),
                       encadenar=[{"a": nombres[x.primero].quien if x.primero in nombres else x.primero,
                                   "b": nombres[x.segundo].quien if x.segundo in nombres else x.segundo,
                                   "dia": x.dia.strftime("%d/%m"), "km": round(x.ahorro_km)}
@@ -1709,7 +1712,7 @@ def create_app(
         return EV.vista_historia(
             historia.por_segmento(fletes, segmento_de, uso, cliente_de, hoy),
             historia.por_canal(fletes, canal_de, uso, cliente_de, hoy),
-            grupos_j, conclusion_j, historia.ltv(fletes, cliente_de, cac_de_cliente, uso), oportunidad)
+            grupos_j, conclusion_j, historia.ltv(fletes, cliente_de, cac_de_cliente, uso), oportunidad, _nombres())
 
     def _encadenables(e):
         pedidos = []
@@ -1727,6 +1730,7 @@ def create_app(
         return templates.TemplateResponse(
             request, "validacion.html",
             _contexto(request, v=v, metricas=EV.vista_catalogo(cat), h=_historia_aprendida(e, hoy),
+                      grafico_horas=EV.grafico_horas_meta(v),
                       titulo="¿Vale la pena?"),
         )
 

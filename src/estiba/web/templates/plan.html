@@ -25,6 +25,9 @@
 <section class="panel">
   <h2>¿Qué pasa si…?</h2>
   {% if v.exploratorio %}<p class="aviso">{{ icono("aviso") }}<span>Escenarios exploratorios: el margen, las horas o la conversión todavía tienen pocos datos. Sirven para comparar, no para decidir.</span></p>{% endif %}
+  <p class="ayuda">Lo que queda en el mes después de uso, publicidad, estructura y cuota. En naranja, tu punto de partida.</p>
+  {{ v.graficos.escenarios | safe }}
+  <details class="como-tabla"><summary>Ver como tabla (horas, km, cuota y viajes cubiertos)</summary>
   <div class="tabla-scroll">
   <table class="cuentas">
     <tr><th>Escenario</th><th>Fletes</th><th>Horas</th><th>Km</th><th>Deja</th><th>Cuota</th><th>Viajes</th><th>Por hora</th></tr>
@@ -34,12 +37,17 @@
     {% endfor %}
   </table>
   </div>
-  <p class="nota">"Deja" es lo que queda en el mes después de uso, publicidad, estructura y cuota. "Cuota" y "Viajes": cuánto de cada uno queda cubierto.</p>
+  </details>
 </section>
 
 <section class="panel">
   <h2>¿Dónde deja de tener sentido agregar trabajo?</h2>
-  <p class="ayuda">El promedio por hora puede seguir subiendo porque los fijos se reparten; lo que importa es cuánto agrega cada hora de más. Cargá cuánto vale para vos una hora libre en Camioneta y Estiba marca el punto.</p>
+  <h3 class="sub-titulo">Lo que deja el mes según las horas</h3>
+  {{ v.graficos.deja | safe }}
+  <h3 class="sub-titulo">Ganancia por hora según los fletes</h3>
+  {{ v.graficos.por_hora | safe }}
+  <p class="ayuda">El promedio puede seguir subiendo porque los fijos se reparten; lo que importa es cuánto agrega cada hora de más (naranja). Cargá cuánto vale para vos una hora libre en Camioneta y aparece como línea: donde la naranja la cruza hacia abajo, más trabajo ya no conviene.</p>
+  <details class="como-tabla"><summary>Ver como tabla</summary>
   <div class="tabla-scroll">
   <table class="cuentas">
     <tr><th>Fletes</th><th>Horas</th><th>Deja</th><th>Promedio por hora</th><th>Cada hora de más</th><th></th></tr>
@@ -49,15 +57,17 @@
     {% endfor %}
   </table>
   </div>
+  </details>
 </section>
 
 <section class="panel">
   <h2>Simulación del mes (exploración, no pronóstico)</h2>
   {% if v.sim.exploratoria %}<p class="aviso">{{ icono("aviso") }}<span>Escenario exploratorio: hay insumos críticos con pocos datos.</span></p>{% endif %}
+  {{ v.graficos.sim | safe }}
   <p>En 8 de cada 10 meses simulados, lo que deja el mes cae entre <strong>{{ v.sim.p10 }}</strong> y <strong>{{ v.sim.p90 }}</strong> (el del medio: {{ v.sim.p50 }}). La camioneta se paga sola en el {{ v.sim.se_paga }} de los meses; en el {{ v.sim.rotura }} hay una rotura grande.</p>
   <details>
     <summary>Con qué calidad entra cada dato</summary>
-    <table class="cuentas">{% for n, q in v.sim.entradas %}<tr><th scope="row">{{ n|capitalize }}</th><td>{{ q }}</td></tr>{% endfor %}</table>
+    <ul class="firmeza">{% for n, q in v.sim.entradas %}<li><span>{{ n|capitalize }}</span><span>{{ q }}</span></li>{% endfor %}</ul>
   </details>
 </section>
 {% endblock %}
