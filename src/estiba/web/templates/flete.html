@@ -108,7 +108,7 @@
    botones verdes compitiendo no son una jerarquia. #}
 {% set cerrar_arriba = d.cerrar_es_lo_que_sigue and not pendiente %}
 {% if cerrar_arriba %}
-<div id="cerrar-flete">{{ cerrar(f.job_id, f.cotizado_crudo) }}</div>
+<div id="cerrar-flete">{{ cerrar(f.job_id, f.cotizado_crudo, estimado=estimado, canales=canales) }}</div>
 {% endif %}
 
 {# Un flete arreglado en persona no deja rastro en el chat: ninguna regla
@@ -270,7 +270,7 @@
   <summary>{{ icono("hecho") }}Ya se hizo este flete</summary>
   <p class="ayuda">Si lo arreglaste por teléfono o en persona y no quedó en el
   chat, cerralo igual. No se puede deshacer.</p>
-  {{ cerrar(f.job_id, f.cotizado_crudo, destacado=false) }}
+  {{ cerrar(f.job_id, f.cotizado_crudo, destacado=false, estimado=estimado, canales=canales) }}
 </details>
 {% endif %}
 

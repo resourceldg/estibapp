@@ -970,3 +970,41 @@ class EconomiaRepository:
 
     def historial_precio_base(self) -> list[sqlite3.Row]:
         return self.conn.execute("SELECT * FROM precio_base ORDER BY desde DESC, id DESC").fetchall()
+
+
+class FleteRealRepository:
+    """Lo que paso de verdad en cada flete cerrado. Ver migracion 024."""
+
+    CAMPOS = ("km", "km_vacios", "horas", "espera_h", "ayudante_pagado", "otros_gastos")
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self.conn = conn
+
+    def guardar(self, job_id: str, registro, ahora: datetime) -> None:
+        valores = [None if (v := getattr(registro, c)) is None else str(v) for c in self.CAMPOS]
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO flete_real (job_id, km, km_vacios, horas, espera_h, ayudante_pagado, otros_gastos, "
+                "canal, fuente, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (job_id, *valores, registro.canal, registro.fuente, _a_texto(ahora)))
+
+    def ultimo(self, job_id: str):
+        fila = self.conn.execute(
+            "SELECT * FROM flete_real WHERE job_id = ? ORDER BY id DESC LIMIT 1", (job_id,)).fetchone()
+        return self._registro(fila) if fila else None
+
+    def todos(self) -> dict:
+        """El ultimo registro de cada flete."""
+        filas = self.conn.execute(
+            "SELECT * FROM flete_real WHERE id IN (SELECT MAX(id) FROM flete_real GROUP BY job_id)")
+        return {f["job_id"]: self._registro(f) for f in filas}
+
+    @classmethod
+    def _registro(cls, f):
+        from estiba.economia.registro import Registro
+
+        num = lambda c: Decimal(f[c]) if f[c] is not None else None
+        return Registro(km=num("km"), km_vacios=num("km_vacios"), horas=num("horas"),
+                        espera_h=num("espera_h") or Decimal(0), ayudante_pagado=num("ayudante_pagado") or Decimal(0),
+                        otros_gastos=num("otros_gastos") or Decimal(0), canal=f["canal"] or "otro",
+                        fuente=f["fuente"])

@@ -60,6 +60,7 @@ from estiba.conversation.clasificacion import _DESDE_PUBLI
 from estiba.extraction.texto import plano
 from estiba.finanzas.precio import BASE_DEFAULT
 from estiba.economia import cargar as eco
+from estiba.economia import registro
 from estiba.economia.config import Camioneta, Credito, Disponibilidad, Fondo, a_json
 from estiba.web import economia_vista as EV
 from estiba.formato import pesos, telefono
@@ -83,6 +84,7 @@ from estiba.storage.repositories import (
     CorteRepository,
     DecisionRepository,
     EconomiaRepository,
+    FleteRealRepository,
     GastoRepository,
     PanelRepository,
     SettingsRepository,
@@ -781,6 +783,8 @@ def create_app(
             request, "flete.html",
             _contexto(
                 request, d=d, cot=cot, anterior=anterior, siguiente=siguiente, filtro=filtro,
+                estimado=EV.estimado_cierre(estado.resultado.evaluaciones.get(job_id)),
+                canales=registro.CANALES,
                 plazos=PLAZOS, dudosa=bool(clase and clase.pide_decision),
                 motivos=MOTIVOS_PERDIDA,
                 clase=guardada["clase"] if guardada else None,
@@ -1733,10 +1737,39 @@ def create_app(
         return _tarjeta(request, _decidir(draft_id, False, None))
 
     @app.post("/fletes/{job_id}/realizado", include_in_schema=False)
-    def realizado_form(request: Request, job_id: str, cobrado: str = Form("")):
-        """Cerrarlo y anotar lo que se cobro, que no siempre es lo cotizado."""
+    def realizado_form(request: Request, job_id: str, cobrado: str = Form(""), visto: str = Form(""),
+                       km: str = Form(""), km_vacios: str = Form(""), horas: str = Form(""),
+                       espera_min: str = Form(""), ayudante: str = Form(""), otros: str = Form(""),
+                       canal: str = Form("")):
+        """Cerrarlo y anotar lo que se cobro y como fue de verdad.
+
+        Si el formulario mostraba la estimacion (`visto`) y no se corrigio
+        nada, queda como confirmada: "asi fue". Ver economia/registro.py.
+        """
+        estimado = registro.desde_evaluacion(estado.resultado.evaluaciones.get(job_id))
+        cambios = {
+            "km": _numero(km) if km.strip() else None,
+            "km_vacios": _numero(km_vacios) if km_vacios.strip() else None,
+            "horas": _horas(horas) if horas.strip() else None,
+            "espera_h": _numero(espera_min) / 60 if espera_min.strip() and _numero(espera_min) is not None else None,
+            "ayudante_pagado": _monto(ayudante) if ayudante.strip() else None,
+            "otros_gastos": _monto(otros) if otros.strip() else None,
+            "canal": canal.strip() or None,
+        }
         _accion(job_id, REALIZADO, None, _monto(cobrado))
+        conn = estado.conectar()
+        try:
+            FleteRealRepository(conn).guardar(job_id, registro.cerrar(estimado, visto=visto == "1", cambios=cambios),
+                                              estado.ahora())
+        finally:
+            conn.close()
         return _volver(request, f"/fletes/{job_id}")
+
+    def _horas(texto: str) -> Decimal | None:
+        """"2:30", "2,5", "2 h 30": horas como las escribe cualquiera."""
+        if m := re.fullmatch(r"\s*(\d+)\s*(?::|h)\s*(\d{1,2})?\s*(?:min)?\s*", texto):
+            return Decimal(m.group(1)) + Decimal(m.group(2) or 0) / 60
+        return _numero(texto)
 
     @app.post("/fletes/{job_id}/ajustar", include_in_schema=False)
     def ajustar_form(request: Request, job_id: str, precio: str = Form(""), fecha: str = Form(""),

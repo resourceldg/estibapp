@@ -18,7 +18,7 @@
    `compacto` es la version de una linea para la agenda: el mismo campo, el
    mismo boton y el mismo nombre, sin la etiqueta larga.
 #}
-{% macro cerrar(job_id, cotizado=none, compacto=false, destacado=true) -%}
+{% macro cerrar(job_id, cotizado=none, compacto=false, destacado=true, estimado=none, canales=none) -%}
 <form class="cerrar{% if compacto %} compacto{% endif %}" method="post"
       action="/fletes/{{ job_id }}/realizado" hx-post="/fletes/{{ job_id }}/realizado"
       data-cerrar>
@@ -28,6 +28,30 @@
   </label>
   <input id="cobrado-{{ job_id }}" name="cobrado" inputmode="numeric" autocomplete="off"
          value="{{ cotizado or '' }}" placeholder="Ej: 45.000" data-cobrado>
+  {% if estimado and not compacto %}
+  {# Lo que paso de verdad, sin cargar nada: se ve la estimacion y, si fue
+     asi, se cierra. Si fue distinto, se corrige solo lo que cambio.
+     Cerrar desde la agenda compacta no confirma nada: no se vio. #}
+  <input type="hidden" name="visto" value="1">
+  <p class="ayuda">Se anota así: <strong>{{ estimado.linea }}</strong>.</p>
+  <details class="corregir">
+    <summary>¿Fue distinto?</summary>
+    <div class="form-gasto">
+      <label>Km en total<input name="km" inputmode="decimal" placeholder="igual"></label>
+      <label>Km sin carga<input name="km_vacios" inputmode="decimal" placeholder="igual"></label>
+      <label>Horas, de salir a volver<input name="horas" placeholder="2:30"></label>
+      <label>Espera<input name="espera_min" inputmode="numeric" placeholder="min"></label>
+      <label>Le pagaste a ayudantes<input name="ayudante" inputmode="numeric" placeholder="$"></label>
+      <label>Otros gastos<input name="otros" inputmode="numeric" placeholder="peajes..."></label>
+      {% if canales %}
+      <label>Cómo llegó
+        <select name="canal">
+          {% for clave, etiqueta in canales %}<option value="{{ clave }}"{% if clave == estimado.canal %} selected{% endif %}>{{ etiqueta }}</option>{% endfor %}
+        </select></label>
+      {% endif %}
+    </div>
+  </details>
+  {% endif %}
   {# `destacado` solo cuando cerrar es lo que la pantalla pide. Plegado
      dentro de "Ya se hizo este flete" va en secundario: el verde es de la
      accion principal, y por pantalla hay una sola. #}

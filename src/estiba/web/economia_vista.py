@@ -213,3 +213,18 @@ def vista_evaluacion(ev) -> dict | None:
         "tipo": ETIQUETA_TIPO[ev.tipo],
         "supuestos": list(ev.supuestos),
     }
+
+
+def estimado_cierre(ev) -> dict | None:
+    """Lo que el formulario de cierre muestra como "asi fue", para confirmar de un toque."""
+    if ev is None:
+        return None
+    from estiba.economia.registro import desde_evaluacion
+
+    r = desde_evaluacion(ev)
+    partes = [km(r.km)]
+    if r.km_vacios is not None:
+        partes.append(f"{km(r.km_vacios)} sin carga")
+    partes.append(horas(r.horas))
+    partes.append(f"ayudantes {plata(r.ayudante_pagado)}" if r.ayudante_pagado else "sin ayudantes")
+    return {"linea": " · ".join(partes), "canal": r.canal}
