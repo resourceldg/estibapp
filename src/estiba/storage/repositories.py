@@ -925,3 +925,48 @@ class DecisionRepository:
         return self.conn.execute(
             "SELECT * FROM decisiones ORDER BY CASE estado WHEN 'aplicada' THEN 0 WHEN 'guardada' THEN 1 ELSE 2 END, "
             "CASE estado WHEN 'reemplazada' THEN -id ELSE id END").fetchall()
+
+
+class EconomiaRepository:
+    """Configuracion del motor economico y precio base. Ver migracion 023.
+
+    Nada se pisa: cada guardado es una fila nueva y manda la ultima.
+    """
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self.conn = conn
+
+    def config(self, clave: str):
+        fila = self.conn.execute(
+            "SELECT valor FROM economia_config WHERE clave = ? ORDER BY id DESC LIMIT 1", (clave,)).fetchone()
+        return json.loads(fila["valor"]) if fila else None
+
+    def guardar(self, clave: str, valor, ahora: datetime) -> None:
+        with self.conn:
+            self.conn.execute("INSERT INTO economia_config (clave, valor, at) VALUES (?, ?, ?)",
+                              (clave, json.dumps(valor, ensure_ascii=False), _a_texto(ahora)))
+
+    def deshacer(self, clave: str) -> bool:
+        """Vuelve a la configuracion anterior de esa clave."""
+        with self.conn:
+            cur = self.conn.execute(
+                "DELETE FROM economia_config WHERE id = "
+                "(SELECT MAX(id) FROM economia_config WHERE clave = ?)", (clave,))
+        return cur.rowcount == 1
+
+    def precio_base(self, dia: date) -> Decimal | None:
+        fila = self.conn.execute(
+            "SELECT monto FROM precio_base WHERE desde <= ? ORDER BY desde DESC, id DESC LIMIT 1",
+            (dia.isoformat(),)).fetchone()
+        return Decimal(fila["monto"]) if fila else None
+
+    def cambiar_precio_base(self, monto: Decimal, desde: date, ahora: datetime, nota: str | None = None) -> None:
+        anterior = self.precio_base(desde)
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO precio_base (monto, desde, anterior, nota, at) VALUES (?, ?, ?, ?, ?)",
+                (str(monto), desde.isoformat(), str(anterior) if anterior is not None else None, nota,
+                 _a_texto(ahora)))
+
+    def historial_precio_base(self) -> list[sqlite3.Row]:
+        return self.conn.execute("SELECT * FROM precio_base ORDER BY desde DESC, id DESC").fetchall()

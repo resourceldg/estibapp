@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icono %}
+{% block contenido %}
+<div class="encabezado">
+  <h1>Números</h1>
+  {% include "_numeros_tabs.html" %}
+</div>
+
+<section class="panel" id="rinde">
+  <h2>¿Hasta dónde rinde tu precio base?</h2>
+  <p class="ritmo-cifra"><span class="num">{{ v.precio_base }}</span> <small>precio base</small></p>
+  <ul class="frases">
+    {% for f in v.rinde %}<li>{{ f }}</li>{% endfor %}
+  </ul>
+  <p class="nota">Cuenta {{ v.rinde_tipo }}, con tus costos y tus horas deseadas: {{ v.horas_deseadas }}.</p>
+</section>
+
+{% for a in v.avisos %}
+<p class="aviso">{{ icono("aviso") }}<span>{{ a }}</span></p>
+{% endfor %}
+
+<section class="panel" id="contribucion">
+  <h2>Cuánto tiene que aportar cada hora</h2>
+  <ul class="frases">
+    {% for f in v.contribucion %}<li>{{ f }}</li>{% endfor %}
+  </ul>
+  <details>
+    <summary>Qué se reparte</summary>
+    <table class="cuentas">
+      {% for r in v.partes_objetivo %}
+      <tr><th scope="row">{{ r.nombre }}<small>{{ r.tipo }}{% if r.detalle %} · {{ r.detalle }}{% endif %}</small></th>
+          <td class="num">{{ r.monto }}</td></tr>
+      {% endfor %}
+    </table>
+  </details>
+</section>
+
+<section class="panel costos" id="precio-base">
+  <h2>Precio base</h2>
+  <p class="ayuda">El valor de referencia desde el que se arma una cotización. No es el mínimo ni lo que cobrás en promedio. Cada cambio queda guardado.</p>
+  <form method="post" action="/numeros/camioneta/precio-base">
+    <fieldset>
+      <div class="campo"><label for="pb-monto">Nuevo precio base</label>
+        <span class="entrada"><span class="unidad">$</span><input id="pb-monto" name="monto" inputmode="decimal" required placeholder="40.000"></span></div>
+      <div class="campo"><label for="pb-desde">Rige desde</label>
+        <span class="entrada"><input id="pb-desde" type="date" name="desde" value="{{ hoy }}" required></span></div>
+      <div class="campo campo-ancho"><label for="pb-nota">Por qué <small>(opcional)</small></label>
+        <input id="pb-nota" name="nota" autocomplete="off" placeholder="subió el GNC"></div>
+    </fieldset>
+    <button class="btn secundario" type="submit">Cambiar precio base</button>
+  </form>
+  {% if v.historial %}
+  <table class="cuentas historial">
+    {% for h in v.historial %}
+    <tr><th scope="row">Desde el {{ h.desde }}<small>{% if h.anterior %}antes {{ h.anterior }}{% endif %}{% if h.nota %} · {{ h.nota }}{% endif %}</small></th>
+        <td class="num">{{ h.monto }}</td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+</section>
+
+<section class="panel costos" id="disponibilidad">
+  <h2>Cuánto querés trabajar</h2>
+  <p class="ayuda">Tu ritmo cómodo, no lo máximo posible. Estiba reparte tus costos y objetivos entre estas horas y trata de usar la menor cantidad.</p>
+  <form method="post" action="/numeros/camioneta/disponibilidad">
+    <fieldset>
+      {% for clave, etiqueta, valor, unidad in disp %}
+      <div class="campo"><label for="d-{{ clave }}">{{ etiqueta }}</label>
+        <span class="entrada"><input id="d-{{ clave }}" name="{{ clave }}" value="{{ valor }}" inputmode="decimal" autocomplete="off">{% if unidad %}<span class="unidad">{{ unidad }}</span>{% endif %}</span></div>
+      {% endfor %}
+    </fieldset>
+    <button class="btn secundario" type="submit">Guardar</button>
+  </form>
+</section>
+
+<section class="panel costos" id="activo">
+  <h2>La camioneta y el crédito</h2>
+  <p class="ayuda">La cuota se carga en Costos y metas. Acá va lo que dice cuánto vale y cuándo termina. Lo que no sepas, dejalo vacío: Estiba lo dice en vez de inventarlo.</p>
+  <form method="post" action="/numeros/camioneta/activo">
+    <fieldset>
+      <legend>La camioneta</legend>
+      {% for clave, etiqueta, valor, unidad, ayuda in activo %}
+      <div class="campo"><label for="a-{{ clave }}">{{ etiqueta }}{% if ayuda %}<small>{{ ayuda }}</small>{% endif %}</label>
+        <span class="entrada">{% if unidad == "$" %}<span class="unidad">$</span>{% endif %}<input id="a-{{ clave }}" name="{{ clave }}" value="{{ valor }}" inputmode="decimal" autocomplete="off">{% if unidad and unidad != "$" %}<span class="unidad">{{ unidad }}</span>{% endif %}</span></div>
+      {% endfor %}
+    </fieldset>
+    <fieldset>
+      <legend>El crédito</legend>
+      <p class="ayuda">Cuota de {{ v.credito.cuota }}.{% if v.credito.restantes is not none %} Quedan {{ v.credito.restantes }} cuotas; la última es en {{ v.credito.ultima }}.{% else %} Sin la fecha de la primera cuota no se sabe cuándo termina.{% endif %}</p>
+      <div class="campo"><label for="cr-cuotas">Cuotas en total</label>
+        <span class="entrada"><input id="cr-cuotas" name="cuotas" value="{{ v.credito.cuotas }}" inputmode="numeric"></span></div>
+      <div class="campo"><label for="cr-primera">Mes de la primera cuota</label>
+        <span class="entrada"><input id="cr-primera" type="month" name="primera" value="{{ v.credito.primera }}"></span></div>
+      <div class="campo"><label for="cr-interes">Interés de la cuota<small>si lo sabés: el resto es capital</small></label>
+        <span class="entrada"><span class="unidad">$</span><input id="cr-interes" name="interes_mes" value="{{ v.credito.interes }}" inputmode="decimal"></span></div>
+    </fieldset>
+    <button class="btn secundario" type="submit">Guardar</button>
+  </form>
+</section>
+
+<section class="panel costos" id="fondos">
+  <h2>Fondos</h2>
+  <p class="ayuda">Plata que la camioneta aparta cada mes. Los de conservación existen aunque estés pagando el crédito: pagar capital no deja plata para arreglarla.</p>
+  <form method="post" action="/numeros/camioneta/fondos">
+    {% for f in fondos %}
+    <fieldset>
+      <legend>{{ f.nombre }}</legend>
+      <div class="campo"><label for="f-{{ f.clave }}-aporte">Aporte por mes</label>
+        <span class="entrada"><span class="unidad">$</span><input id="f-{{ f.clave }}-aporte" name="{{ f.clave }}__aporte_mes" value="{{ f.aporte }}" inputmode="decimal"></span></div>
+      <div class="campo"><label for="f-{{ f.clave }}-obj">Objetivo acumulado<small>opcional</small></label>
+        <span class="entrada"><span class="unidad">$</span><input id="f-{{ f.clave }}-obj" name="{{ f.clave }}__objetivo" value="{{ f.objetivo }}" inputmode="decimal"></span></div>
+    </fieldset>
+    {% endfor %}
+    <button class="btn secundario" type="submit">Guardar</button>
+  </form>
+</section>
+{% endblock %}

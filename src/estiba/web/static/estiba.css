@@ -1468,3 +1468,9 @@ summary::-webkit-details-marker { display: none; }
 .ajustar-fecha input { min-height: 44px; padding: 0 10px; border: 1.5px solid var(--linea-2); border-radius: 10px;
                        background: var(--superficie); color: var(--tinta); font: inherit; color-scheme: dark; }
 .ajustar .btn { margin-top: 12px; }
+
+/* Motor economico: frases que responden primero, detalle despues. */
+.frases { margin: 10px 0 0; padding-left: 18px; display: grid; gap: 6px; font-size: 15px; line-height: 1.45; }
+.frases li::marker { color: var(--tinta-2); }
+.historial { margin-top: 12px; }
+details > summary { cursor: pointer; margin-top: 10px; color: var(--tinta-2); font-size: 14px; }

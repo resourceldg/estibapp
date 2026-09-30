@@ -59,6 +59,9 @@ from estiba.informe import graficos
 from estiba.conversation.clasificacion import _DESDE_PUBLI
 from estiba.extraction.texto import plano
 from estiba.finanzas.precio import BASE_DEFAULT
+from estiba.economia import cargar as eco
+from estiba.economia.config import Camioneta, Credito, Disponibilidad, Fondo, a_json
+from estiba.web import economia_vista as EV
 from estiba.formato import pesos, telefono
 from estiba.jobs import aprendido, episodios
 from estiba.jobs.engine import (
@@ -79,6 +82,7 @@ from estiba.storage.repositories import (
     ClaseRepository,
     CorteRepository,
     DecisionRepository,
+    EconomiaRepository,
     GastoRepository,
     PanelRepository,
     SettingsRepository,
@@ -1344,6 +1348,124 @@ def create_app(
         finally:
             conn.close()
         return RedirectResponse("/numeros/objetivos#publicidad", status_code=303)
+
+
+    # ------------------------------------------------------------------
+    # Camioneta: lo que el fletero quiere que el negocio haga por el
+    # ------------------------------------------------------------------
+
+    def _economia():
+        conn = estado.conectar()
+        try:
+            return eco.economia(conn, estado.ahora().date())
+        finally:
+            conn.close()
+
+    @app.get("/numeros/camioneta", response_class=HTMLResponse, include_in_schema=False)
+    def pagina_camioneta(request: Request):
+        hoy = estado.ahora().date()
+        conn = estado.conectar()
+        try:
+            e = eco.economia(conn, hoy)
+            historial = EconomiaRepository(conn).historial_precio_base()
+        finally:
+            conn.close()
+        d = e.disponibilidad
+        disp = [
+            ("dias_semana", "Días por semana que querés trabajar", EV.campo(d.dias_semana), "días"),
+            ("fletes_dia_comodo", "Fletes en un día cómodo", EV.campo(d.fletes_dia_comodo), ""),
+            ("fletes_dia_pico", "Fletes en un día de mucha demanda (excepción)", EV.campo(d.fletes_dia_pico), ""),
+            ("horas_dia", "Horas máximas por día", EV.campo(d.horas_dia), "h"),
+            ("tope_horas_mes", "Tope de horas por mes (opcional)", EV.campo(d.tope_horas_mes), "h"),
+            ("coordinacion_min", "Coordinar un flete (mensajes, presupuesto)", EV.campo(d.h_coordinacion * 60), "min"),
+            ("cobro_min", "Cobrar y cerrar", EV.campo(d.h_cobro * 60), "min"),
+        ]
+        c = e.camioneta
+        activo = [
+            ("valor_mercado", "Valor de mercado hoy", EV.campo(c.valor_mercado), "$", ""),
+            ("valor_reposicion", "Lo que costaría reponerla", EV.campo(c.valor_reposicion), "$", ""),
+            ("odometro", "Km del odómetro", EV.campo(c.odometro), "km", ""),
+            ("depreciacion_mes", "Depreciación por mes", EV.campo(c.depreciacion_mes), "$",
+             "opcional: un supuesto tuyo; vacío = no se descuenta"),
+        ]
+        fondos = [{"clave": f.clave, "nombre": f.nombre, "aporte": EV.campo(f.aporte_mes) if f.aporte_mes else "",
+                   "objetivo": EV.campo(f.objetivo)} for f in e.fondos]
+        return templates.TemplateResponse(
+            request, "camioneta.html",
+            _contexto(request, v=EV.vista_camioneta(e, hoy, historial), disp=disp, activo=activo, fondos=fondos,
+                      hoy=hoy.isoformat(), titulo="Camioneta"),
+        )
+
+    def _guardar_eco(clave: str, valor) -> None:
+        conn = estado.conectar()
+        try:
+            EconomiaRepository(conn).guardar(clave, valor, estado.ahora())
+        finally:
+            conn.close()
+        estado.sincronizar()
+
+    def _opcional(form, clave: str) -> str | None:
+        texto = str(form.get(clave, "")).strip()
+        return str(v) if texto and (v := _numero(texto)) is not None else None
+
+    @app.post("/numeros/camioneta/precio-base", include_in_schema=False)
+    def cambiar_precio_base(monto: str = Form(...), desde: str = Form(...), nota: str = Form("")):
+        valor = _numero(monto)
+        if not valor or valor <= 0:
+            raise HTTPException(422, "el precio base tiene que ser un monto")
+        try:
+            dia = date.fromisoformat(desde)
+        except ValueError as e:
+            raise HTTPException(422, "la fecha no se entiende") from e
+        conn = estado.conectar()
+        try:
+            EconomiaRepository(conn).cambiar_precio_base(valor, dia, estado.ahora(), nota.strip()[:120] or None)
+        finally:
+            conn.close()
+        estado.sincronizar()
+        return RedirectResponse("/numeros/camioneta#precio-base", status_code=303)
+
+    @app.post("/numeros/camioneta/disponibilidad", include_in_schema=False)
+    async def guardar_disponibilidad(request: Request):
+        form = await request.form()
+        actual = a_json(_economia().disponibilidad)
+        for clave in ("dias_semana", "fletes_dia_comodo", "fletes_dia_pico", "horas_dia"):
+            if (v := _opcional(form, clave)) is not None:
+                actual[clave] = v
+        if "tope_horas_mes" in form:
+            actual["tope_horas_mes"] = _opcional(form, "tope_horas_mes")
+        for campo_min, clave in (("coordinacion_min", "h_coordinacion"), ("cobro_min", "h_cobro")):
+            if (v := _opcional(form, campo_min)) is not None:
+                actual[clave] = str(Decimal(v) / 60)
+        if Decimal(actual["fletes_dia_pico"]) < Decimal(actual["fletes_dia_comodo"]):
+            actual["fletes_dia_pico"] = actual["fletes_dia_comodo"]
+        _guardar_eco("disponibilidad", a_json(Disponibilidad.desde_dict(actual)))
+        return RedirectResponse("/numeros/camioneta#disponibilidad", status_code=303)
+
+    @app.post("/numeros/camioneta/activo", include_in_schema=False)
+    async def guardar_activo(request: Request):
+        form = await request.form()
+        camioneta = {k: _opcional(form, k) for k in ("valor_mercado", "valor_reposicion", "odometro",
+                                                     "depreciacion_mes")}
+        _guardar_eco("camioneta", a_json(Camioneta.desde_dict(camioneta)))
+        primera = str(form.get("primera", "")).strip()
+        credito = {"cuotas": _opcional(form, "cuotas") or "72",
+                   "primera": f"{primera}-01" if re.fullmatch(r"\d{4}-\d{2}", primera) else None,
+                   "interes_mes": _opcional(form, "interes_mes")}
+        _guardar_eco("credito", a_json(Credito.desde_dict(credito)))
+        return RedirectResponse("/numeros/camioneta#activo", status_code=303)
+
+    @app.post("/numeros/camioneta/fondos", include_in_schema=False)
+    async def guardar_fondos(request: Request):
+        form = await request.form()
+        fondos = []
+        for f in _economia().fondos:
+            aporte = _opcional(form, f"{f.clave}__aporte_mes")
+            objetivo = _opcional(form, f"{f.clave}__objetivo")
+            fondos.append(Fondo(f.clave, f.nombre, f.tipo, Decimal(aporte) if aporte else Decimal(0),
+                                Decimal(objetivo) if objetivo else None))
+        _guardar_eco("fondos", a_json(tuple(fondos)))
+        return RedirectResponse("/numeros/camioneta#fondos", status_code=303)
 
     # ------------------------------------------------------------------
     # Panel: analitica y exportacion, fuera de la mensajeria
