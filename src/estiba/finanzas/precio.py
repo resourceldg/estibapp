@@ -133,6 +133,7 @@ class PrecioPorObjetivos:
         fijos_hora = c.fijos_mes / horas_mes if horas_mes > 0 else Decimal(0)
         minimo = camioneta + horas * fijos_hora + pub + ayudantes
         p.detalle = {
+            "tramos": p.detalle.get("tramos"),
             "km": km, "horas": horas, "manejo": manejo, "carga": carga,
             "paradas": paradas,
             "partes": [("Camioneta", camioneta), ("Tu trabajo", trabajo),
@@ -163,8 +164,16 @@ class PrecioPorObjetivos:
             if u.precision == CALLE:
                 p.supuestos.append(f"'{texto}' no tiene altura: tomé {u.como}.")
         base = self.punto_base
-        linea_recta = km_entre(base, desde.punto) + km_entre(desde.punto, hasta.punto) + km_entre(hasta.punto, base)
+        tramos = {
+            "ida": km_entre(base, desde.punto),
+            "carga": km_entre(desde.punto, hasta.punto),
+            "vuelta": km_entre(hasta.punto, base),
+        }
+        linea_recta = sum(tramos.values())
         km = (Decimal(str(linea_recta)) * c.factor_calles).quantize(Decimal(1), ROUND_HALF_UP)
+        # Por tramo, para saber cuantos km se andan sin carga (ida y vuelta).
+        p.detalle["tramos"] = {k: (Decimal(str(v)) * c.factor_calles).quantize(Decimal("0.1"), ROUND_HALF_UP)
+                               for k, v in tramos.items()}
         paradas = [
             ("Casa", True),
             (desde.como.split(",")[0], desde.precision != CALLE),

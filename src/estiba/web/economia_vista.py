@@ -175,3 +175,41 @@ def _campo(d: Decimal | None) -> str:
 
 
 campo = _campo
+
+
+# --------------------------------------------------------------------------
+# La evaluacion de un pedido
+# --------------------------------------------------------------------------
+
+TONO_VEREDICTO = {"conviene": "ok", "conviene con ajuste": "aviso", "no conviene": "mal",
+                  "requiere tu decisión": "decision"}
+
+
+def vista_evaluacion(ev) -> dict | None:
+    """Primero la linea que decide; despues razones; el detalle, plegado."""
+    if ev is None:
+        return None
+    datos = [
+        ("Precio evaluado", plata(ev.precio_evaluado),
+         "hablado con el cliente" if ev.precio_evaluado != ev.base else "precio base"),
+        ("Mínimo", plata(ev.minimo), "debajo, el flete pierde plata"),
+        ("Recomendado", plata(ev.recomendado), "cubre tus objetivos por hora"),
+        ("Margen esperado", plata(ev.margen), "precio − camioneta − ayudantes − CAC"),
+        ("Margen por hora", plata(ev.margen_hora), f"en {horas(ev.horas)}"),
+        ("Km", km(ev.km), f"{km(ev.km_vacios)} sin carga" if ev.km_vacios is not None else "sin tramos: promedio"),
+        ("CAC", plata(ev.cac.monto) if ev.cac.monto is not None else "—", ev.cac.detalle),
+        ("Cliente", "vuelve" if ev.cliente.recurrente else "nuevo",
+         (f"{ev.cliente.fletes_previos} {'flete' if ev.cliente.fletes_previos == 1 else 'fletes'} antes")
+         if ev.cliente.recurrente else
+         ("llegó por un anuncio" if ev.cliente.por_publicidad else "no vino por un anuncio")),
+    ]
+    return {
+        "titular": ev.titular,
+        "veredicto": ev.veredicto.value.capitalize(),
+        "tono": TONO_VEREDICTO[ev.veredicto.value],
+        "capa": ev.capa.value,
+        "razones": ev.razones,
+        "datos": datos,
+        "tipo": ETIQUETA_TIPO[ev.tipo],
+        "supuestos": list(ev.supuestos),
+    }

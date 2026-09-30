@@ -19,7 +19,12 @@ from estiba.agenda.local import LocalCalendar
 from estiba.bandeja.redactor import proponer
 from estiba.conversation.clasificacion import Clase, Clasificacion, clasificar
 from estiba.conversation.store import ConversationStore
+from estiba.conversation.clasificacion import _DESDE_PUBLI
 from estiba.core.models import Conversation, JobState
+from estiba.economia import cargar as eco
+from estiba.economia import cotizar
+from estiba.economia.pedido import Cliente, Evaluacion, evaluar
+from estiba.extraction.texto import plano
 from estiba.crm.leads import LeadInfo, lead_de
 from estiba.jobs.engine import AGENDADO, Evaluacion, JobEngine
 from estiba.jobs.episodios import episodios
@@ -46,6 +51,8 @@ class Resultado:
     #: chat_id -> como quedo clasificada la conversacion que si entro.
     clases: dict[str, Clasificacion] = field(default_factory=dict)
     espejo_error: str | None = None
+    #: La evaluacion economica de cada flete que se pudo evaluar.
+    evaluaciones: dict[str, Evaluacion] = field(default_factory=dict)
 
 
 def sincronizar(conn: sqlite3.Connection, engine: JobEngine, ahora: datetime, espejo=None) -> Resultado:
@@ -62,6 +69,8 @@ def sincronizar(conn: sqlite3.Connection, engine: JobEngine, ahora: datetime, es
     guardadas = clases.todas()
     # El precio depende de los costos y la base, que se editan en la app.
     engine.pricing.preparar(conn)
+    economia = eco.economia(conn, ahora.date())
+    agendados = agenda.eventos(incluir_cancelados=False)
 
     for chat_id in store.chat_ids():
         conv = store.get(chat_id)
@@ -91,6 +100,9 @@ def sincronizar(conn: sqlite3.Connection, engine: JobEngine, ahora: datetime, es
             borradores.cancelar_del_chat(chat_id, ahora)
             continue
         todos = episodios(conv, engine, acciones.for_job, cortes.de(chat_id))
+        primero = conv.text_of(conv.messages[0]) if conv.messages else ""
+        por_anuncio = bool(_DESDE_PUBLI.search(plano(primero or "")))
+        hechos_antes = 0
         for n, ep in enumerate(todos, start=1):
             if not any(m.sent_at <= ahora for m in ep.conversacion.messages):
                 continue
@@ -130,6 +142,24 @@ def sincronizar(conn: sqlite3.Connection, engine: JobEngine, ahora: datetime, es
                 r.agenda.append((ep.job_id, "cancelado"))
 
             jobs.save(ev.job, ev.eventos)
+            if ev.presupuesto is not None:
+                # Solo el primer pedido de la conversacion pudo venir del
+                # anuncio; los siguientes son de alguien que ya vuelve.
+                cliente = Cliente(fletes_previos=hechos_antes, por_publicidad=por_anuncio and n == 1)
+                pedido = cotizar.pedido_desde(
+                    ev.presupuesto, ev.job, economia,
+                    cotizar.fletes_por_dia(agendados, ev.job.when.value if ev.job.when else None, ep.job_id))
+                if pedido is not None:
+                    evaluacion = evaluar(economia, ahora.date(), pedido, cliente)
+                    cotizar.aplicar(ev.presupuesto, evaluacion)
+                    r.evaluaciones[ep.job_id] = evaluacion
+                    estimaciones.guardar_si_cambio(
+                        ep.job_id, "evaluacion", evaluacion.recomendado or evaluacion.precio_evaluado, ahora,
+                        supuestos={"veredicto": evaluacion.veredicto.value, "capa": evaluacion.capa.value,
+                                   "razones": evaluacion.razones, "minimo": str(evaluacion.minimo),
+                                   "margen": str(evaluacion.margen), "horas": str(evaluacion.horas)},
+                        completa=ev.presupuesto.completo,
+                    )
             # Lo que Estiba estima queda guardado antes de saber como salio:
             # es contra esto que se mide despues, y sin el primer eslabon la
             # cadena "estimacion -> decision humana -> resultado" no existe.
@@ -153,6 +183,8 @@ def sincronizar(conn: sqlite3.Connection, engine: JobEngine, ahora: datetime, es
             # no hay que marcarlo a mano.
             if ev.job.state in (JobState.CONFIRMED, JobState.SCHEDULED, JobState.DONE):
                 clase = Clase.CLIENTE
+            if ev.job.state is JobState.DONE:
+                hechos_antes += 1
 
         if clase is not cl.clase and not decidida_por_humano:
             clases.guardar_inferida(chat_id, clase.value, "ya hizo un flete", ahora)

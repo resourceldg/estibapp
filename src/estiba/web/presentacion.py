@@ -1236,6 +1236,8 @@ class Cotizacion:
     #: El slider para confirmar el precio, y la fecha y hora propuestas.
     #: None si el flete ya se hizo o se perdio: ahi no hay nada que decidir.
     ajuste: dict | None = None
+    #: La evaluacion economica: veredicto, razones y datos. Ver economia/pedido.py.
+    evaluacion: dict | None = None
 
 
 def _ajuste(p, minimo: Decimal | None, confirmado: Decimal | None, job) -> dict:
@@ -1304,7 +1306,10 @@ def cotizacion(p, cotizado: Decimal | None = None, cobrado: Decimal | None = Non
 
     km = d.get("km")
     horas = d.get("horas")
+    from estiba.web.economia_vista import vista_evaluacion
+
     return Cotizacion(
+        evaluacion=vista_evaluacion(d.get("evaluacion")),
         sugerido=pesos(total),
         sugerido_crudo=int(total),
         completo=p.completo,

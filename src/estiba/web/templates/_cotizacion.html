@@ -13,9 +13,27 @@
    se quiere discutir un numero. #}
 {% macro tarjeta(c, usar=false, job_id="", destacado=true) -%}
 <section class="panel cotizacion" aria-label="Cotización">
+  {% if c.evaluacion %}{% set e = c.evaluacion %}
+  {# Lo importante primero: conviene o no y desde cuanto. El porque en
+     tres o cuatro razones; los numeros, plegados. #}
+  <div class="evaluacion tono-{{ e.tono }}" data-capa="{{ e.capa }}">
+    <p class="eval-veredicto">{{ e.veredicto }}</p>
+    <p class="eval-titular">{{ e.titular }}</p>
+    <ul class="frases">{% for r in e.razones %}<li>{{ r }}</li>{% endfor %}</ul>
+    <details>
+      <summary>Por qué (cuenta {{ e.tipo }})</summary>
+      <table class="cuentas">
+        {% for etq, valor, nota in e.datos %}
+        <tr><th scope="row">{{ etq }}<small>{{ nota }}</small></th><td class="num">{{ valor }}</td></tr>
+        {% endfor %}
+      </table>
+      {% for s in e.supuestos %}<p class="nota">{{ s }}</p>{% endfor %}
+    </details>
+  </div>
+  {% endif %}
   <div class="cot-cab">
     <div class="cot-principal">
-      <span class="cot-etq">Precio sugerido</span>
+      <span class="cot-etq">{{ "Precio recomendado" if c.evaluacion else "Precio sugerido" }}</span>
       <span class="cot-precio num">{{ c.sugerido }}{% if not c.completo %}<small> o más</small>{% endif %}</span>
     </div>
     {% if c.km or c.horas %}

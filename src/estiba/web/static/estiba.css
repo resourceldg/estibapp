@@ -1474,3 +1474,10 @@ summary::-webkit-details-marker { display: none; }
 .frases li::marker { color: var(--tinta-2); }
 .historial { margin-top: 12px; }
 details > summary { cursor: pointer; margin-top: 10px; color: var(--tinta-2); font-size: 14px; }
+.evaluacion { border-left: 4px solid var(--tinta-2); padding: 4px 0 8px 12px; margin-bottom: 14px; }
+.evaluacion.tono-ok { border-color: var(--ok); }
+.evaluacion.tono-aviso { border-color: var(--aviso); }
+.evaluacion.tono-mal { border-color: var(--mal, #c0392b); }
+.evaluacion.tono-decision { border-color: var(--acento, var(--tinta)); }
+.eval-veredicto { margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--tinta-2); }
+.eval-titular { margin: 2px 0 0; font-size: 18px; font-weight: 600; }
