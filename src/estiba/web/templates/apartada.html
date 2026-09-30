@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icono, clases %}
+{% block contenido %}
+{# Una charla que Estiba dejo afuera de los fletes: privada o spam. Antes el
+   enlace llevaba a la ficha de un flete que no existe y daba "no
+   encontrado", justo cuando habia que mirarla para corregirla. Aca se ve
+   entera y se reclasifica: si es un cliente, vuelve al circuito. #}
+<div class="conv-cab">
+  <a class="volver" href="/?f={{ volver }}">{{ icono("volver") }}{{ "Spam" if a.clase == "spam" else "Privados" }}</a>
+</div>
+<section class="quien-cab">
+  <div class="quien-datos">
+    <strong class="apartada-quien">{{ a.nombre or a.telefono }}</strong>
+    <a class="tel" href="https://wa.me/{{ a.chat_id }}" target="_blank" rel="noopener">{{ a.telefono }}</a>
+  </div>
+</section>
+<div class="aviso tono-apartada" role="status">
+  {{ icono("aviso") }}
+  <span>Estiba la dejó afuera como <strong>{{ "spam" if a.clase == "spam" else "privada" }}</strong>{% if a.lo_dijiste_vos %}, porque lo dijiste vos{% elif a.porque %}: {{ a.porque }}{% endif %}. Si es un cliente, reclasificala y vuelve a los fletes.</span>
+</div>
+{{ clases(a.chat_id, a.clase) }}
+<section class="panel chat">
+  <div class="chat-cab">
+    <h2>Conversación</h2>
+    <button type="button" class="agrandar" data-agrandar>Agrandar</button>
+  </div>
+  {% include "_chat.html" %}
+</section>
+{% endblock %}

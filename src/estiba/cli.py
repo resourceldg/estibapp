@@ -24,7 +24,9 @@ from estiba.extraction.fechas import nombre_dia
 from estiba.formato import pesos
 from estiba.jobs.engine import JobEngine
 from estiba.jobs.preguntas import ETIQUETAS
+from estiba.finanzas.precio import PrecioPorObjetivos
 from estiba.jobs.pricing import TARIFA_DEFAULT, PricingEngine, Tarifa
+from estiba.mapa.datos import MAPA_DEFAULT
 from estiba.storage.db import DEFAULT_DB, connect
 from estiba.storage.repositories import ClaseRepository, JobRepository
 
@@ -219,7 +221,7 @@ def cmd_jobs(args: argparse.Namespace) -> int:
         print("No hay conversaciones. Corre primero: estiba ingest")
         return 1
     ahora = datetime.fromisoformat(args.ahora) if args.ahora else datetime.now()
-    engine = JobEngine(pricing=PricingEngine(Tarifa.desde_toml(args.tarifa)))
+    engine = JobEngine(pricing=_precios(args))
 
     for chat_id in ids:
         conv = store.get(chat_id)
@@ -270,7 +272,7 @@ def cmd_sync(args: argparse.Namespace) -> int:
     from estiba.agenda.caldav import ConfigCalDAV, EspejoCalDAV
 
     conn = connect(args.db)
-    engine = JobEngine(pricing=PricingEngine(Tarifa.desde_toml(args.tarifa)))
+    engine = JobEngine(pricing=_precios(args))
     config = ConfigCalDAV.desde_entorno()
     r = sincronizar(conn, engine, _ahora(args)(), EspejoCalDAV(config) if config else None)
     pendientes = DraftRepository(conn).pending()
@@ -282,6 +284,22 @@ def cmd_sync(args: argparse.Namespace) -> int:
         return 1
     return 0
 
+
+def _precios(args):
+    """Una tarifa fija si hay un tarifa.toml; si no, el precio por objetivos.
+
+    La tarifa de fabrica suma montos por barrio de Buenos Aires: para el que
+    trabaja en otro lado no significa nada. El precio por objetivos sale de
+    sus costos y su meta, que se cargan en la app.
+    """
+    if Path(args.tarifa).is_file():
+        return PricingEngine(Tarifa.desde_toml(args.tarifa))
+    return PrecioPorObjetivos(os.environ.get("ESTIBA_MAPA", str(MAPA_DEFAULT)))
+
+
+#: Cada cuanto `serve` le pregunta a WAHA si se perdio algun mensaje.
+#: Los webhooks traen todo al instante; esto es la red de abajo.
+REPASO = timedelta(minutes=10)
 
 _LOCALES = ("127.0.0.1", "localhost", "::1")
 
@@ -299,8 +317,14 @@ def cmd_serve(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 2
-    engine = JobEngine(pricing=PricingEngine(Tarifa.desde_toml(args.tarifa)))
-    app = create_app(args.db, engine=engine, ahora=_ahora(args), clave=clave)
+    engine = JobEngine(pricing=_precios(args))
+    # Con el reloj congelado es una demo: no se sale a buscar mensajes reales.
+    repaso = None if args.ahora else REPASO
+    from estiba.adapters.escritorio import AvisoEscritorio
+
+    # Avisos con sonido en el escritorio: Estiba corre en la misma compu.
+    avisos = AvisoEscritorio() if not args.ahora and AvisoEscritorio().disponible() else None
+    app = create_app(args.db, engine=engine, ahora=_ahora(args), clave=clave, repaso=repaso, avisos=avisos)
     sockets = [_escuchar(args.host, args.port)]
     print(f"Estiba en http://{args.host}:{args.port}  (API en /docs)")
 
@@ -342,6 +366,34 @@ def _whatsapp():
         print("WhatsApp no esta configurado: defini ESTIBA_WAHA_URL (ver .env.example)", file=sys.stderr)
         return None
     return WhatsApp(WahaClient(config))
+
+
+def cmd_mapa(args: argparse.Namespace) -> int:
+    """El mapa de calles de la provincia, para calcular los km de cada flete."""
+    from estiba.mapa.datos import conectar, descargar
+    from estiba.mapa.ubicar import Mapa
+
+    ruta = Path(os.environ.get("ESTIBA_MAPA", str(MAPA_DEFAULT)))
+    if args.accion == "descargar":
+        ruta.parent.mkdir(parents=True, exist_ok=True)
+        print("Bajando las calles del INDEC (Georef). Son casi 2 GB; queda la provincia.")
+        cargadas = descargar(conectar(ruta), avance=lambda a, n: print(f"  {a}: {n // 1_000_000} MB", flush=True))
+        print(f"{cargadas['cuadras']} cuadras y {cargadas['esquinas']} esquinas en {ruta}")
+        return 0
+    if not ruta.is_file():
+        print(f"No hay mapa en {ruta}. Bajalo con: estiba mapa descargar", file=sys.stderr)
+        return 1
+    from estiba.finanzas.precio import BASE_DEFAULT
+    from estiba.mapa.caracteristicas import ciudad_del_telefono
+
+    conn = conectar(ruta)
+    mapa = Mapa(conn, (BASE_DEFAULT["lat"], BASE_DEFAULT["lon"]))
+    u = mapa.ubicar(args.direccion, ciudad_del_telefono(args.telefono) if args.telefono else None)
+    if u is None:
+        print("No la encontre.")
+        return 1
+    print(f"{u.como}  ({u.precision})  {u.lat:.6f}, {u.lon:.6f}")
+    return 0
 
 
 def cmd_waha(args: argparse.Namespace) -> int:
@@ -433,11 +485,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     v = sub.add_parser("serve", help="levantar el dashboard y la API")
     v.add_argument("--host", default="127.0.0.1", help="0.0.0.0 para abrirlo desde el celular (pide clave)")
-    v.add_argument("--port", type=int, default=8000)
+    v.add_argument("--port", type=int, default=8001)
     v.add_argument("--clave", help="clave para entrar; tambien por ESTIBA_CLAVE")
     v.add_argument("--ahora", help="congelar el reloj en esta fecha (ISO), para demos")
     v.add_argument("--tarifa", default=str(TARIFA_DEFAULT))
     v.set_defaults(func=cmd_serve)
+
+    m = sub.add_parser("mapa", help="Calles de la provincia: descargar, o buscar una direccion")
+    m.add_argument("accion", choices=["descargar", "buscar"])
+    m.add_argument("direccion", nargs="?", default="", help="para buscar: 'Catamarca 1185'")
+    m.add_argument("--telefono", help="el del cliente: su caracteristica dice la ciudad")
+    m.set_defaults(func=cmd_mapa)
 
     k = sub.add_parser("waha", help="WhatsApp por WAHA: estado, conectar, importar historial")
     k.add_argument("accion", choices=["estado", "conectar", "importar", "nombres"])

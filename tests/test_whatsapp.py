@@ -8,7 +8,8 @@ se prueba contra un evento firmado por WAHA de verdad.
 from __future__ import annotations
 
 import json
-from datetime import datetime
+import time
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -90,12 +91,17 @@ class WahaFalso:
         if ruta.startswith("/api/files/"):
             return httpx.Response(200, content=b"OggS audio")
         if ruta == "/api/default/chats":
-            return httpx.Response(200, json=[
-                {"id": jid, "name": self.nombres.get(jid, "")}
+            # Como WAHA: del que se movio ultimo al mas quieto.
+            chats = [
+                {"id": jid, "name": self.nombres.get(jid, ""),
+                 "conversationTimestamp": max((m["timestamp"] for m in self.historial.get(jid, [])), default=T)}
                 for jid in [*self.historial, "12036@g.us"]
-            ])
+            ]
+            return httpx.Response(200, json=sorted(chats, key=lambda c: -c["conversationTimestamp"]))
         if ruta.startswith("/api/default/chats/") and ruta.endswith("/messages"):
-            return httpx.Response(200, json=self.historial.get(ruta.split("/")[4], []))
+            desde = int(request.url.params.get("filter.timestamp.gte", 0))
+            return httpx.Response(200, json=[m for m in self.historial.get(ruta.split("/")[4], [])
+                                             if m["timestamp"] >= desde])
         return httpx.Response(404, json={"ruta": ruta})
 
 
@@ -106,7 +112,7 @@ def falso():
 
 @pytest.fixture
 def cliente_waha(falso):
-    config = ConfigWaha("http://waha:3000", "clave", hmac_key="firma", url_estiba="http://host.docker.internal:8000")
+    config = ConfigWaha("http://waha:3000", "clave", hmac_key="firma", url_estiba="http://host.docker.internal:8001")
     return WahaClient(config, transport=httpx.MockTransport(falso))
 
 
@@ -213,7 +219,7 @@ class TestCliente:
     def test_conectar_crea_la_sesion_con_el_webhook_de_estiba(self, cliente_waha, falso):
         cliente_waha.conectar("SECRETO")
         webhook = falso.sesion["config"]["webhooks"][0]
-        assert webhook["url"] == "http://host.docker.internal:8000/webhooks/waha/SECRETO"
+        assert webhook["url"] == "http://host.docker.internal:8001/webhooks/waha/SECRETO"
         assert webhook["events"] == ["message.any", "session.status"]
         assert webhook["hmac"] == {"key": "firma"}
         assert falso.sesion["config"]["ignore"]["groups"] is True
@@ -586,3 +592,112 @@ class TestLaAperturaSaleSola:
         app_con_waha.post(f"/borradores/{item['borrador']['id']}/aprobar",
                           data={"texto": "te paso el precio"})
         assert "contestó sola" not in app_con_waha.get(f"/fletes/{CLIENTE}:job").text
+
+
+class TestPonerseAlDia:
+    """Lo que llego mientras Estiba estaba cerrada.
+
+    Los webhooks no se guardan en ningun lado si la app no escucha: WAHA
+    reintenta un rato y los suelta. WhatsApp los tiene; hay que ir a buscarlos.
+    """
+
+    AHORA = datetime(2026, 9, 18, 18, 0)
+
+    def _con_uno_viejo(self, conn):
+        """Estiba vio el primer mensaje de la mañana y despues se cerro."""
+        ConversationStore(conn).ingest([normalizar(mensaje())])
+
+    def _llego_con_la_app_cerrada(self, falso, **cambios):
+        nuevo = mensaje(id="false_5491144445555@c.us_TARDE", timestamp=T + 4 * 3600,
+                        body="sigue en pie lo de la heladera?", **cambios)
+        falso.historial[f"{CLIENTE}@c.us"].append(nuevo)
+        return nuevo
+
+    def test_trae_lo_que_no_llego_por_webhook(self, cliente_waha, falso, conn):
+        self._con_uno_viejo(conn)
+        self._llego_con_la_app_cerrada(falso)
+        r = WhatsApp(cliente_waha).ponerse_al_dia(conn, self.AHORA)
+        assert r.nuevos == 1 and r.chats == 1
+        assert len(ConversationStore(conn).get(CLIENTE).messages) == 2
+
+    def test_dos_veces_seguidas_no_duplica(self, cliente_waha, falso, conn):
+        self._con_uno_viejo(conn)
+        self._llego_con_la_app_cerrada(falso)
+        w = WhatsApp(cliente_waha)
+        w.ponerse_al_dia(conn, self.AHORA)
+        assert w.ponerse_al_dia(conn, self.AHORA).nuevos == 0
+
+    def test_sin_nada_de_whatsapp_no_importa_por_su_cuenta(self, cliente_waha, falso, conn):
+        """Traer todo el historial es importar, y eso lo pide el fletero."""
+        assert WhatsApp(cliente_waha).ponerse_al_dia(conn, self.AHORA) is None
+        assert ConversationStore(conn).chat_ids() == []
+
+    def test_no_abre_los_chats_que_no_se_movieron(self, cliente_waha, falso, conn):
+        """Con cientos de chats, abrir cada uno tarda minutos. Vienen
+        ordenados por ultimo movimiento: el primero quieto corta la busqueda."""
+        quieto = "5491166667777@c.us"
+        falso.historial[quieto] = [mensaje(id="false_quieto", timestamp=T - 5 * 86400,
+                                           **{"from": quieto})]
+        self._con_uno_viejo(conn)
+        self._llego_con_la_app_cerrada(falso)
+        WhatsApp(cliente_waha).ponerse_al_dia(conn, self.AHORA)
+        abiertos = [r for _, r in falso.pedidos if r.endswith("/messages")]
+        assert abiertos == [f"/api/default/chats/{CLIENTE}@c.us/messages"]
+
+    def test_al_arrancar_se_pone_al_dia_y_lo_procesa(self, tmp_path, cliente_waha, falso):
+        db = tmp_path / "w.db"
+        conn = connect(db)
+        self._con_uno_viejo(conn)
+        conn.close()
+        self._llego_con_la_app_cerrada(falso)
+        falso.sesion = {"name": "default", "status": "WORKING", "config": {}, "me": None}
+        app = create_app(db, ahora=lambda: self.AHORA, whatsapp=WhatsApp(cliente_waha),
+                         repaso=timedelta(minutes=10))
+        with TestClient(app) as tc:
+            estado = app.state.estado
+            for _ in range(100):
+                if estado.recuperacion:
+                    break
+                time.sleep(0.02)
+            assert estado.recuperacion["nuevos"] == 1
+            [item] = tc.get("/api/bandeja").json()
+            assert item["borrador"]["chat_id"] == CLIENTE, "entro al circuito como cualquier mensaje"
+            assert "1 mensaje que había llegado con la app cerrada" in tc.get("/whatsapp").text
+
+    def test_waha_caido_no_tira_la_app(self, tmp_path):
+        def caido(request):
+            raise httpx.ConnectError("no hay nadie")
+
+        db = tmp_path / "w.db"
+        conn = connect(db)
+        self._con_uno_viejo(conn)
+        conn.close()
+        w = WhatsApp(WahaClient(ConfigWaha("http://waha:3000", "clave"), transport=httpx.MockTransport(caido)))
+        app = create_app(db, ahora=lambda: self.AHORA, whatsapp=w, repaso=timedelta(minutes=10))
+        with TestClient(app) as tc:
+            for _ in range(100):
+                if app.state.estado.recuperacion:
+                    break
+                time.sleep(0.02)
+            assert "error" in app.state.estado.recuperacion
+            assert tc.get("/").status_code == 200
+
+    def test_el_saludo_de_la_publicidad_no_sale_tarde(self, tmp_path, cliente_waha, falso):
+        """Recuperado horas despues, el saludo automatico ya no es al toque:
+        queda en la bandeja y lo manda el fletero."""
+        db = tmp_path / "w.db"
+        conn = connect(db)
+        self._con_uno_viejo(conn)
+        conn.close()
+        otro = "5491188889999@c.us"
+        falso.historial[otro] = [mensaje(id="false_publi", timestamp=T + 3600,
+                                         body="¡Hola! Quiero más información", **{"from": otro})]
+        app = create_app(db, ahora=lambda: self.AHORA, whatsapp=WhatsApp(cliente_waha),
+                         repaso=timedelta(minutes=10))
+        with TestClient(app) as tc:
+            for _ in range(100):
+                if app.state.estado.recuperacion:
+                    break
+                time.sleep(0.02)
+            assert falso.enviados == []
+            assert any(i["borrador"]["chat_id"] == "5491188889999" for i in tc.get("/api/bandeja").json())

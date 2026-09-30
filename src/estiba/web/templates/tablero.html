@@ -1,0 +1,255 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icono %}
+{% set a = t.analisis %}
+{% block contenido %}
+{# El tablero de decisiones. Se lee de arriba abajo en el orden en que se
+   decide: como estoy, como voy a terminar, que palanca pesa, cual es la
+   mejor combinacion, que pasa si..., y decidir. Cada tarjeta responde una
+   pregunta, dice como leer el grafico y que hacer con eso. #}
+<div class="encabezado">
+  <h1>Números</h1>
+  {% include "_numeros_tabs.html" %}
+</div>
+
+<form class="filtros" method="get" action="/numeros/tablero">
+  <nav class="periodos" aria-label="Período">
+    {% for clave, etiqueta in periodos.items() if clave != "fechas" %}
+    <a href="?periodo={{ clave }}&origen={{ origen }}" {% if clave == periodo %}aria-current="true"{% endif %}>{{ etiqueta }}</a>
+    {% endfor %}
+  </nav>
+  <details class="filtro-mas"{% if periodo == "fechas" or origen != "todos" %} open{% endif %}>
+    <summary>{{ icono("agenda") }}Filtros</summary>
+    <div class="filtro-campos">
+      <label>Desde<input type="date" name="desde" value="{{ desde }}"></label>
+      <label>Hasta<input type="date" name="hasta" value="{{ hasta }}"></label>
+      <label>Clientes
+        <select name="origen">{% for clave, etq in origenes.items() %}<option value="{{ clave }}"{% if clave == origen %} selected{% endif %}>{{ etq }}</option>{% endfor %}</select>
+      </label>
+      <input type="hidden" name="periodo" value="fechas">
+      <button class="btn secundario chico" type="submit">Aplicar</button>
+    </div>
+  </details>
+  <a class="btn secundario chico descargar" href="{{ pdf }}">{{ icono("adjunto") }}<span>Informe PDF</span></a>
+</form>
+<p class="ayuda filtro-leyenda">Mirando {{ t.periodo }}{% if origen != "todos" %} · {{ origenes[origen]|lower }}{% endif %}.</p>
+
+{# ------------------------------------------------ decision vigente #}
+{% if d.vigente %}
+<section class="panel decision" id="decision">
+  <div class="tarjeta-titulo">
+    <h2>Tu decisión vigente</h2>
+    <span class="chip tono-ok">desde el {{ d.vigente.cuando.strftime("%d/%m") }}</span>
+  </div>
+  <p class="ayuda">“{{ d.vigente.nombre }}”. Lo decidido contra lo que viene pasando desde entonces.</p>
+  <table class="cuentas seguimiento">
+    <tr><th></th><th class="d">Decidiste</th><th class="d">Va</th></tr>
+    {% for etq, objetivo, real, bien in d.seguimiento %}
+    <tr><th scope="row">{{ etq }}</th><td class="num">{{ objetivo }}</td><td class="num {{ 'tono-texto-ok' if bien else 'tono-texto-aviso' }}">{{ real }}</td></tr>
+    {% endfor %}
+  </table>
+  <p class="nota">La meta ({{ d.vigente.r.meta }}) y la capacidad ya están aplicadas: con eso Estiba calcula el precio sugerido de cada flete. La publicidad por día hay que ponerla en Meta.</p>
+</section>
+{% endif %}
+
+{# ------------------------------------------------ lo importante #}
+<section class="panel">
+  <h2>Lo importante</h2>
+  <ol class="hallazgos">
+    {% for c in t.conclusiones %}<li>{{ c }}</li>{% endfor %}
+    {% if a %}<li>{{ a.frases.meta }}</li>{% endif %}
+  </ol>
+</section>
+
+<section class="kpis tablero-kpis" aria-label="Resumen">
+  {% for etq, valor, nota in t.kpis %}
+  <div class="kpi"><span class="kpi-etq">{{ etq }}</span><span class="kpi-val num">{{ valor }}</span><span class="kpi-nota">{{ nota }}</span></div>
+  {% endfor %}
+</section>
+
+{% if t.comparar %}
+<section class="panel">
+  <h2>Contra el período anterior</h2>
+  <p class="ayuda">Mismo largo, justo antes: desde el {{ t.antes_desde.strftime("%d/%m") }}. Si antes no había campaña ni fletes, el cambio es todo lo nuevo; los fijos se pagan igual.</p>
+  <table class="cuentas comparar">
+    <tr><th></th><th class="d">Ahora</th><th class="d">Antes</th><th class="d">Cambio</th></tr>
+    {% for etq, ahora, antes, delta in t.comparar %}
+    <tr><th scope="row">{{ etq }}</th><td class="num">{{ ahora }}</td><td class="num tenue">{{ antes }}</td>
+      <td class="num">{% if delta %}<span class="delta tono-texto-{{ delta.tono }}">{{ delta.flecha }} {{ delta.texto|replace(" vs. antes", "") }}</span>{% else %}—{% endif %}</td></tr>
+    {% endfor %}
+  </table>
+</section>
+{% endif %}
+
+<div class="tablero-grilla">
+
+{# ------------------------------------------------ plata #}
+<section class="panel grafico-tarjeta">
+  <h2>¿A dónde se va la plata?</h2>
+  <p class="ayuda">Arranca en lo facturado y cada costo baja un escalón. La última barra es lo que te queda.</p>
+  <div class="svg">{{ t.graficos.cascada | safe }}</div>
+</section>
+
+<section class="panel grafico-tarjeta">
+  <h2>¿Cómo viene?</h2>
+  <p class="ayuda">Por semana: lo facturado (verde) contra los costos (rojo). El punto es lo que quedó.</p>
+  <div class="svg">{{ t.graficos.semanas | safe }}</div>
+</section>
+
+<section class="panel grafico-tarjeta">
+  <h2>¿Dónde se pierden los clientes?</h2>
+  <p class="ayuda">De cada consulta, hasta qué paso llegó. El salto más grande entre dos barras es donde conviene trabajar.</p>
+  <div class="svg">{{ t.graficos.embudo | safe }}</div>
+  {% if t.graficos.motivos %}<h3 class="sub-titulo">Por qué se perdieron</h3><div class="svg">{{ t.graficos.motivos | safe }}</div>{% endif %}
+</section>
+
+{% if a %}
+{# ------------------------------------------------ proyeccion #}
+<section class="panel grafico-tarjeta">
+  <h2>¿Cómo termina el mes?</h2>
+  <p class="ayuda">Simulación Monte Carlo: 4.000 meses posibles con la incertidumbre de tus datos (cuántas consultas llegan, cuántas cierran, cuánto se cobra). Cada barra cuenta cuántos meses cayeron en ese resultado.</p>
+  <div class="svg">{{ a.graficos.histograma | safe }}</div>
+  <div class="probas">
+    <div><strong class="num">{{ a.mc.p_ganar }}</strong><span>de los meses ganás plata</span></div>
+    <div><strong class="num">{{ a.mc.p_meta }}</strong><span>llegás a la meta</span></div>
+    <div><strong class="num">{{ a.mc.p50 }}</strong><span>lo más probable</span></div>
+  </div>
+  <p class="lectura">{{ a.frases.montecarlo }}</p>
+</section>
+
+<section class="panel grafico-tarjeta">
+  <h2>Tres escenarios del mes</h2>
+  <p class="ayuda">Con el cierre en su peor, su más probable y su mejor valor razonable, según tus datos.</p>
+  <div class="svg">{{ t.graficos.escenarios | safe }}</div>
+</section>
+
+{# ------------------------------------------------ palancas #}
+<section class="panel grafico-tarjeta">
+  <h2>¿Qué palanca pesa más?</h2>
+  <p class="ayuda">Análisis de sensibilidad: cada variable se mueve un 20 % para cada lado, de a una. La barra más larga es donde un esfuerzo chico cambia más el resultado.</p>
+  <div class="svg">{{ a.graficos.tornado | safe }}</div>
+  <p class="lectura">{{ a.frases.tornado }}</p>
+</section>
+
+{# ------------------------------------------------ optimo #}
+<section class="panel grafico-tarjeta" id="optimo">
+  <h2>¿Cuál es la mejor combinación?</h2>
+  <p class="ayuda">La ganancia del mes para cada precio (hacia la derecha) y cada presupuesto diario en Meta (hacia arriba). Verde gana, rojo pierde. El círculo es hoy; la estrella, la que más deja sin pasarte de tu capacidad.</p>
+  <div class="svg">{{ a.graficos.calor | safe }}</div>
+  <div class="probas">
+    <div><strong class="num">{{ a.optimo.precio }}</strong><span>precio óptimo</span></div>
+    <div><strong class="num">{{ a.optimo.gasto }}</strong><span>por día en Meta</span></div>
+    <div><strong class="num">{{ a.optimo.ganancia }}</strong><span>al mes ({{ a.optimo.fletes }} fletes)</span></div>
+  </div>
+  <p class="lectura">{{ a.frases.optimo }} {{ a.frases.montecarlo_opt }}</p>
+  <p class="lectura">{{ a.frases.meta }}</p>
+  <details class="supuestos-modelo"{% if elasticidad != 1.0 or saturacion != 0.8 or tope %} open{% endif %}>
+    <summary>Supuestos del modelo</summary>
+    <form method="get" action="/numeros/tablero#optimo" class="modelo-form">
+      <input type="hidden" name="periodo" value="{{ periodo }}"><input type="hidden" name="origen" value="{{ origen }}">
+      <label>Sensibilidad al precio <output>{{ '%.1f'|format(elasticidad) }}</output>
+        <input type="range" name="elasticidad" min="0" max="3" step="0.1" value="{{ elasticidad }}" oninput="this.previousElementSibling.value = (+this.value).toFixed(1)">
+        <small>Con 1,0: si subís el precio un 10 %, cierran cerca de un 10 % menos. Con 0, el precio no espanta a nadie; con 2, espanta el doble.</small>
+      </label>
+      <label>Rendimiento de la publicidad <output>{{ '%.2f'|format(saturacion) }}</output>
+        <input type="range" name="saturacion" min="0.3" max="1" step="0.05" value="{{ saturacion }}" oninput="this.previousElementSibling.value = (+this.value).toFixed(2)">
+        <small>Con 0,8, duplicar lo que ponés trae 1,74 veces las consultas, no 2: en una zona chica el anuncio le llega a gente que ya lo vio. Con 1, rinde parejo.</small>
+      </label>
+      <label>Tope de publicidad por día <input name="tope" inputmode="numeric" value="{{ tope }}" placeholder="{{ a.tope_dia }}"></label>
+      <button class="btn secundario chico" type="submit">Recalcular</button>
+    </form>
+    <p class="nota">Con 5 fletes estos dos números no se pueden medir todavía: son supuestos razonables para una zona chica. A medida que marques fletes y cargues gastos, se van a poder estimar.</p>
+  </details>
+</section>
+{% endif %}
+
+</div>
+
+{# ------------------------------------------------ calculadora #}
+<section class="panel calculadora" id="calculadora">
+  <h2>¿Y si…? Calculadora</h2>
+  <p class="ayuda">Arranca con lo que viene pasando. Cambiá cualquier número y el mes se recalcula solo. Si te sirve, guardalo como escenario para compararlo y aplicarlo.</p>
+  <form id="calc" hx-get="/numeros/tablero/simular" hx-target="#sim-resultado" hx-trigger="input changed delay:250ms from:#calc, submit"
+        hx-include="#calc" class="calc-form">
+    <input type="hidden" name="elasticidad" value="{{ elasticidad }}"><input type="hidden" name="saturacion" value="{{ saturacion }}">
+    <input type="hidden" name="precio_base" value="{{ sim.precio }}">
+    <label>Precio promedio <span class="entrada"><span class="unidad">$</span><input name="precio" value="{{ sim.precio }}" inputmode="numeric"></span></label>
+    <label>Publicidad por día <span class="entrada"><span class="unidad">$</span><input name="gasto_dia" value="{{ sim.gasto_dia }}" inputmode="numeric"></span></label>
+    <label>Costo por conversación <span class="entrada"><span class="unidad">$</span><input name="costo_consulta" value="{{ sim.costo_consulta }}" inputmode="numeric"></span></label>
+    <label>Cierre a {{ sim.precio|int|pesos }} <span class="entrada"><input name="cierre" value="{{ sim.cierre }}" inputmode="decimal"><span class="unidad">%</span></span></label>
+    <label>Fletes sin publicidad <span class="entrada"><input name="solos" value="{{ sim.solos }}" inputmode="decimal"><span class="unidad">/mes</span></span></label>
+    <label>Meta de ganancia <span class="entrada"><span class="unidad">$</span><input name="meta" value="{{ sim.meta }}" inputmode="numeric"></span></label>
+    <label>Capacidad <span class="entrada"><input name="capacidad" value="{{ sim.capacidad }}" inputmode="numeric"><span class="unidad">fletes/mes</span></span></label>
+    {% if a %}<button type="button" class="btn fantasma chico" data-llenar='{"precio": {{ a.optimo.precio_crudo }}, "gasto_dia": {{ a.optimo.gasto_crudo }}}'>{{ icono("check") }}<span>Probar la combinación óptima</span></button>{% endif %}
+  </form>
+  <div id="sim-resultado" aria-live="polite">{% with r = resultado %}{% include "_simulacion.html" %}{% endwith %}</div>
+  <form method="post" action="/numeros/tablero/escenario" class="guardar-escenario" id="guardar">
+    <input name="nombre" placeholder="Nombre: “subo a $55 mil”" aria-label="Nombre del escenario">
+    <button class="btn secundario" type="submit">{{ icono("check") }}<span>Guardar escenario</span></button>
+  </form>
+</section>
+
+{# ------------------------------------------------ escenarios #}
+<section class="panel" id="escenarios">
+  <h2>Escenarios</h2>
+  {% if d.escenarios %}
+  <p class="ayuda">Lado a lado. Aplicar uno lo vuelve tu decisión: la meta y la capacidad pasan a tu configuración, y lo demás queda como objetivo para medir.</p>
+  <div class="escenarios-tabla">
+    <table class="cuentas">
+      <tr><th></th>{% for e in d.escenarios %}<th class="d">{{ e.nombre }}{% if e.estado == "aplicada" %}<br><span class="chip tono-ok">vigente</span>{% endif %}</th>{% endfor %}</tr>
+      <tr><th scope="row">Precio</th>{% for e in d.escenarios %}<td class="num">{{ e.v.precio|int|pesos }}</td>{% endfor %}</tr>
+      <tr><th scope="row">Publicidad/día</th>{% for e in d.escenarios %}<td class="num">{{ e.v.gasto_dia|int|pesos }}</td>{% endfor %}</tr>
+      <tr><th scope="row">Cierre</th>{% for e in d.escenarios %}<td class="num">{{ e.r.cierre_efectivo }}%</td>{% endfor %}</tr>
+      <tr><th scope="row">Fletes</th>{% for e in d.escenarios %}<td class="num">{{ e.r.fletes }}</td>{% endfor %}</tr>
+      <tr><th scope="row">Facturás</th>{% for e in d.escenarios %}<td class="num">{{ e.r.ingresos }}</td>{% endfor %}</tr>
+      <tr class="total"><th scope="row">Te queda</th>{% for e in d.escenarios %}<td class="num {{ 'tono-texto-mal' if e.r.mal else 'tono-texto-ok' }}">{{ e.r.ganancia }}</td>{% endfor %}</tr>
+      <tr><th scope="row">De la meta</th>{% for e in d.escenarios %}<td class="num">{{ '%.0f'|format(e.r.avance) }}%</td>{% endfor %}</tr>
+      <tr><th></th>{% for e in d.escenarios %}<td class="acciones-escenario">
+        {% if e.estado != "aplicada" %}
+        <form method="post" action="/numeros/tablero/escenario/{{ e.id }}/aplicar" onsubmit="return confirm('¿Aplicar «{{ e.nombre }}» como tu decisión? La meta y la capacidad pasan a tu configuración y cambian los precios sugeridos.')"><button class="btn primario chico" type="submit">Aplicar</button></form>
+        <form method="post" action="/numeros/tablero/escenario/{{ e.id }}/borrar"><button class="btn fantasma chico" type="submit" aria-label="Borrar {{ e.nombre }}">{{ icono("cruz") }}</button></form>
+        {% endif %}
+      </td>{% endfor %}</tr>
+    </table>
+  </div>
+  {% else %}
+  <p class="ayuda">Todavía no guardaste ninguno. Probá números en la calculadora y guardá los que te interesen: acá se comparan lado a lado.</p>
+  {% endif %}
+  {% if d.historial %}
+  <details class="cot-calculo"><summary>Decisiones anteriores</summary>
+    <ul class="supuestos">{% for e in d.historial %}<li>{{ e.cuando.strftime("%d/%m/%Y") }} · {{ e.nombre }}: {{ e.v.precio|int|pesos }} por flete, {{ e.v.gasto_dia|int|pesos }} por día</li>{% endfor %}</ul>
+  </details>
+  {% endif %}
+</section>
+
+{# ------------------------------------------------ precio #}
+<section class="panel grafico-tarjeta">
+  <h2>¿Cuánto cobrar?</h2>
+  <p class="ayuda">La curva roja es el mínimo para no perder según cuántos fletes hagas: los fijos se reparten. Si lo que cobrás (línea negra) queda debajo de la curva a tu ritmo, cada flete pierde.</p>
+  <div class="svg">{{ t.graficos.minimo | safe }}</div>
+  {% if a %}<p class="lectura">{{ a.frases.equilibrio }}</p>{% endif %}
+</section>
+
+{# ------------------------------------------------ flete por flete #}
+{% if t.fletes %}
+<section class="panel">
+  <h2>¿Cobraste bien cada flete?</h2>
+  <p class="ayuda">Lo cobrado contra lo que Estiba sugiere hoy con tus costos y tu meta.</p>
+  <div class="escenarios-tabla">
+    <table class="cuentas">
+      <tr><th>Flete</th><th class="d">Km</th><th class="d">Cobrado</th><th class="d">Sugerido</th><th class="d">Diferencia</th></tr>
+      {% for f in t.fletes %}
+      <tr><th scope="row">{{ f.dia }} · {{ f.cliente }}<small>{{ f.ruta }}</small></th><td class="num">{{ f.km or "—" }}</td>
+        <td class="num">{{ f.cobrado }}{% if f.bajo_minimo %}<small class="tono-texto-mal">bajo el mínimo</small>{% endif %}</td>
+        <td class="num">{{ f.sugerido }}</td><td class="num tono-texto-{{ f.tono }}">{{ f.dif }}</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{# ------------------------------------------------ que hacer #}
+<section class="panel accion-semana">
+  <h2>Qué hacer esta semana</h2>
+  <ol class="semana">{% for paso in t.semana %}<li>{{ paso }}</li>{% endfor %}</ol>
+</section>
+{% endblock %}

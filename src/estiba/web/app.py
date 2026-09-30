@@ -12,6 +12,7 @@ celular con el texto listo.
 
 from __future__ import annotations
 
+import asyncio
 import csv
 import hashlib
 import hmac
@@ -19,8 +20,9 @@ import io
 import json
 import logging
 import re
+import threading
 from collections.abc import Callable
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from decimal import Decimal
 from datetime import date, datetime, timedelta
@@ -35,6 +37,7 @@ from fastapi.responses import (
     RedirectResponse,
     Response,
 )
+from fastapi.concurrency import run_in_threadpool
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -49,9 +52,17 @@ from estiba.conversation.store import ConversationStore
 from estiba.core.models import JobState
 from estiba.crm import embudo
 from estiba.finanzas import costos as F
-from estiba.formato import telefono
+from estiba.finanzas import pronostico
+from estiba.finanzas.simular import simular
+from estiba.informe import generar as informe
+from estiba.informe import graficos
+from estiba.conversation.clasificacion import _DESDE_PUBLI
+from estiba.extraction.texto import plano
+from estiba.finanzas.precio import BASE_DEFAULT
+from estiba.formato import pesos, telefono
 from estiba.jobs import aprendido, episodios
 from estiba.jobs.engine import (
+    AJUSTADO,
     COTIZADO,
     MOTIVOS_PERDIDA,
     PERDIDO,
@@ -67,6 +78,7 @@ from estiba.storage.repositories import (
     DraftRepository,
     ClaseRepository,
     CorteRepository,
+    DecisionRepository,
     GastoRepository,
     PanelRepository,
     SettingsRepository,
@@ -110,6 +122,19 @@ PLAZOS = [("mas-tarde", "Más tarde"), ("hoy", "Hoy"), ("manana", "Mañana"), ("
 PERIODOS = {"7d": "7 días", "30d": "30 días", "mes": "Este mes", "todo": "Todo"}
 
 
+def _cuando_legible(starts_at: str, ahora: datetime) -> str:
+    """"2026-09-30T11:00:00" -> "mañana 11:00"; "2026-10-03" -> "el sáb 03/10"."""
+    dt = datetime.fromisoformat(starts_at)
+    dia = dt.date()
+    hora = f" {dt:%H:%M}" if "T" in starts_at else ""
+    faltan = (dia - ahora.date()).days
+    if faltan == 0:
+        return "hoy" + hora
+    if faltan == 1:
+        return "mañana" + hora
+    return f"el {P.fecha_corta(dia)}{hora}"
+
+
 @dataclass
 class Estado:
     db: str
@@ -121,6 +146,10 @@ class Estado:
     sincronizado_at: datetime | None = None
     #: Ultimo estado conocido de la sesion de WhatsApp (lo avisa WAHA por webhook).
     sesion: str | None = None
+    #: Como salio la ultima vez que se buscaron mensajes perdidos.
+    recuperacion: dict | None = None
+    #: Avisos en el escritorio (None: no se avisa, como en los tests).
+    avisos: object | None = None
 
     def conectar(self):
         return connect(self.db)
@@ -131,8 +160,26 @@ class Estado:
             ahora = self.ahora()
             self.resultado = sincronizar(conn, self.engine, ahora, self.espejo)
             self.sincronizado_at = ahora
+            if self.avisos is not None:
+                self._avisar_fechas(conn)
         finally:
             conn.close()
+
+    def _avisar_fechas(self, conn) -> None:
+        """Una fecha que aparecio o se movio en la agenda, avisada en el momento."""
+        for job_id, cambio in self.resultado.agenda:
+            if cambio not in ("creado", "movido"):
+                continue
+            fila = conn.execute("SELECT * FROM calendar_events WHERE job_id = ? AND status = 'activo'",
+                                (job_id,)).fetchone()
+            if fila is None:
+                continue
+            cuando = _cuando_legible(fila["starts_at"], self.ahora())
+            titulo = fila["title"].removeprefix("Sin confirmar · ")
+            if fila["tentative"]:
+                self.avisos.avisar(f"Posible flete {cuando}", f"{titulo}\nSe habló de esa fecha: confirmala con el cliente.")
+            else:
+                self.avisos.avisar(f"Flete confirmado {cuando}", titulo)
 
     def consultar_sesion(self) -> dict | None:
         """Pregunta a WAHA como esta la sesion. None si WAHA no responde."""
@@ -166,18 +213,45 @@ def create_app(
     clave: str | None = None,
     espejo: EspejoCalDAV | None = None,
     whatsapp: WhatsApp | None = None,
+    repaso: timedelta | None = None,
+    avisos=None,
 ) -> FastAPI:
+    """`repaso`: cada cuanto buscar en WAHA mensajes que no llegaron por
+    webhook. La primera vez es al arrancar. None no busca nunca solo: los
+    tests no quieren un hilo hablandole a WAHA por su cuenta."""
     if espejo is None and (config := ConfigCalDAV.desde_entorno()):
         espejo = EspejoCalDAV(config)
     if whatsapp is None and (config_waha := ConfigWaha.desde_entorno()):
         whatsapp = WhatsApp(WahaClient(config_waha))
     estado = Estado(str(db), engine or JobEngine(), ahora, espejo, whatsapp)
+    estado.avisos = avisos
 
     @asynccontextmanager
     async def ciclo(_app: FastAPI):
         estado.sincronizar()
         estado.consultar_sesion()
+        # Ponerse al dia va aparte: con muchos chats y audios tarda, y la
+        # app tiene que abrir ya. Lo recuperado aparece en cuanto llega.
+        tareas = []
+        if estado.whatsapp and repaso:
+            tareas.append(asyncio.create_task(_repasar()))
+        if estado.avisos is not None:
+            tareas.append(asyncio.create_task(_recordar()))
         yield
+        for tarea in tareas:
+            tarea.cancel()
+            with suppress(asyncio.CancelledError):
+                await tarea
+
+    async def _recordar() -> None:
+        while True:
+            await run_in_threadpool(_recordatorios)
+            await asyncio.sleep(300)
+
+    async def _repasar() -> None:
+        while True:
+            await run_in_threadpool(_ponerse_al_dia)
+            await asyncio.sleep(repaso.total_seconds())
 
     app = FastAPI(
         lifespan=ciclo,
@@ -533,6 +607,10 @@ def create_app(
                 mirando = datetime.strptime(mes, "%Y-%m").date()
             except ValueError:
                 mirando = None
+            # Diez años para cada lado alcanzan: mas alla no hay fletes, y en
+            # diciembre del 9999 el "mes siguiente" no existe y la pagina caia.
+            if mirando is not None and abs(mirando.year - estado.ahora().year) > 10:
+                mirando = None
         return P.agenda(eventos, _fletes(), estado.ahora(), url, mirando)
 
     def _embudo(periodo: str) -> tuple[embudo.Embudo, P.Numeros]:
@@ -575,13 +653,44 @@ def create_app(
     # Paginas
     # ------------------------------------------------------------------
 
+    def _por_confirmar(dias: int = 7) -> list[dict]:
+        """Fechas que alguien nombro y el cliente no cerro, de hoy a `dias`.
+
+        Estaban en la agenda con "Sin confirmar", pero para verlas habia que
+        ir a buscarlas: una fecha dicha en un audio se pasaba sin que nadie
+        le escribiera al cliente.
+        """
+        ahora = estado.ahora()
+        conn = estado.conectar()
+        try:
+            eventos = LocalCalendar(conn).eventos(incluir_cancelados=False)
+        finally:
+            conn.close()
+        fletes = _fletes()
+        salida = []
+        for e, _ in eventos:
+            dia = e.inicio.date() if isinstance(e.inicio, datetime) else e.inicio
+            if not e.tentativo or not (ahora.date() <= dia <= ahora.date() + timedelta(days=dias)):
+                continue
+            f = fletes.get(e.job_id)
+            if f is None or f.cerrado:
+                continue
+            faltan = (dia - ahora.date()).days
+            salida.append({
+                "job_id": e.job_id, "quien": f.quien, "ruta": f.ruta if (f.origen or f.destino) else "",
+                "cuando": ("hoy" if faltan == 0 else "mañana" if faltan == 1 else P.fecha_corta(dia))
+                          + (f" {e.inicio:%H:%M}" if isinstance(e.inicio, datetime) else ""),
+                "urgente": faltan <= 1,
+            })
+        return salida
+
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
     def pagina_bandeja(request: Request, f: str = "todos"):
         validos = [c for c, _ in FILTROS + FILTROS_APARTE]
         filtro = f if f in validos else "todos"
         return templates.TemplateResponse(
             request, "bandeja.html",
-            _contexto(request, **_conversaciones(filtro), titulo="Hoy"),
+            _contexto(request, **_conversaciones(filtro), por_confirmar=_por_confirmar(), titulo="Hoy"),
         )
 
     @app.get("/agenda", response_class=HTMLResponse, include_in_schema=False)
@@ -597,8 +706,37 @@ def create_app(
             _contexto(request, secciones=_secciones(list(_fletes().values())), titulo="Fletes"),
         )
 
+    @app.get("/conversaciones/{chat_id}", response_class=HTMLResponse, include_in_schema=False)
+    def pagina_apartada(request: Request, chat_id: str):
+        """Una charla privada o de spam, para mirarla y reclasificarla."""
+        conn = estado.conectar()
+        try:
+            fila = ClaseRepository(conn).de(chat_id)
+            conv = ConversationStore(conn).get(chat_id)
+            nombre = CRMRepository(conn).name(chat_id)
+        finally:
+            conn.close()
+        if not conv.messages:
+            raise HTTPException(404, f"no hay una conversación con {chat_id}")
+        # Si ya volvio al circuito (o nunca salio), su lugar es el flete.
+        propios = sorted(j for j in estado.resultado.fletes if j.split(":job")[0] == chat_id)
+        if propios:
+            return RedirectResponse(f"/fletes/{propios[-1]}", status_code=303)
+        a = {"chat_id": chat_id, "telefono": telefono(chat_id), "nombre": nombre,
+             "clase": fila["clase"] if fila else "privado", "porque": fila["porque"] if fila else None,
+             "lo_dijiste_vos": bool(fila and fila["quien"] == "humano")}
+        return templates.TemplateResponse(
+            request, "apartada.html",
+            _contexto(request, a=a, mensajes=P.mensajes_de(conv, estado.ahora()),
+                      volver="spam" if a["clase"] == "spam" else "privados", titulo=a["nombre"] or a["telefono"]),
+        )
+
     @app.get("/fletes/{job_id}", response_class=HTMLResponse, include_in_schema=False)
     def pagina_flete(request: Request, job_id: str, f: str = "todos"):
+        # Un enlace viejo a una charla que quedo afuera del circuito: se la
+        # muestra como lo que es, en vez de un "no encontrado".
+        if job_id not in estado.resultado.fletes and (chat := job_id.split(":job")[0]) in estado.resultado.fuera:
+            return RedirectResponse(f"/conversaciones/{chat}", status_code=303)
         d = _detalle(job_id)
         conn = estado.conectar()
         try:
@@ -624,10 +762,21 @@ def create_app(
             guardada = ClaseRepository(conn2).de(d.flete.chat_id)
         finally:
             conn2.close()
+        ev_flete, _ = estado.resultado.fletes[job_id]
+        conn4 = estado.conectar()
+        try:
+            cierres = [a for a in sin_anuladas(ActionRepository(conn4).for_job(job_id)) if a.tipo == REALIZADO]
+        finally:
+            conn4.close()
+        cobrado = cierres[-1].monto if ev_flete.job.state is JobState.DONE and cierres else None
+        cot = P.cotizacion(ev_flete.presupuesto,
+                           ev_flete.job.quoted_price.value if ev_flete.job.quoted_price else None, cobrado,
+                           job=ev_flete.job, confirmado=ev_flete.precio_confirmado,
+                           ajustable=ev_flete.job.state not in (JobState.DONE, JobState.CANCELLED))
         return templates.TemplateResponse(
             request, "flete.html",
             _contexto(
-                request, d=d, anterior=anterior, siguiente=siguiente, filtro=filtro,
+                request, d=d, cot=cot, anterior=anterior, siguiente=siguiente, filtro=filtro,
                 plazos=PLAZOS, dudosa=bool(clase and clase.pide_decision),
                 motivos=MOTIVOS_PERDIDA,
                 clase=guardada["clase"] if guardada else None,
@@ -691,7 +840,7 @@ def create_app(
             conn.close()
         return filas, [
             F.GastoPublicidad(date.fromisoformat(g["period_start"]), date.fromisoformat(g["period_end"]),
-                              Decimal(g["spend"]))
+                              Decimal(g["spend"]), g["resultados"])
             for g in filas
         ]
 
@@ -717,10 +866,391 @@ def create_app(
             F.balance(c, hechos, gastos, hoy.replace(day=1), hoy),
             filas, ahora, cierre,
         )
+        o.pronostico = P.pronostico(pronostico.pronosticar(c, _historia(hechos, gastos, hoy)))
+        base = _base()
+        o.negocio = _negocio() if _negocio() != "Tu negocio de fletes" else ""
+        o.base = base.get("texto", "")
+        o.base_nota = (f"{base['error']}: quedó la anterior." if base.get("error")
+                       else f"En el mapa: {base['como']}" if base.get("como") else None)
         return templates.TemplateResponse(
             request, "objetivos.html",
             _contexto(request, o=o, periodo=periodo, periodos=PERIODOS, titulo="Objetivos"),
         )
+
+    def _historia(hechos: list[F.FleteHecho], gastos: list[F.GastoPublicidad], hoy: date) -> pronostico.Historia:
+        """Los ultimos 30 dias, o desde que arranco la publicidad si fue despues.
+
+        Contar dias sin campaña como dias de campaña bajaria el gasto por
+        dia y el pronostico saldria prolijamente equivocado.
+        """
+        desde = hoy - timedelta(days=29)
+        if gastos:
+            desde = max(desde, min(g.desde for g in gastos))
+        de_publi = set()
+        consultas = hechos_publi = hechos_otros = 0
+        for lead in estado.resultado.leads:
+            if not (desde <= lead.creado.date() <= hoy):
+                continue
+            par = estado.resultado.fletes.get(lead.job_id)
+            primero = par[1].text_of(par[1].messages[0]) if par and par[1].messages else ""
+            if _DESDE_PUBLI.search(plano(primero or "")):
+                de_publi.add(lead.job_id)
+                consultas += 1
+        for f in hechos:
+            if not (desde <= f.dia <= hoy):
+                continue
+            if f.job_id in de_publi:
+                hechos_publi += 1
+            else:
+                hechos_otros += 1
+        return pronostico.Historia(
+            dias=(hoy - desde).days + 1,
+            consultas_publicidad=consultas,
+            hechos_publicidad=hechos_publi,
+            hechos_sin_publicidad=hechos_otros,
+            gasto=sum((g.dentro(desde, hoy) for g in gastos), Decimal(0)),
+            # Solo si todos los gastos de la ventana dicen cuantas trajeron:
+            # mezclar las de Meta con las que reconoce Estiba no da nada.
+            consultas_meta=round(sum(g.resultados * g.parte(desde, hoy) for g in en_ventana))
+            if (en_ventana := [g for g in gastos if g.parte(desde, hoy) > 0])
+            and all(g.resultados for g in en_ventana) else None,
+            cobrado=[f.cobrado for f in hechos if f.cobrado is not None and desde <= f.dia <= hoy],
+        )
+
+    # ------------------------------------------------------------------
+    # Tablero e informe: lo mismo, en pantalla y en papel
+    # ------------------------------------------------------------------
+
+    def _de_publicidad() -> set[str]:
+        """Los fletes que arrancaron con el texto del boton de un anuncio."""
+        salida = set()
+        for job_id, (_, conv) in estado.resultado.fletes.items():
+            primero = conv.text_of(conv.messages[0]) if conv.messages else ""
+            if _DESDE_PUBLI.search(plano(primero or "")):
+                salida.add(job_id)
+        return salida
+
+    def _rango(periodo: str, desde: str | None, hasta: str | None) -> tuple[date | None, date, str]:
+        """El periodo del filtro. "fechas" usa desde/hasta; si no se entienden, 30 dias."""
+        hoy = estado.ahora().date()
+        if periodo == "fechas":
+            try:
+                d, h = date.fromisoformat(desde or ""), date.fromisoformat(hasta or "")
+                if d <= h:
+                    return d, min(h, hoy), f"del {d:%d/%m} al {min(h, hoy):%d/%m}"
+            except ValueError:
+                pass
+            periodo = "30d"
+        return {
+            "7d": (hoy - timedelta(days=6), hoy, "últimos 7 días"),
+            "30d": (hoy - timedelta(days=29), hoy, "últimos 30 días"),
+            "mes": (hoy.replace(day=1), hoy, "este mes"),
+            "todo": (None, hoy, "desde el principio"),
+        }.get(periodo, (hoy - timedelta(days=29), hoy, "últimos 30 días"))
+
+    def _negocio() -> str:
+        conn = estado.conectar()
+        try:
+            return (SettingsRepository(conn).json("negocio") or {}).get("nombre") or "Tu negocio de fletes"
+        finally:
+            conn.close()
+
+    def _tablero(periodo: str, desde_txt: str | None, hasta_txt: str | None, origen: str,
+                 tema: graficos.Tema, elasticidad: float = 1.0, saturacion: float = 0.8,
+                 tope_dia: float | None = None) -> dict:
+        desde, hasta, etiqueta = _rango(periodo, desde_txt, hasta_txt)
+        c = _costos()
+        todos = _fletes_hechos()
+        filas, gastos = _gastos()
+        publi = _de_publicidad()
+        # El origen filtra los fletes y el embudo. La publicidad solo se
+        # cobra a los que vinieron por ella: los que vuelven no la usaron.
+        elegir = {"publicidad": lambda j: j in publi, "vuelven": lambda j: j not in publi}.get(origen, lambda j: True)
+        hechos = [f for f in todos if elegir(f.job_id)]
+        gastos_filtro = [] if origen == "vuelven" else gastos
+        leads = [l for l in estado.resultado.leads if elegir(l.job_id)]
+        e = embudo.calcular(leads, hasta=datetime.combine(hasta, datetime.max.time()),
+                            desde=datetime.combine(desde, datetime.min.time()) if desde else None)
+        nombres = _nombres()
+        fletes = []
+        for f in hechos:
+            if desde is not None and f.dia < desde or f.dia > hasta:
+                continue
+            ev, _ = estado.resultado.fletes[f.job_id]
+            j, pres = ev.job, ev.presupuesto
+            det = pres.detalle if pres else {}
+            fletes.append(informe.FleteDelInforme(
+                dia=f.dia,
+                cliente=nombres.get(j.conversation_id) or telefono(j.conversation_id),
+                ruta=f"{j.origin.value} → {j.destination.value}" if j.origin and j.destination else "",
+                km=int(det["km"]) if det.get("km") is not None else None,
+                cobrado=f.cobrado,
+                sugerido=pres.total if pres else None,
+                minimo=det.get("minimo"),
+            ))
+        h = _historia(todos, gastos, estado.ahora().date())
+        p = pronostico.pronosticar(c, h)
+        ctx = informe.datos(negocio=_negocio(), periodo=etiqueta, desde=desde, hoy=hasta, ahora=estado.ahora(),
+                            c=c, hechos=hechos, gastos=gastos_filtro, embudo=e, pronostico=p,
+                            fletes=fletes, tema=tema, origen=origen, historia=h,
+                            elasticidad=elasticidad, saturacion=saturacion, tope_dia=tope_dia)
+        ctx["pronostico_crudo"] = p
+        return ctx
+
+    ORIGENES = {"todos": "Todos", "publicidad": "Por publicidad", "vuelven": "Sin publicidad"}
+    PERIODOS_TABLERO = {**PERIODOS, "fechas": "Fechas"}
+
+    @app.get("/numeros/tablero", response_class=HTMLResponse, include_in_schema=False)
+    def pagina_tablero(request: Request, periodo: str = "30d", desde: str | None = None,
+                       hasta: str | None = None, origen: str = "todos", elasticidad: float = 1.0,
+                       saturacion: float = 0.8, tope: str = ""):
+        origen = origen if origen in ORIGENES else "todos"
+        periodo = periodo if periodo in PERIODOS_TABLERO else "30d"
+        elasticidad = _acotar(elasticidad, 0.0, 3.0, 1.0)
+        saturacion = _acotar(saturacion, 0.3, 1.0, 0.8)
+        tope_dia = float(t) if (t := _numero(tope)) else None
+        t = _tablero(periodo, desde, hasta, origen, graficos.PANTALLA, elasticidad, saturacion, tope_dia)
+        p = t.pop("pronostico_crudo")
+        c = _costos()
+        _, gastos = _gastos()
+        decisiones = _decisiones(c, _fletes_hechos(), gastos)
+        sim = {
+            "precio": int(p.ticket.valor.quantize(Decimal(1))),
+            "gasto_dia": int(p.gasto_dia.quantize(Decimal(1))) or 4000,
+            "costo_consulta": int(p.costo_consulta.valor),
+            "cierre": f"{float(p.cierre.valor):.1f}".replace(".", ",").removesuffix(",0"),
+            "solos": f"{float(p.sin_publicidad_mes):.1f}".replace(".", ",").removesuffix(",0"),
+            "meta": int(c.ganancia_objetivo),
+            "capacidad": int(c.fletes_por_mes_max),
+        }
+        consulta = str(request.url.query)
+        return templates.TemplateResponse(
+            request, "tablero.html",
+            _contexto(request, t=t, periodo=periodo, periodos=PERIODOS_TABLERO, origen=origen, origenes=ORIGENES,
+                      desde=desde or "", hasta=hasta or "", sim=sim, d=decisiones,
+                      elasticidad=elasticidad, saturacion=saturacion, tope=tope or "",
+                      resultado=_simulacion(c, **{k: (_numero(str(v)) or Decimal(0)) for k, v in sim.items()},
+                                  elasticidad=elasticidad, saturacion=saturacion, precio_base=sim["precio"]),
+                      pdf=f"/numeros/informe.pdf{'?' + consulta if consulta else ''}",
+                      titulo="Tablero"),
+        )
+
+    def _simulacion(c: F.Costos, *, precio, gasto_dia, costo_consulta, cierre, solos,
+                    meta=None, capacidad=None, elasticidad: float = 1.0, saturacion: float = 0.8,
+                    precio_base=None) -> dict:
+        """El mes con estos numeros.
+
+        `cierre` y `solos` son los de hoy, a `precio_base`. Si se prueba otro
+        precio, cierran mas o menos segun la sensibilidad al precio: la misma
+        cuenta que la optimizacion. Sin eso, la calculadora decia que a
+        $88.000 salian 14 fletes y $718.000, cuando lo esperable es 5 y
+        $47.000: una decision tomada con ese numero sale mal.
+        """
+        from dataclasses import replace as _cambiar
+
+        from estiba.finanzas import decision as D
+
+        if meta:
+            c = _cambiar(c, ganancia_objetivo=Decimal(str(meta)))
+        if capacidad:
+            c = _cambiar(c, fletes_por_mes_max=Decimal(str(capacidad)))
+        base = float(precio_base or precio) or 1.0
+        m = D.Modelo(precio=base, gasto_dia=float(gasto_dia) or 1.0,
+                     costo_consulta=float(costo_consulta) or 1.0, cierre=float(cierre) / 100,
+                     solos_mes=float(solos), elasticidad=elasticidad, saturacion=saturacion)
+        factor = m.factor_precio(float(precio))
+        cierre_ef = Decimal(str(round(m.cierre_a(float(precio)) * 100, 2)))
+        solos_ef = Decimal(str(round(float(solos) * factor, 2)))
+        s = simular(c, precio=Decimal(str(precio)), gasto_dia=Decimal(str(gasto_dia)),
+                    costo_consulta=Decimal(str(costo_consulta)), cierre=cierre_ef, solos_mes=solos_ef)
+        signo = lambda v: f"−{pesos(-v)}" if v < 0 else pesos(v)
+        partes = [("Camioneta", s.camioneta), ("Publicidad", s.publicidad), ("Fijos", s.fijos)]
+        base = max(s.ingresos, s.costos) or Decimal(1)
+        veredicto = []
+        if s.sobran:
+            veredicto.append((f"La publicidad traería {int(s.pedidos)} fletes y entran {int(c.fletes_por_mes_max)}: "
+                              f"sobran {s.sobran}. Estás pagando consultas que no vas a poder atender; "
+                              "conviene subir el precio antes que la publicidad.", "aviso"))
+        if s.minimo is not None and Decimal(str(precio)) < s.minimo:
+            veredicto.append((f"A {s.fletes} fletes por mes, para no perder necesitás cobrar {pesos(F.redondear(s.minimo))} "
+                              "en promedio: con este precio cada flete pierde.", "mal"))
+        if s.falta <= 0:
+            veredicto.append((f"Llegás a la meta y te sobran {pesos(-s.falta)}.", "ok"))
+        elif s.ganancia > 0:
+            veredicto.append((f"Ganás {pesos(s.ganancia)}; para la meta faltan {pesos(s.falta)}.", "aviso"))
+        # Rangos: que pasa si se mueve una sola cosa, con el mismo modelo.
+        if abs(factor - 1) > 0.01:
+            coma = lambda v: f"{float(v):.1f}".replace(".", ",")
+            veredicto.insert(0, (
+                f"A {pesos(Decimal(str(precio)))} cierran {'menos' if factor < 1 else 'más'}: "
+                f"{coma(cierre_ef)}% en vez de {coma(cierre)}% (sensibilidad al precio {coma(elasticidad)}, "
+                "ajustable en «Mejor combinación»).", "neutro"))
+
+        def fila(r, marca):
+            return {"precio": pesos(Decimal(str(round(r.precio, -2)))), "gasto": pesos(Decimal(str(round(r.gasto_dia, -2)))),
+                    "fletes": f"{r.fletes:.0f}", "ganancia": signo(Decimal(str(round(r.ganancia)))),
+                    "tono": "ok" if r.ganancia >= float(c.ganancia_objetivo) else ("aviso" if r.ganancia >= 0 else "mal"),
+                    "actual": marca}
+
+        rango_precio = [fila(D.evaluar(c, m, float(precio) * f, float(gasto_dia)), f == 1)
+                        for f in (0.7, 0.85, 1, 1.15, 1.3, 1.5, 1.75, 2)]
+        rango_gasto = [fila(D.evaluar(c, m, float(precio), float(gasto_dia) * f), f == 1)
+                       for f in (0, 0.5, 1, 1.5, 2, 3, 4, 6)]
+        eq = D.equilibrio(c, float(precio), float(gasto_dia))
+        return {
+            "rango_precio": rango_precio, "rango_gasto": rango_gasto,
+            "equilibrio": f"{eq:.0f}" if eq else None,
+            "cierre_efectivo": f"{cierre_ef:.1f}".replace(".", ","),
+            "valores": {"precio": precio, "gasto_dia": gasto_dia, "costo_consulta": costo_consulta,
+                        "cierre": cierre, "solos": solos, "meta": int(c.ganancia_objetivo),
+                        "capacidad": int(c.fletes_por_mes_max)},
+            "fletes": s.fletes, "consultas": s.consultas,
+            "ingresos": pesos(s.ingresos), "ganancia": signo(s.ganancia), "mal": s.ganancia < 0,
+            "margen": f"{s.margen:.0%}" if s.margen is not None and s.margen >= 0 else (f"−{-s.margen:.0%}" if s.margen else "—"),
+            "minimo": pesos(F.redondear(s.minimo)) if s.minimo is not None else "—",
+            "meta": pesos(c.ganancia_objetivo),
+            "avance": max(0.0, min(100.0, float(s.ganancia / c.ganancia_objetivo * 100))) if c.ganancia_objetivo else 0,
+            "barras": [{"nombre": n, "monto": pesos(m.quantize(Decimal(1))), "ancho": float(m / base * 100),
+                        "color": P.COLOR_PARTE.get(n, "pf")} for n, m in partes],
+            "ingreso_ancho": float(s.ingresos / base * 100),
+            "veredicto": veredicto,
+        }
+
+    @app.get("/numeros/tablero/simular", response_class=HTMLResponse, include_in_schema=False)
+    def simular_form(request: Request, precio: str = "0", gasto_dia: str = "0", costo_consulta: str = "0",
+                     cierre: str = "0", solos: str = "0", meta: str = "", capacidad: str = "",
+                     elasticidad: float = 1.0, saturacion: float = 0.8, precio_base: str = ""):
+        """La calculadora, recalculada del lado del servidor: la misma cuenta que el resto."""
+        valores = {k: (_numero(v) or Decimal(0)) for k, v in
+                   {"precio": precio, "gasto_dia": gasto_dia, "costo_consulta": costo_consulta,
+                    "cierre": cierre, "solos": solos}.items()}
+        return templates.TemplateResponse(
+            request, "_simulacion.html",
+            {"r": _simulacion(_costos(), **valores, meta=_numero(meta), capacidad=_numero(capacidad),
+                              precio_base=_numero(precio_base),
+                              elasticidad=_acotar(elasticidad, 0.0, 3.0, 1.0),
+                              saturacion=_acotar(saturacion, 0.3, 1.0, 0.8))})
+
+    def _acotar(v: float, lo: float, hi: float, defecto: float) -> float:
+        try:
+            v = float(v)
+        except (TypeError, ValueError):
+            return defecto
+        return defecto if v != v else max(lo, min(hi, v))
+
+    # -- escenarios y decisiones -----------------------------------------
+
+    _CAMPOS_ESCENARIO = ("precio", "gasto_dia", "costo_consulta", "cierre", "solos", "meta", "capacidad",
+                         "precio_base", "elasticidad", "saturacion")
+
+    @app.post("/numeros/tablero/escenario", include_in_schema=False)
+    async def guardar_escenario(request: Request):
+        form = await request.form()
+        valores = {k: str(_numero(str(form.get(k, ""))) or 0) for k in _CAMPOS_ESCENARIO}
+        nombre = str(form.get("nombre", "")).strip()[:60] or f"Escenario del {estado.ahora():%d/%m %H:%M}"
+        conn = estado.conectar()
+        try:
+            DecisionRepository(conn).guardar(nombre, valores, estado.ahora())
+        finally:
+            conn.close()
+        return RedirectResponse("/numeros/tablero#escenarios", status_code=303)
+
+    @app.post("/numeros/tablero/escenario/{decision_id}/aplicar", include_in_schema=False)
+    def aplicar_escenario(decision_id: int):
+        """Decidir: los valores del escenario pasan a la configuracion.
+
+        La meta y la capacidad mueven el valor de la hora, y con eso el
+        precio sugerido de cada flete. El cierre y el costo por conversacion
+        pasan a ser los supuestos de la publicidad. El precio y la
+        publicidad por dia quedan como objetivo, para medir contra lo real.
+        """
+        conn = estado.conectar()
+        try:
+            repo = DecisionRepository(conn)
+            try:
+                fila = repo.aplicar(decision_id, estado.ahora())
+            except KeyError as e:
+                raise HTTPException(404, str(e)) from e
+            v = json.loads(fila["valores"])
+            ajustes = SettingsRepository(conn)
+            actual = F.Costos.desde_dict(ajustes.json("costos")).a_dict()
+            for campo, clave in (("meta", "ganancia_objetivo"), ("capacidad", "fletes_por_mes_max"),
+                                 ("cierre", "cierre"), ("costo_consulta", "costo_por_consulta")):
+                if Decimal(v.get(campo) or 0) > 0:
+                    actual[clave] = v[campo]
+            ajustes.guardar_json("costos", actual)
+        finally:
+            conn.close()
+        estado.sincronizar()
+        return RedirectResponse("/numeros/tablero#decision", status_code=303)
+
+    @app.post("/numeros/tablero/escenario/{decision_id}/borrar", include_in_schema=False)
+    def borrar_escenario(decision_id: int):
+        conn = estado.conectar()
+        try:
+            if not DecisionRepository(conn).borrar(decision_id):
+                raise HTTPException(409, "solo se borra un escenario guardado, no una decisión")
+        finally:
+            conn.close()
+        return RedirectResponse("/numeros/tablero#escenarios", status_code=303)
+
+    def _decisiones(c: F.Costos, hechos: list[F.FleteHecho], gastos: list[F.GastoPublicidad]) -> dict:
+        """Los escenarios guardados, comparados, y como viene la decision vigente."""
+        conn = estado.conectar()
+        try:
+            filas = DecisionRepository(conn).todas()
+        finally:
+            conn.close()
+        escenarios, vigente = [], None
+        for f in filas:
+            v = {k: Decimal(x) for k, x in json.loads(f["valores"]).items()}
+            r = _simulacion(c, precio=v["precio"], gasto_dia=v["gasto_dia"], costo_consulta=v["costo_consulta"],
+                            cierre=v["cierre"], solos=v["solos"], meta=v.get("meta"), capacidad=v.get("capacidad"),
+                            precio_base=v.get("precio_base") or None,
+                            elasticidad=float(v.get("elasticidad") or 1), saturacion=float(v.get("saturacion") or 0.8))
+            item = {"id": f["id"], "nombre": f["nombre"], "estado": f["estado"],
+                    "cuando": datetime.fromisoformat(f["aplicada"] or f["creada"]), "v": v, "r": r}
+            escenarios.append(item)
+            if f["estado"] == "aplicada":
+                vigente = item
+        seguimiento = None
+        if vigente:
+            desde = vigente["cuando"].date()
+            hoy = estado.ahora().date()
+            dias = (hoy - desde).days + 1
+            desde_entonces = [x for x in hechos if x.dia >= desde]
+            cobrados = [x.cobrado for x in desde_entonces if x.cobrado is not None]
+            gasto = sum((g.dentro(desde, hoy) for g in gastos), Decimal(0))
+            v = vigente["v"]
+            meta_fletes = Decimal(vigente["r"]["fletes"]) * dias / 30
+            seguimiento = [
+                ("Precio promedio", pesos(v["precio"]),
+                 pesos(sum(cobrados, Decimal(0)) / len(cobrados)) if cobrados else "sin fletes todavía",
+                 bool(cobrados) and sum(cobrados, Decimal(0)) / len(cobrados) >= v["precio"] * Decimal("0.95")),
+                ("Publicidad por día", pesos(v["gasto_dia"]), pesos(gasto / dias) if gasto else "sin gasto cargado",
+                 bool(gasto) and abs(gasto / dias - v["gasto_dia"]) <= v["gasto_dia"] * Decimal("0.2")),
+                ("Fletes", f"{meta_fletes:.0f} a esta altura", f"{len(desde_entonces)} hechos",
+                 len(desde_entonces) >= meta_fletes * Decimal("0.9")),
+            ]
+        return {"escenarios": [e for e in escenarios if e["estado"] != "reemplazada"],
+                "historial": [e for e in escenarios if e["estado"] == "reemplazada"],
+                "vigente": vigente, "seguimiento": seguimiento}
+
+    @app.get("/numeros/informe.pdf", include_in_schema=False)
+    def informe_pdf(periodo: str = "30d", desde: str | None = None, hasta: str | None = None, origen: str = "todos",
+                    elasticidad: float = 1.0, saturacion: float = 0.8, tope: str = ""):
+        origen = origen if origen in ORIGENES else "todos"
+        tope_dia = float(x) if (x := _numero(tope)) else None
+        t = _tablero(periodo if periodo in PERIODOS_TABLERO else "30d", desde, hasta, origen, graficos.PAPEL,
+                     _acotar(elasticidad, 0.0, 3.0, 1.0), _acotar(saturacion, 0.3, 1.0, 0.8), tope_dia)
+        t.pop("pronostico_crudo")
+        try:
+            contenido = informe.pdf(t)
+        except ImportError as e:
+            raise HTTPException(501, "Falta WeasyPrint para armar el PDF: uv sync --extra informe") from e
+        nombre = f"informe-{estado.ahora():%Y-%m-%d}.pdf"
+        return Response(contenido, media_type="application/pdf",
+                        headers={"Content-Disposition": f'attachment; filename="{nombre}"'})
 
     def _numero(texto: str) -> Decimal | None:
         """"8.700", "$ 8700", "17", "0,5": como se escribe un numero aca.
@@ -728,10 +1258,22 @@ def create_app(
         No pasa por `_monto`: un 20 en "aceite por km" son veinte pesos, no
         veinte mil.
         """
-        limpio = re.sub(r"[^\d,]", "", texto or "").replace(",", ".")
+        crudo = re.sub(r"[^\d.,]", "", texto or "")
+        # Un punto con uno o dos digitos despues es un decimal ("10.3", lo que
+        # escribe un teclado en ingles); con tres es de miles ("8.700").
+        if "," not in crudo and re.fullmatch(r"\d+\.\d{1,2}", crudo):
+            return Decimal(crudo)
+        limpio = crudo.replace(".", "").replace(",", ".")
         if not limpio or limpio.count(".") > 1:
             return None
         return Decimal(limpio)
+
+    def _base() -> dict:
+        conn = estado.conectar()
+        try:
+            return SettingsRepository(conn).json("base") or BASE_DEFAULT
+        finally:
+            conn.close()
 
     @app.post("/numeros/objetivos", include_in_schema=False)
     async def guardar_costos(request: Request):
@@ -742,13 +1284,32 @@ def create_app(
                 actual[clave] = str(valor)
         conn = estado.conectar()
         try:
-            SettingsRepository(conn).guardar_json("costos", actual)
+            ajustes = SettingsRepository(conn)
+            ajustes.guardar_json("costos", actual)
+            if "negocio" in form:
+                ajustes.guardar_json("negocio", {"nombre": str(form["negocio"]).strip()[:80]})
+            texto = str(form.get("base", "")).strip()
+            base = ajustes.json("base") or BASE_DEFAULT
+            if texto and texto != base.get("texto"):
+                # Se ubica con el mismo mapa que los fletes. Si no la
+                # encuentra, queda la anterior y se avisa: una base mal
+                # puesta corre todos los precios.
+                u = estado.engine.pricing.ubicar(texto, "") if hasattr(estado.engine.pricing, "ubicar") else None
+                if u is None:
+                    ajustes.guardar_json("base", {**base, "error": f"No encontré '{texto}'"})
+                else:
+                    ajustes.guardar_json("base", {"texto": texto, "lat": u.lat, "lon": u.lon, "como": u.como})
+            elif "error" in base:
+                ajustes.guardar_json("base", {k: v for k, v in base.items() if k != "error"})
         finally:
             conn.close()
+        # Los precios sugeridos dependen de todo esto: se recalculan ya.
+        estado.sincronizar()
         return RedirectResponse("/numeros/objetivos#costos", status_code=303)
 
     @app.post("/numeros/objetivos/gasto", include_in_schema=False)
-    def cargar_gasto(desde: str = Form(...), hasta: str = Form(...), monto: str = Form(...)):
+    def cargar_gasto(desde: str = Form(...), hasta: str = Form(...), monto: str = Form(...),
+                     resultados: str = Form("")):
         try:
             d, h = date.fromisoformat(desde), date.fromisoformat(hasta)
         except ValueError as e:
@@ -760,7 +1321,8 @@ def create_app(
             raise HTTPException(422, "falta cuánto se gastó")
         conn = estado.conectar()
         try:
-            GastoRepository(conn).cargar(d, h, valor)
+            conversaciones = int(r) if (r := _numero(resultados)) else None
+            GastoRepository(conn).cargar(d, h, valor, resultados=conversaciones)
         finally:
             conn.close()
         return RedirectResponse("/numeros/objetivos#publicidad", status_code=303)
@@ -924,6 +1486,8 @@ def create_app(
             REALIZADO: P.puede_realizarse(ev),
             PERDIDO: ev.job.state not in (JobState.DONE, JobState.CANCELLED),
             COTIZADO: True,
+            # Decidir precio y fecha tiene sentido mientras el flete no se hizo.
+            AJUSTADO: ev.job.state is not JobState.DONE,
             # Anular es lo contrario: solo tiene sentido si esta cerrado.
             ANULADO: ev.job.state in (JobState.DONE, JobState.CANCELLED),
         }[tipo]
@@ -1042,6 +1606,28 @@ def create_app(
     def realizado_form(request: Request, job_id: str, cobrado: str = Form("")):
         """Cerrarlo y anotar lo que se cobro, que no siempre es lo cotizado."""
         _accion(job_id, REALIZADO, None, _monto(cobrado))
+        return _volver(request, f"/fletes/{job_id}")
+
+    @app.post("/fletes/{job_id}/ajustar", include_in_schema=False)
+    def ajustar_form(request: Request, job_id: str, precio: str = Form(""), fecha: str = Form(""),
+                     hora: str = Form("")):
+        """Confirmar el precio y, si se quiere, la fecha y hora tentativas.
+
+        Lo decide el fletero mirando la cotizacion: le gana a lo que Estiba
+        dedujo del chat, entra en el mensaje de cotizacion y en la agenda
+        (como "sin confirmar" hasta que el cliente acepte).
+        """
+        valor = _monto(precio)
+        if fecha:
+            try:
+                date.fromisoformat(fecha)
+            except ValueError as e:
+                raise HTTPException(422, "la fecha no se entiende") from e
+        if hora and not re.fullmatch(r"\d{1,2}:\d{2}", hora):
+            raise HTTPException(422, "la hora no se entiende")
+        if valor is None and not fecha and not hora:
+            raise HTTPException(422, "no hay nada para confirmar")
+        _accion(job_id, AJUSTADO, json.dumps({"fecha": fecha or None, "hora": hora or None}), valor)
         return _volver(request, f"/fletes/{job_id}")
 
     @app.post("/fletes/{job_id}/perdido", include_in_schema=False)
@@ -1211,7 +1797,8 @@ def create_app(
 
     def _whatsapp_vista() -> P.VistaWhatsApp:
         info = estado.consultar_sesion()
-        return P.vista_whatsapp(estado.whatsapp, info, estado.sesion)
+        return P.vista_whatsapp(estado.whatsapp, info, estado.sesion,
+                                estado.recuperacion, estado.ahora())
 
     @app.get("/whatsapp", response_class=HTMLResponse, include_in_schema=False)
     def pagina_whatsapp(request: Request):
@@ -1318,8 +1905,82 @@ def create_app(
                 conn.close()
         return salieron
 
-    def _procesar() -> None:
-        """Despues de recibir: transcribir los audios nuevos y reevaluar."""
+    #: Cuando avisa la vispera: a la mañana lo que hay que confirmar, a la
+    #: tarde lo confirmado (para acomodar el dia siguiente).
+    HORA_AVISO_TENTATIVO, HORA_AVISO_CONFIRMADO = 10, 18
+
+    candado_recordatorios = threading.Lock()
+
+    def _recordatorios() -> int:
+        """La vispera de cada flete, un aviso en el escritorio. Una sola vez.
+
+        Lo sin confirmar avisa a la mañana, con el sonido fuerte: es el
+        momento de escribirle al cliente. Lo confirmado, a la tarde.
+        De a uno por vez: dos pasadas juntas leian lo mismo y avisaban doble.
+        """
+        if estado.avisos is None:
+            return 0
+        with candado_recordatorios:
+            return _recordar_ahora()
+
+    def _recordar_ahora() -> int:
+        ahora = estado.ahora()
+        manana = ahora.date() + timedelta(days=1)
+        conn = estado.conectar()
+        try:
+            ajustes = SettingsRepository(conn)
+            avisados = set((ajustes.json("avisados") or {}).get("claves", []))
+            nuevos = 0
+            for e, _ in LocalCalendar(conn).eventos(incluir_cancelados=False):
+                dia = e.inicio.date() if isinstance(e.inicio, datetime) else e.inicio
+                if dia != manana:
+                    continue
+                hora = HORA_AVISO_TENTATIVO if e.tentativo else HORA_AVISO_CONFIRMADO
+                clave = f"{e.uid}:{dia.isoformat()}:{'t' if e.tentativo else 'c'}"
+                if ahora.hour < hora or clave in avisados:
+                    continue
+                titulo = e.titulo.removeprefix("Sin confirmar · ")
+                cuando = _cuando_legible(e.inicio.isoformat(), ahora)
+                if e.tentativo:
+                    estado.avisos.avisar(f"¿Se confirma el flete de {cuando}?",
+                                         f"{titulo}\nNo está confirmado: escribile hoy al cliente.", urgente=True)
+                else:
+                    estado.avisos.avisar(f"Mañana: flete {cuando.removeprefix('mañana').strip()}", titulo)
+                avisados.add(clave)
+                nuevos += 1
+            if nuevos:
+                # Solo lo reciente: el conjunto no crece para siempre.
+                vigentes = sorted(avisados)[-500:]
+                ajustes.guardar_json("avisados", {"claves": vigentes})
+            return nuevos
+        finally:
+            conn.close()
+
+    app.state.recordatorios = _recordatorios
+
+    def _avisar_mensaje(mensaje) -> None:
+        """Un mensaje nuevo de alguien que es (o puede ser) cliente.
+
+        Lo privado y el spam no avisan: a eso no se contesta desde Estiba.
+        """
+        if estado.avisos is None or mensaje is None or not mensaje.from_customer:
+            return
+        if mensaje.chat_id in estado.resultado.fuera:
+            return
+        nombre = _nombres().get(mensaje.chat_id) or telefono(mensaje.chat_id)
+        texto = mensaje.text or ("🎤 Audio" if mensaje.kind.value == "audio" else "Mandó un archivo")
+        conn = estado.conectar()
+        try:
+            t = conn.execute("SELECT text FROM transcripts WHERE message_id = ? ORDER BY confidence DESC",
+                             (mensaje.id,)).fetchone()
+        finally:
+            conn.close()
+        if t:
+            texto = f"🎤 {t['text']}"
+        estado.avisos.avisar(f"Mensaje de {nombre}", texto[:180])
+
+    def _procesar(mensaje=None) -> None:
+        """Despues de recibir: transcribir los audios nuevos, reevaluar y avisar."""
         conn = estado.conectar()
         try:
             estado.whatsapp.transcribir(conn)
@@ -1328,6 +1989,40 @@ def create_app(
         estado.sincronizar()
         if _aperturas_automaticas():
             estado.sincronizar()
+        _avisar_mensaje(mensaje)
+
+    def _ponerse_al_dia() -> None:
+        """Traer lo que llego con la app cerrada, y procesarlo como si
+        hubiera entrado por webhook. Si WAHA no contesta, se anota y se
+        vuelve a probar en el proximo repaso: no es motivo para caerse."""
+        cuando = estado.ahora()
+        conn = estado.conectar()
+        try:
+            r = estado.whatsapp.ponerse_al_dia(conn, cuando)
+        except Exception as e:  # WAHA caido, sesion sin conectar, red
+            log.warning("no se pudieron buscar mensajes perdidos: %s", e)
+            estado.recuperacion = {"cuando": cuando, "error": str(e) or type(e).__name__}
+            return
+        finally:
+            conn.close()
+        if r is None:
+            return
+        if r.nuevos:
+            log.info("recuperados %d mensajes de %d chats", r.nuevos, r.chats)
+            _procesar()
+            if estado.avisos is not None:
+                estado.avisos.avisar(
+                    f"{r.nuevos} {'mensaje' if r.nuevos == 1 else 'mensajes'} mientras Estiba estaba cerrada",
+                    f"De {r.chats} {'chat' if r.chats == 1 else 'chats'}. Ya están en Hoy.")
+        # Se anota al final: "revisado" quiere decir que ya esta en la bandeja.
+        estado.recuperacion = {"cuando": cuando, "desde": r.desde, "chats": r.chats, "nuevos": r.nuevos}
+
+    @app.post("/whatsapp/al-dia", include_in_schema=False)
+    def al_dia_form(request: Request, background: BackgroundTasks):
+        """Buscar ahora, sin esperar al proximo repaso."""
+        _exigir_whatsapp()
+        background.add_task(_ponerse_al_dia)
+        return _volver(request, "/whatsapp")
 
     @app.post("/webhooks/waha/{secreto}", include_in_schema=False)
     async def webhook_waha(secreto: str, request: Request, background: BackgroundTasks):
@@ -1347,7 +2042,7 @@ def create_app(
         finally:
             conn.close()
         if nuevo is not None:
-            background.add_task(_procesar)
+            background.add_task(_procesar, nuevo)
         return {"ok": True, "nuevo": nuevo is not None}
 
     # ------------------------------------------------------------------

@@ -146,6 +146,10 @@ class SlotExtractor:
                         cosas[item.nombre] = item
                 ultimo_items = c
             else:
+                previo = ex.ganadores.get(c.campo)
+                if (c.campo in ("origin", "destination") and previo is not None
+                        and c.slot.confidence <= reglas.CONFIANZA_SUELTA < previo.slot.confidence):
+                    continue  # una direccion suelta no pisa una dicha claramente
                 ex.ganadores[c.campo] = c
 
         if ultimo_items is not None:

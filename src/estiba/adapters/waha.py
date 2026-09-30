@@ -47,7 +47,7 @@ class ConfigWaha:
     #: Clave para firmar los webhooks (HMAC). Si no hay, solo protege el secreto de la URL.
     hmac_key: str | None = None
     #: Como llega WAHA (desde Docker) a Estiba, para el webhook.
-    url_estiba: str = "http://host.docker.internal:8000"
+    url_estiba: str = "http://host.docker.internal:8001"
 
     @classmethod
     def desde_entorno(cls) -> ConfigWaha | None:
@@ -59,7 +59,7 @@ class ConfigWaha:
             api_key=os.environ.get("ESTIBA_WAHA_API_KEY"),
             session=os.environ.get("ESTIBA_WAHA_SESION", "default"),
             hmac_key=os.environ.get("ESTIBA_WAHA_HMAC"),
-            url_estiba=os.environ.get("ESTIBA_URL_PARA_WAHA", "http://host.docker.internal:8000").rstrip("/"),
+            url_estiba=os.environ.get("ESTIBA_URL_PARA_WAHA", "http://host.docker.internal:8001").rstrip("/"),
         )
 
 

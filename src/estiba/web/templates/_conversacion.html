@@ -35,6 +35,7 @@
          ninguna senal. Lo dice con palabras, no solo con el color. En un
          flete cerrado la fecha pasada es lo normal y no se marca. #}
       {% if f.fecha %}<span class="conv-fecha{% if f.pasado and not f.cerrado %} pasada{% endif %}">{{ icono("agenda") }}{{ f.fecha }}{% if f.hora %} · {{ f.hora }}{% endif %}{% if f.pasado and not f.cerrado %} · ya pasó{% endif %}</span>{% endif %}
+      {% if not f.cerrado and not f.cotizado and f.sugerido %}<span class="conv-precio">sugerido {{ f.sugerido }}{% if f.km %} · {{ f.km }}{% endif %}</span>{% endif %}
       {% if f.alertas %}<span class="alerta-mini">{{ icono("aviso") }}{{ f.alertas|length }}</span>{% endif %}
     </div>
   </a>

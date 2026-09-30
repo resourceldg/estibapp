@@ -94,6 +94,12 @@ class MessageRepository:
             )
         ]
 
+    def ultimo_de(self, source: str) -> datetime | None:
+        """Cuando es el mensaje mas nuevo que llego por esa via."""
+        fila = self.conn.execute(
+            "SELECT MAX(sent_at) FROM messages WHERE source = ?", (source,)).fetchone()
+        return _a_fecha(fila[0]) if fila[0] else None
+
     @staticmethod
     def _a_mensaje(fila: sqlite3.Row) -> Message:
         return Message(
@@ -857,15 +863,17 @@ class GastoRepository:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self.conn = conn
 
-    def cargar(self, desde: date, hasta: date, monto: Decimal, campania: str | None = None) -> str:
+    def cargar(self, desde: date, hasta: date, monto: Decimal, campania: str | None = None,
+               resultados: int | None = None) -> str:
         import secrets
 
         gasto_id = secrets.token_hex(6)
         with self.conn:
             self.conn.execute(
-                "INSERT INTO campaigns (id, platform, external_id, period_start, period_end, spend) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (gasto_id, "meta", campania or "manual", desde.isoformat(), hasta.isoformat(), str(monto)),
+                "INSERT INTO campaigns (id, platform, external_id, period_start, period_end, spend, resultados) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (gasto_id, "meta", campania or "manual", desde.isoformat(), hasta.isoformat(), str(monto),
+                 resultados),
             )
         return gasto_id
 
@@ -877,3 +885,41 @@ class GastoRepository:
     def todos(self) -> list[sqlite3.Row]:
         return self.conn.execute(
             "SELECT * FROM campaigns ORDER BY period_start DESC, period_end DESC").fetchall()
+
+
+class DecisionRepository:
+    """Escenarios guardados y la decision vigente. Ver migracion 021."""
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self.conn = conn
+
+    def guardar(self, nombre: str, valores: dict, ahora: datetime) -> int:
+        with self.conn:
+            cur = self.conn.execute(
+                "INSERT INTO decisiones (nombre, valores, creada) VALUES (?, ?, ?)",
+                (nombre, json.dumps(valores), _a_texto(ahora)))
+        return cur.lastrowid
+
+    def aplicar(self, decision_id: int, ahora: datetime) -> sqlite3.Row:
+        fila = self.conn.execute("SELECT * FROM decisiones WHERE id = ?", (decision_id,)).fetchone()
+        if fila is None:
+            raise KeyError(f"no hay un escenario {decision_id}")
+        with self.conn:
+            self.conn.execute("UPDATE decisiones SET estado = 'reemplazada' WHERE estado = 'aplicada'")
+            self.conn.execute("UPDATE decisiones SET estado = 'aplicada', aplicada = ? WHERE id = ?",
+                              (_a_texto(ahora), decision_id))
+        return self.conn.execute("SELECT * FROM decisiones WHERE id = ?", (decision_id,)).fetchone()
+
+    def borrar(self, decision_id: int) -> bool:
+        """Solo un escenario guardado: una decision aplicada es historia."""
+        with self.conn:
+            cur = self.conn.execute("DELETE FROM decisiones WHERE id = ? AND estado = 'guardada'", (decision_id,))
+        return cur.rowcount == 1
+
+    def vigente(self) -> sqlite3.Row | None:
+        return self.conn.execute("SELECT * FROM decisiones WHERE estado = 'aplicada'").fetchone()
+
+    def todas(self) -> list[sqlite3.Row]:
+        return self.conn.execute(
+            "SELECT * FROM decisiones ORDER BY CASE estado WHEN 'aplicada' THEN 0 WHEN 'guardada' THEN 1 ELSE 2 END, "
+            "CASE estado WHEN 'reemplazada' THEN -id ELSE id END").fetchall()

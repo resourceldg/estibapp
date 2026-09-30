@@ -80,3 +80,11 @@ class TestCuandoNo:
         ese mensaje no existe todavia."""
         conv = _chat(("c", DE_LA_PAUTA))
         assert not sale_sola(conv, APERTURA, datetime(2026, 9, 20, 9, 0), ya_mando=False)
+
+
+class TestNoSaleTarde:
+    def test_un_saludo_de_hace_horas_lo_decide_el_fletero(self):
+        """Lo que se recupera con la app cerrada puede tener horas."""
+        conv = _chat(("c", DE_LA_PAUTA))
+        assert sale_sola(conv, APERTURA, datetime(2026, 9, 20, 12, 30), False)
+        assert not sale_sola(conv, APERTURA, datetime(2026, 9, 20, 13, 30), False)

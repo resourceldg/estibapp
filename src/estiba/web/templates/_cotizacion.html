@@ -1,0 +1,105 @@
+{% from "_macros.html" import icono %}
+{# La cotizacion: cuanto cobrar y por que, en una tarjeta.
+
+   Antes el precio sugerido era una palabra en la linea de resumen y el
+   desglose vivia plegado al final, debajo del chat: para saber cuantos km
+   tenia el flete habia que abrir un acordeon y leer una frase. Justo lo que
+   se necesita para contestar "¿cuanto me sale?".
+
+   Arriba lo que se dice (el precio), al lado lo que lo mueve (km y horas),
+   despues de donde sale (el recorrido y en que se va la plata) y la regla
+   con el minimo: por debajo se pierde, entre los dos se gana menos de lo
+   que pide la meta. El calculo linea por linea queda plegado, para cuando
+   se quiere discutir un numero. #}
+{% macro tarjeta(c, usar=false, job_id="", destacado=true) -%}
+<section class="panel cotizacion" aria-label="Cotización">
+  <div class="cot-cab">
+    <div class="cot-principal">
+      <span class="cot-etq">Precio sugerido</span>
+      <span class="cot-precio num">{{ c.sugerido }}{% if not c.completo %}<small> o más</small>{% endif %}</span>
+    </div>
+    {% if c.km or c.horas %}
+    <div class="cot-datos">
+      {% if c.km %}<span>{{ icono("camion") }}{{ c.km }}</span>{% endif %}
+      {% if c.horas %}<span>{{ icono("reloj") }}{{ c.horas }}</span>{% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+  {% if c.paradas %}
+  <ol class="recorrido" aria-label="Recorrido">
+    {% for lugar, exacto in c.paradas %}<li{% if not exacto %} class="aprox" title="sin altura: aproximado"{% endif %}>{{ lugar }}</li>{% endfor %}
+  </ol>
+  {% endif %}
+
+  {% if c.partes %}
+  <div class="cot-barra" role="img" aria-label="{% for p in c.partes %}{{ p.nombre }} {{ p.monto }}{% if not loop.last %}, {% endif %}{% endfor %}">
+    {% for p in c.partes %}<span class="{{ p.color }}" style="width: {{ '%.1f'|format(p.ancho) }}%"></span>{% endfor %}
+  </div>
+  <ul class="cot-partes">
+    {% for p in c.partes %}<li><i class="{{ p.color }}"></i><span>{{ p.nombre }}</span><strong class="num">{{ p.monto }}</strong></li>{% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if c.ajuste %}{% set a = c.ajuste %}
+  {# La regla se volvio un control: el precio se decide arrastrando, viendo
+     en el momento de que lado del minimo y de la meta cae. Debajo, la
+     fecha y la hora: las que Estiba entendio, o vacias para ponerlas. #}
+  <form class="ajustar" method="post" action="/fletes/{{ job_id }}/ajustar" data-ajustar
+        data-minimo="{{ a.minimo or 0 }}" data-sugerido="{{ a.sugerido }}"
+        style="--pos-min: {{ '%.1f'|format(a.pos_minimo or 0) }}%; --pos-sug: {{ '%.1f'|format(a.pos_sugerido) }}%">
+    <div class="ajustar-cab">
+      <label for="precio-{{ job_id }}">{{ "Tu precio (confirmado)" if a.confirmado else "Tu precio" }}</label>
+      <output class="num ajustar-valor" data-salida>{{ a.valor|pesos }}</output>
+    </div>
+    <input id="precio-{{ job_id }}" class="slider-precio" type="range" name="precio"
+           min="{{ a.min }}" max="{{ a.max }}" step="{{ a.paso }}" value="{{ a.valor }}" data-slider
+           aria-valuetext="{{ a.valor|pesos }}">
+    <div class="slider-marcas" aria-hidden="true">
+      {% if a.pos_minimo is not none %}<span class="m-minimo" style="left: {{ '%.1f'|format(a.pos_minimo) }}%">mínimo {{ a.minimo|pesos }}</span>{% endif %}
+      <span class="m-sugerido" style="left: {{ '%.1f'|format(a.pos_sugerido) }}%">meta {{ a.sugerido|pesos }}</span>
+    </div>
+    <p class="ajustar-zona" data-zona aria-live="polite"></p>
+    <div class="ajustar-fecha">
+      <label>Fecha tentativa <input type="date" name="fecha" value="{{ a.fecha or '' }}"></label>
+      <label>Hora <input type="time" name="hora" value="{{ a.hora or '' }}" step="900"></label>
+    </div>
+    <p class="ayuda">{{ a.origen_fecha }}</p>
+    {# Una sola accion principal por pantalla: si hay un mensaje esperando,
+       mandarlo es lo que sigue y esto va en segundo plano. #}
+    <button class="btn {{ 'primario' if destacado else 'secundario' }} ancho" type="submit">{{ icono("check") }}<span>Confirmar precio{% if a.fecha %} y fecha{% endif %}</span></button>
+  </form>
+  {% elif c.regla %}
+  <div class="regla" aria-hidden="true">
+    <span class="regla-pista"><span class="regla-pierde" style="width: {{ '%.1f'|format(c.regla.minimo) }}%"></span></span>
+    <span class="regla-marca minimo" style="left: {{ '%.1f'|format(c.regla.minimo) }}%"><b></b>mínimo {{ c.minimo }}</span>
+    <span class="regla-marca sugerido" style="left: {{ '%.1f'|format(c.regla.sugerido) }}%"><b></b>meta</span>
+    {% if c.regla.real is not none %}<span class="regla-marca real tono-{{ c.tono }}" style="left: {{ '%.1f'|format(c.regla.real) }}%"><b></b>{{ c.regla.real_etq }}</span>{% endif %}
+  </div>
+  {% endif %}
+  {% if c.veredicto %}
+  <p class="cot-veredicto tono-texto-{{ c.tono }}">{{ c.veredicto }}</p>
+  {% elif c.minimo and not c.ajuste %}
+  <p class="ayuda">Mínimo {{ c.minimo }}: por debajo perdés plata. Entre el mínimo y {{ c.sugerido }} ganás, pero menos de lo que pide tu meta.</p>
+  {% endif %}
+
+  {% if usar %}
+  <button type="button" class="btn secundario ancho" data-usar="{{ c.ajuste.valor if c.ajuste else c.sugerido_crudo }}" data-usar-precio>{{ icono("precio") }}<span>Usar {{ (c.ajuste.valor|pesos) if c.ajuste else c.sugerido }} en el mensaje</span></button>
+  {% endif %}
+
+  <details class="cot-calculo">
+    <summary>Cómo se calcula</summary>
+    <table class="desglose-tabla">
+      {% for concepto, monto in c.desglose %}<tr><td>{{ concepto }}</td><td class="num">{{ monto }}</td></tr>{% endfor %}
+    </table>
+    {% if c.sin_contar %}
+    <p class="sin-contar">Sin contar:</p>
+    <ul class="sin-contar">{% for s in c.sin_contar %}<li>{{ s }}</li>{% endfor %}</ul>
+    {% endif %}
+    {% if c.supuestos %}
+    <ul class="supuestos">{% for s in c.supuestos %}<li>{{ s }}</li>{% endfor %}</ul>
+    {% endif %}
+    <p class="nota">Los costos y la meta se cambian en <a href="/numeros/objetivos#costos">Números → Plata y objetivos</a>.</p>
+  </details>
+</section>
+{%- endmacro %}

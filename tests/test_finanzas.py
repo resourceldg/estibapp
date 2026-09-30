@@ -196,7 +196,7 @@ class TestPestana:
     def test_sin_datos_arranca_con_la_estimacion_y_lo_avisa(self, web):
         c, _ = web
         html = c.get("/numeros/objetivos").text
-        assert "Plata y objetivos" in html
+        assert "Costos y metas" in html
         assert 'value="60.000"' in html                        # el seguro por defecto
         assert "No cargaste gasto en publicidad" in html
 

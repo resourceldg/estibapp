@@ -35,6 +35,9 @@ class Costos:
     """Lo que el fletero configura. Montos en pesos; porcentajes de 0 a 100."""
 
     # Fijos por mes: se pagan aunque no salga ningun flete.
+    #: La cuota del credito de la camioneta. Es el fijo que mas pesa: hay
+    #: que pagarlo haga los fletes que haga.
+    credito: Decimal = Decimal(0)
     seguro: Decimal = Decimal(60000)
     monotributo: Decimal = Decimal(50000)
     #: VTV y la prueba del equipo de GNC, que son anuales, divididas por 12.
@@ -49,8 +52,18 @@ class Costos:
     cubiertas_km: Decimal = Decimal(15)
     #: Frenos, embrague, tren delantero: lo que se rompe tarde o temprano.
     arreglos_km: Decimal = Decimal(40)
-    #: Ida, vuelta y lo que se anda buscando la direccion.
+    #: Ida, vuelta y lo que se anda buscando la direccion. Se usa cuando el
+    #: mapa no encuentra alguna de las dos direcciones.
     km_por_flete: Decimal = Decimal(64)
+    #: Las calles no van en linea recta: km por manejar por cada km de mapa.
+    factor_calles: Decimal = Decimal("1.3")
+    velocidad_kmh: Decimal = Decimal(35)
+    #: Cargar, atar, descargar: lo minimo de cualquier flete, en horas.
+    horas_carga: Decimal = Decimal("0.75")
+    #: Lo que dura un flete promedio, de salir de casa a volver.
+    horas_flete: Decimal = Decimal(3)
+    #: Lo que se le cobra al cliente por cada ayudante.
+    ayudante: Decimal = Decimal(15000)
 
     #: IVA y percepciones que Meta cobra encima de lo que muestra como gastado.
     impuestos_publicidad: Decimal = Decimal(25)
@@ -87,7 +100,7 @@ class Costos:
 
     @property
     def fijos_mes(self) -> Decimal:
-        return (self.seguro + self.monotributo + self.vtv_gnc + self.patente
+        return (self.credito + self.seguro + self.monotributo + self.vtv_gnc + self.patente
                 + self.celular + self.otros_fijos)
 
     @property
@@ -112,6 +125,19 @@ class Costos:
         if self.cierre <= 0:
             return None
         return self.costo_por_consulta / (self.cierre / 100) * self.con_impuestos
+
+    @property
+    def valor_hora(self) -> Decimal | None:
+        """Cuanto tiene que valer cada hora de trabajo para llegar a la meta.
+
+        La meta y los fijos se pagan con las horas que hay en un mes: si
+        entran 48 fletes de 3 horas, son 144 horas, y cada una tiene que
+        traer su parte. Un flete largo usa mas de esas horas, asi que paga
+        mas; uno corto, menos. Es lo que hace que el precio sea justo para
+        los dos lados.
+        """
+        horas = self.fletes_por_mes_max * self.horas_flete
+        return (self.ganancia_objetivo + self.fijos_mes) / horas if horas > 0 else None
 
     def tarifa(self, km: Decimal) -> Decimal:
         return redondear(self.tarifa_base + self.tarifa_km * km)
@@ -139,15 +165,21 @@ class GastoPublicidad:
     desde: date
     hasta: date  # inclusive
     monto: Decimal  # tal como lo muestra Meta, sin impuestos
+    #: Conversaciones que dice Meta que trajo. None si no se cargo.
+    resultados: int | None = None
 
-    def dentro(self, desde: date | None, hasta: date) -> Decimal:
-        """La parte de este gasto que cae entre `desde` y `hasta` (inclusive)."""
+    def parte(self, desde: date | None, hasta: date) -> Decimal:
+        """Que fraccion de los dias de este gasto cae entre `desde` y `hasta`."""
         dias = (self.hasta - self.desde).days + 1
         inicio = max(self.desde, desde) if desde else self.desde
         fin = min(self.hasta, hasta)
         if fin < inicio or dias <= 0:
             return CERO
-        return self.monto * Decimal((fin - inicio).days + 1) / Decimal(dias)
+        return Decimal((fin - inicio).days + 1) / Decimal(dias)
+
+    def dentro(self, desde: date | None, hasta: date) -> Decimal:
+        """La parte de este gasto que cae entre `desde` y `hasta` (inclusive)."""
+        return self.monto * self.parte(desde, hasta)
 
 
 @dataclass(frozen=True)

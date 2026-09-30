@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Informe de gestión · {{ negocio }}</title>
+<style>
+  /* Para papel: fondo blanco, tinta casi negra, un solo color de marca (el
+     naranja de Estiba) y los mismos colores por concepto que en la app. */
+  @page {
+    size: A4;
+    margin: 18mm 16mm 20mm;
+    @bottom-left { content: "{{ negocio }} · Informe de gestión"; font: 8pt "Noto Sans", sans-serif; color: #77717a; }
+    @bottom-right { content: "Página " counter(page) " de " counter(pages); font: 8pt "Noto Sans", sans-serif; color: #77717a; }
+  }
+  @page :first { @bottom-left { content: "Generado por Estiba"; } }
+  * { box-sizing: border-box; }
+  body { font-family: "Noto Sans", "DejaVu Sans", sans-serif; font-size: 9.6pt; line-height: 1.45; color: #1d1b20; margin: 0; }
+  h1, h2, h3 { margin: 0; letter-spacing: -0.01em; }
+  h2 { font-size: 13.5pt; margin: 0 0 3mm; padding-top: 1mm; }
+  h2 small { font-size: 9pt; font-weight: 400; color: #77717a; letter-spacing: 0; }
+  h3 { font-size: 10pt; margin: 4mm 0 2mm; }
+  p { margin: 0 0 2mm; }
+  .tenue { color: #77717a; }
+  .num { font-variant-numeric: tabular-nums; }
+  .mal { color: #c8463d; } .ok { color: #2f8f5b; } .aviso { color: #b7791f; }
+  section { margin-bottom: 7mm; }
+  .nueva { break-before: page; }
+  .junto { break-inside: avoid; }
+
+  /* Portada */
+  .portada { border-bottom: 2.5pt solid #e0662a; padding-bottom: 5mm; margin-bottom: 6mm; }
+  .marca { font-size: 8.5pt; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: #e0662a; }
+  .portada h1 { font-size: 24pt; margin: 1.5mm 0 1mm; }
+  .portada .periodo { font-size: 10.5pt; color: #4a454d; }
+
+  .conclusiones { counter-reset: c; list-style: none; margin: 0; padding: 0; }
+  .conclusiones li { counter-increment: c; position: relative; padding: 2.4mm 3mm 2.4mm 11mm; margin-bottom: 2mm;
+                     background: #f7f5f2; border-radius: 2mm; }
+  .conclusiones li::before { content: counter(c); position: absolute; left: 3mm; top: 2.2mm; width: 5.5mm; height: 5.5mm;
+                             border-radius: 50%; background: #1d1b20; color: white; font-size: 8pt; font-weight: 700;
+                             text-align: center; line-height: 5.5mm; }
+
+  .kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2.5mm; margin: 5mm 0; }
+  .kpi { border: 0.6pt solid #e7e3dd; border-radius: 2mm; padding: 2.6mm 3mm; }
+  .kpi span { display: block; font-size: 8pt; color: #77717a; font-weight: 600; }
+  .kpi strong { display: block; font-size: 15pt; font-weight: 750; margin: .5mm 0; }
+  .kpi small { font-size: 7.8pt; color: #77717a; }
+
+  .grafico { border: 0.6pt solid #e7e3dd; border-radius: 2mm; padding: 3mm; }
+  .grafico svg { display: block; width: 100%; height: auto; }
+  .leyenda { font-size: 8pt; color: #77717a; margin-top: 1.5mm; }
+  .leyenda i { display: inline-block; width: 2.6mm; height: 2.6mm; border-radius: .6mm; margin: 0 1mm -.3mm 3mm; }
+  .leyenda i.punto { border-radius: 50%; background: #1d1b20; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 9pt; }
+  th { text-align: left; font-size: 7.8pt; font-weight: 700; color: #77717a; text-transform: uppercase; letter-spacing: .05em;
+       border-bottom: 0.8pt solid #1d1b20; padding: 1.4mm 1.5mm; }
+  td { padding: 1.5mm; border-bottom: 0.5pt solid #e7e3dd; vertical-align: top; }
+  td.d, th.d { text-align: right; white-space: nowrap; }
+  tr.total td { border-top: 0.8pt solid #1d1b20; border-bottom: none; font-weight: 700; }
+  td small { display: block; color: #77717a; font-size: 7.8pt; }
+
+  .dos { display: flex; gap: 5mm; align-items: flex-start; }
+  .dos > div { flex: 1; min-width: 0; }
+  .probas { display: flex; gap: 3mm; margin: 3mm 0; }
+  .probas div { flex: 1; background: #f7f5f2; border-radius: 2mm; padding: 2.5mm 3mm; }
+  .probas strong { display: block; font-size: 14pt; }
+  .probas span { font-size: 8pt; color: #77717a; }
+  .lectura { font-size: 9.6pt; margin-top: 2mm; }
+  .fuentes { list-style: none; margin: 0; padding: 0; }
+  .fuentes li { padding: 1.5mm 0; border-bottom: 0.5pt solid #e7e3dd; }
+  .fuentes strong { float: right; }
+  .fuentes small { display: block; font-size: 7.8pt; }
+  .etq { font-size: 7pt; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; padding: .3mm 1.2mm; border-radius: 1mm; }
+  .etq.medido { background: #e6f3ec; color: #2f8f5b; }
+  .etq.supuesto { background: #fbf0dd; color: #b7791f; }
+
+  .semana { margin: 0; padding-left: 5mm; }
+  .semana li { margin-bottom: 2mm; }
+  .caja-accion { border-left: 2.5pt solid #e0662a; padding: 1mm 0 1mm 4mm; }
+  .nota { font-size: 8pt; color: #77717a; }
+</style>
+</head>
+<body>
+
+<header class="portada">
+  <div class="marca">Informe de gestión</div>
+  <h1>{{ negocio }}</h1>
+  <div class="periodo">Del {{ desde.strftime("%d/%m/%Y") }} al {{ hasta.strftime("%d/%m/%Y") }} · {{ periodo }} · generado el {{ generado.strftime("%d/%m/%Y %H:%M") }}</div>
+</header>
+
+<section>
+  <h2>Lo importante</h2>
+  <ol class="conclusiones">
+    {% for c in conclusiones %}<li>{{ c }}</li>{% endfor %}
+  </ol>
+</section>
+
+<div class="kpis">
+  {% for etq, valor, nota in kpis %}
+  <div class="kpi"><span>{{ etq }}</span><strong class="num">{{ valor }}</strong><small>{{ nota }}</small></div>
+  {% endfor %}
+</div>
+
+<section class="junto">
+  <h2>De lo facturado a lo que queda</h2>
+  <div class="grafico">{{ graficos.cascada | safe }}</div>
+</section>
+
+<section class="nueva">
+  <h2>Cómo vino, semana por semana</h2>
+  <div class="grafico">
+    {{ graficos.semanas | safe }}
+    <div class="leyenda"><i style="background:#2f8f5b"></i>Facturado <i style="background:#c8463d"></i>Costos (camioneta, publicidad y fijos) <i class="punto"></i>Te queda</div>
+  </div>
+</section>
+
+<section class="junto">
+  <h2>La cuenta completa</h2>
+  <table>
+    <tr><th>Concepto</th><th>Cómo se calcula</th><th class="d">Monto</th></tr>
+    {% for etq, monto, nota in cuenta %}
+    <tr class="{{ 'total' if loop.last }}"><td>{{ etq }}</td><td class="tenue">{{ nota }}</td><td class="d num">{{ monto }}</td></tr>
+    {% endfor %}
+  </table>
+</section>
+
+<section class="junto">
+  <h2>De la consulta al flete hecho</h2>
+  <div class="grafico">{{ graficos.embudo | safe }}</div>
+  <p class="nota">Cada consulta cuenta hasta la etapa más avanzada que alcanzó, aunque después se haya perdido.</p>
+</section>
+
+<section class="nueva">
+  <h2>Cómo termina el mes <small>proyección con lo que venís haciendo</small></h2>
+  <div class="grafico">{{ graficos.escenarios | safe }}</div>
+  <div class="dos" style="margin-top:4mm">
+    <div>
+      <h3>Con qué números</h3>
+      <ul class="fuentes">
+        {% for etq, valor, medido, detalle in fuentes %}
+        <li>{{ etq }} <strong class="num">{{ valor }}</strong>
+          <small><span class="etq {{ 'medido' if medido else 'supuesto' }}">{{ "medido" if medido else "supuesto" }}</span> {{ detalle }}</small></li>
+        {% endfor %}
+      </ul>
+    </div>
+    <div>
+      <h3>Los tres escenarios</h3>
+      <table>
+        <tr><th>Escenario</th><th class="d">Fletes</th><th class="d">Ganancia</th></tr>
+        {% for nombre, ganancia, fletes, ingresos, cierre in escenarios %}
+        <tr><td>{{ nombre }}<small>cierre {{ cierre }} · {{ ingresos }} facturado</small></td><td class="d num">{{ fletes }}</td><td class="d num">{{ ganancia }}</td></tr>
+        {% endfor %}
+      </table>
+      <p class="nota" style="margin-top:2mm">El rango sale del intervalo de confianza del cierre medido (Wilson, 95 %). Con pocos fletes es ancho a propósito.</p>
+    </div>
+  </div>
+</section>
+
+{% if analisis %}{% set a = analisis %}
+<section class="junto">
+  <h2>¿Qué tan seguro es? <small>simulación Monte Carlo, 4.000 meses</small></h2>
+  <div class="grafico">{{ a.graficos.histograma | safe }}</div>
+  <div class="probas">
+    <div><strong>{{ a.mc.p_ganar }}</strong><span>de los meses ganás plata</span></div>
+    <div><strong>{{ a.mc.p_meta }}</strong><span>llegás a la meta</span></div>
+    <div><strong>{{ a.mc.p50 }}</strong><span>resultado más probable</span></div>
+  </div>
+  <p class="lectura">{{ a.frases.montecarlo }}</p>
+</section>
+
+<section class="junto">
+  <h2>¿Qué palanca pesa más? <small>sensibilidad ±20 %</small></h2>
+  <div class="grafico">{{ a.graficos.tornado | safe }}</div>
+  <p class="lectura">{{ a.frases.tornado }}</p>
+</section>
+
+<section class="junto">
+  <h2>La mejor combinación <small>precio × publicidad por día</small></h2>
+  <div class="grafico">{{ a.graficos.calor | safe }}</div>
+  <p class="nota">Verde gana, rojo pierde. Círculo: hoy. Estrella: la combinación que más deja sin pasar la capacidad.</p>
+  <div class="probas">
+    <div><strong>{{ a.optimo.precio }}</strong><span>precio óptimo</span></div>
+    <div><strong>{{ a.optimo.gasto }}</strong><span>por día en Meta</span></div>
+    <div><strong>{{ a.optimo.ganancia }}</strong><span>al mes · {{ a.optimo.fletes }} fletes</span></div>
+  </div>
+  <p class="lectura">{{ a.frases.optimo }} {{ a.frases.montecarlo_opt }}</p>
+  <p class="lectura">{{ a.frases.meta }}</p>
+  <p class="nota">Supuestos del modelo: sensibilidad al precio {{ '%.1f'|format(a.elasticidad) }} (si el precio sube 10 %, cierran cerca de {{ '%.0f'|format(a.elasticidad * 10) }} % menos) y rendimiento de la publicidad {{ '%.2f'|format(a.saturacion) }} (duplicar el gasto trae {{ '%.2f'|format(2 ** a.saturacion) }} veces las consultas). Con pocos fletes no se pueden medir todavía.</p>
+</section>
+{% endif %}
+
+<section class="junto">
+  <h2>Qué hacer esta semana</h2>
+  <div class="caja-accion">
+    <ol class="semana">{% for paso in semana %}<li>{{ paso }}</li>{% endfor %}</ol>
+  </div>
+</section>
+
+<section class="nueva junto">
+  <h2>Qué cobrar</h2>
+  <div class="grafico">{{ graficos.minimo | safe }}</div>
+  <p class="nota">La curva es el precio mínimo para no perder plata según cuántos fletes hagas por mes: los fijos se reparten entre todos. Por debajo de la curva, cada flete pierde. Tu ritmo actual es de {{ ritmo }} fletes por mes.</p>
+  <div class="dos" style="margin-top:3mm">
+    <div>
+      <h3>Precio mínimo</h3>
+      <table>
+        <tr><th>Fletes por mes</th><th class="d">Mínimo</th></tr>
+        {% for n, m in minimos %}<tr><td>{{ n }}{% if n == ritmo %} <small>tu ritmo de ahora</small>{% endif %}</td><td class="d num">{{ m }}</td></tr>{% endfor %}
+      </table>
+    </div>
+    <div>
+      <h3>Camino a la meta</h3>
+      <table>
+        <tr><th>Camino</th><th class="d">Fletes</th><th class="d">Precio</th><th class="d">Meta $/día</th></tr>
+        {% for nombre, fletes, precio, consultas, pub_mes, pub_dia, entra in planes %}
+        <tr><td>{{ nombre }}{% if not entra %}<small class="mal">no entra en un mes</small>{% else %}<small>{{ consultas }} consultas · {{ pub_mes }} en publicidad</small>{% endif %}</td>
+            <td class="d num">{{ fletes }}</td><td class="d num">{{ precio }}</td><td class="d num">{{ pub_dia }}</td></tr>
+        {% endfor %}
+      </table>
+    </div>
+  </div>
+</section>
+
+{% if fletes %}
+<section class="junto">
+  <h2>Los fletes del período</h2>
+  <table>
+    <tr><th>Día</th><th>Cliente y recorrido</th><th class="d">Km</th><th class="d">Cobrado</th><th class="d">Sugerido</th><th class="d">Diferencia</th></tr>
+    {% for f in fletes %}
+    <tr><td class="num">{{ f.dia }}</td><td>{{ f.cliente }}<small>{{ f.ruta }}</small></td><td class="d num">{{ f.km or "—" }}</td>
+        <td class="d num">{{ f.cobrado }}{% if f.bajo_minimo %}<small class="mal">bajo el mínimo</small>{% endif %}</td>
+        <td class="d num">{{ f.sugerido }}</td><td class="d num {{ f.tono if f.dif }}">{{ f.dif }}</td></tr>
+    {% endfor %}
+  </table>
+  <p class="nota" style="margin-top:2mm">Sugerido: lo que calcula Estiba hoy con tus costos y tu meta, para comparar. Los km salen del mapa del INDEC, desde tu base.</p>
+</section>
+{% endif %}
+
+<section class="junto">
+  <h2>Con qué supuestos</h2>
+  <div class="dos">
+    {% for titulo, filas in costos %}
+    <div><h3>{{ titulo }}</h3>
+      <table>{% for etq, valor in filas %}<tr><td>{{ etq }}</td><td class="d num">{{ valor }}</td></tr>{% endfor %}</table>
+    </div>
+    {% endfor %}
+  </div>
+  <p class="nota" style="margin-top:3mm">Los costos se configuran en Estiba, en Números → Costos y metas. Lo facturado sale de lo anotado al cerrar cada flete; el gasto en publicidad, de lo cargado desde Meta, con sus impuestos.</p>
+</section>
+
+</body>
+</html>

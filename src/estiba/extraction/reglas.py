@@ -72,7 +72,7 @@ _SOLO_HORA = re.compile(r"^\d{1,2}(?:[:.]\d{2})?\s*(?:hs?|horas?|am|pm)?$")
 _PRONOMBRES = re.compile(r"^(?:los|las|el|la|mi|tu|su|vos|nos|ellos|eso|esto|ahi)\b")
 #: Palabras que aparecen en "de X a Y" sin que X sea un lugar: "de nuevo a
 #: casa de mi mama", "de vuelta a la obra".
-_NO_LUGAR = re.compile(r"^(?:nuevo|nueva|vuelta|paso|ultima|una|un|otro|otra)\b")
+_NO_LUGAR = re.compile(r"^(?:nuevo|nueva|vuelta|paso|ultima|una|un|otro|otra|donde|adonde|cuando|como)\b")
 
 #: "de alberti y santa fe hasta rufino inda y vertiz": esquinas y direcciones
 #: en minuscula, que es como escribe la gente. Sin mayusculas obligatorias y
@@ -133,7 +133,58 @@ def lugares(texto: str) -> list[Hallazgo]:
                 Hallazgo("origin", origen, 0.55, m.group(0), duda),
                 Hallazgo("destination", destino, 0.55, m.group(0), duda),
             ]
-    return []
+    return _direcciones_sueltas(texto)
+
+
+#: "Garcia Lorca al 1140", "García Lorca, al 1140": una calle con su altura,
+#: dicha en un audio. Whisper escribe los nombres propios con mayuscula.
+_AL_NUMERO = re.compile(
+    r"\b((?:[A-ZÁÉÍÓÚÑ][\wáéíóúñ]+\s+){0,3}[A-ZÁÉÍÓÚÑ][\wáéíóúñ]+)\s*,?\s+(?:al|n[°º]?)\s*(\d{2,5})\b")
+#: Una calle que se llama como una fecha, despues de "de/desde" o "a/hasta":
+#: "de 12 de octubre y tal", "hasta 25 de mayo al 300".
+_CALLE_FECHA = re.compile(
+    r"\b(de|desde|a|hasta|para)\s+(\d{1,2}\s+de\s+(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|"
+    r"septiembre|setiembre|octubre|noviembre|diciembre))((?:\s+(?:y|e)\s+[a-z]+)|(?:\s+al\s+\d{2,5}))?\b")
+_HACIA_ACA = re.compile(r"\b(?:a|hasta|para)\s+(?:aca|mi\s+casa|casa|lo\s+de)\b|\bhasta\b|\bpara\b")
+
+
+#: Con esta confianza sale una direccion suelta. Completa lo que falta, pero
+#: no pisa un lugar dicho con mas claridad (ver `extractor._resolver`):
+#: "Aguirre al 500" despues de "de Villa Crespo a Caballito" precisa, no cambia.
+CONFIANZA_SUELTA = 0.5
+
+
+def _direcciones_sueltas(texto: str) -> list[Hallazgo]:
+    """Lo que queda cuando no hay un "de X a Y" limpio: lo que se dice en un audio.
+
+    "De ahi, de 12 de octubre y tal, a aca de donde me viniste a buscar...
+    la Garcia Lorca, al 1140": el origen es una calle con nombre de fecha y
+    el destino una calle con altura, con charla en el medio. Confianza baja
+    y con duda: se ve en la cotizacion y se confirma.
+    """
+    p = plano(texto)
+    hallados: list[Hallazgo] = []
+    duda = "salió de un audio o un mensaje suelto: conviene confirmarla"
+    for m in _CALLE_FECHA.finditer(p):
+        campo = "origin" if m.group(1) in ("de", "desde") else "destination"
+        if any(h.campo == campo for h in hallados):
+            continue
+        valor = m.group(2) + (m.group(3) or "")
+        hallados.append(Hallazgo(campo, valor, CONFIANZA_SUELTA, cita(texto, m), duda))
+    for m in _AL_NUMERO.finditer(texto):
+        calle = m.group(1)
+        if _DIAS_Y_MESES.match(plano(calle)) or _PRONOMBRES.match(plano(calle)):
+            continue
+        antes = plano(texto[max(0, m.start() - 120): m.start()])
+        tiene = {h.campo for h in hallados}
+        if "destination" not in tiene and (_HACIA_ACA.search(antes) or "origin" in tiene):
+            campo = "destination"
+        elif "origin" not in tiene:
+            campo = "origin"
+        else:
+            continue
+        hallados.append(Hallazgo(campo, f"{calle} {m.group(2)}", CONFIANZA_SUELTA, m.group(0), duda))
+    return hallados
 
 
 # --------------------------------------------------------------------------
@@ -177,6 +228,15 @@ _MUEBLES = [
     ("rack", "racks", []),
     ("caja", "cajas", []),
     ("bicicleta", "bicicletas", ["bici", "bicis"]),
+    # De conversaciones reales de la costa: "la maquina", "dos alacenas y un
+    # baul", "unas ventanas", "tengo unos bultos".
+    ("maquina", "maquinas", []),
+    ("cocina", "cocinas", []),
+    ("alacena", "alacenas", []),
+    ("baul", "baules", []),
+    ("ventana", "ventanas", []),
+    ("termotanque", "termotanques", []),
+    ("bulto", "bultos", []),
 ]
 _FORMA = {}
 for singular, plural, otras in _MUEBLES:

@@ -296,15 +296,19 @@ class TestPersistencia:
 class TestCli:
     def test_jobs_muestra_estado_precio_y_preguntas(self, tmp_path, capsys):
         db = str(tmp_path / "c.db")
+        # Las conversaciones de prueba son de Buenos Aires: con la tarifa por
+        # barrios, que sin un tarifa.toml ya no es la que se usa.
+        tarifa = tmp_path / "tarifa.toml"
+        tarifa.write_text("")
         main(["--db", db, "ingest"])
         capsys.readouterr()
-        assert main(["--db", db, "jobs", "--ahora", "2026-09-18T12:00"]) == 0
+        assert main(["--db", db, "jobs", "--ahora", "2026-09-18T12:00", "--tarifa", str(tarifa)]) == 0
         salida = capsys.readouterr().out
         assert "5491155556666  ESPERANDO_CLIENTE" in salida
         assert "cotizado $60.000 | sugerido $57.000 o mas" in salida
         assert "¿Para qué día lo necesitás?" in salida
         assert "hacer seguimiento" in salida
 
-        main(["--db", db, "jobs", "5491155556666", "--ahora", "2026-09-21T12:00"])
+        main(["--db", db, "jobs", "5491155556666", "--ahora", "2026-09-21T12:00", "--tarifa", str(tarifa)])
         assert "CANCELADO" in capsys.readouterr().out
         assert JobRepository(connect(db)).state("5491155556666:job") is JobState.CANCELLED

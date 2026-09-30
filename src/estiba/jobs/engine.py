@@ -19,8 +19,11 @@ from decimal import Decimal
 from estiba.core.models import (
     REQUIRED_FOR_CONFIRMATION,
     Conversation,
+    Evidence,
+    ExtractionMethod,
     FreightJob,
     JobState,
+    Slot,
     can_transition,
 )
 from estiba.extraction.extractor import Extraccion, SlotExtractor
@@ -72,6 +75,12 @@ COTIZADO = "cotizado"
 #: siendolo: anular no es una transicion de vuelta, es que el cierre deja
 #: de contar y el estado se vuelve a deducir desde los mensajes.
 ANULADO = "anulado"
+
+#: Lo que decide el fletero sobre el flete, por encima de lo que se dedujo del
+#: chat: el precio que va a cobrar y la fecha y hora. La nota lleva un JSON
+#: con "fecha" (AAAA-MM-DD) y "hora" (HH:MM); el monto, el precio. Vale el
+#: ultimo: volver a ajustar reemplaza, no suma.
+AJUSTADO = "ajustado"
 
 #: Las que cierran un flete. Son las unicas que se pueden anular.
 CIERRES = (REALIZADO, PERDIDO)
@@ -137,6 +146,9 @@ class Evaluacion:
     #: se hacen: ese silencio no es un "no", y marcarlo realizado tiene que
     #: poder pisarlo.
     perdido_por_silencio: bool = False
+    #: El precio que confirmo el fletero. Manda sobre el sugerido en el
+    #: mensaje de cotizacion.
+    precio_confirmado: Decimal | None = None
 
 
 class JobEngine:
@@ -240,6 +252,7 @@ class JobEngine:
 
         final = self.extractor.extract(Conversation(conv.chat_id, mensajes, conv.transcripts))
         job = final.job
+        precio_confirmado = _aplicar_ajuste(job, sin_anuladas(a for a in acciones if a.at <= ahora), mensajes[-1].id)
         if estado in (JobState.CONFIRMED, JobState.SCHEDULED) and job.when and job.when.value < ahora.date():
             alertas.append(f"la fecha ({job.when.value:%d/%m}) ya pasó: ¿se hizo el flete?")
         job.state = estado
@@ -253,6 +266,7 @@ class JobEngine:
             presupuesto=self.pricing.estimate(job),
             requiere_seguimiento=seguimiento,
             perdido_por_silencio=por_silencio,
+            precio_confirmado=precio_confirmado,
         )
 
     def _impide_confirmar(self, ex: Extraccion) -> list[str]:
@@ -276,3 +290,25 @@ def _hace(delta: timedelta) -> str:
 
 def _plural(n: int, palabra: str) -> str:
     return f"{n} {palabra}" if n == 1 else f"{n} {palabra}s"
+
+
+def _aplicar_ajuste(job: FreightJob, acciones: list[Accion], ultimo_id: str) -> Decimal | None:
+    """Lo que puso el fletero le gana a lo que se dedujo. Devuelve el precio confirmado.
+
+    La evidencia es el ultimo mensaje de la conversacion, con metodo HUMAN: el
+    dato no salio del chat, lo decidio una persona mirandolo.
+    """
+    import json
+    from datetime import date as _date, time as _time
+
+    ajustes = [a for a in acciones if a.tipo == AJUSTADO]
+    if not ajustes:
+        return None
+    a = ajustes[-1]
+    datos = json.loads(a.nota or "{}")
+    prueba = Evidence(ultimo_id, "lo puso el fletero", ExtractionMethod.HUMAN)
+    if datos.get("fecha"):
+        job.when = Slot(_date.fromisoformat(datos["fecha"]), 1.0, prueba)
+    if datos.get("hora"):
+        job.hour = Slot(_time.fromisoformat(datos["hora"]), 1.0, prueba)
+    return a.monto

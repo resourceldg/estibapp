@@ -60,6 +60,8 @@ def sincronizar(conn: sqlite3.Connection, engine: JobEngine, ahora: datetime, es
     estimaciones = EstimacionRepository(conn)
     cortes = CorteRepository(conn)
     guardadas = clases.todas()
+    # El precio depende de los costos y la base, que se editan en la app.
+    engine.pricing.preparar(conn)
 
     for chat_id in store.chat_ids():
         conv = store.get(chat_id)

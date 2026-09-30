@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "_macros.html" import icono, chip, clases %}
 {% from "_cerrar.html" import cerrar %}
+{% from "_cotizacion.html" import tarjeta %}
 {% set f = d.flete %}
 {% set pendiente = (d.borradores | selectattr("estado", "equalto", "pendiente") | list | first) %}
 {% block contenido %}
@@ -64,6 +65,8 @@
   <ul>{% for a in f.alertas %}<li>{{ a[0]|upper }}{{ a[1:] }}</li>{% endfor %}</ul>
 </div>
 {% endif %}
+
+{% if cot %}{{ tarjeta(cot, usar=(pendiente and pendiente.tipo == "cotizacion"), job_id=f.job_id, destacado=not pendiente) }}{% endif %}
 
 {# Lo que cobraste antes por algo parecido. No es una tarifa: son tus
    numeros. Con pocos casos no aparece, porque seria inventar. #}
@@ -180,36 +183,7 @@
   </div>
   {# Como WhatsApp: lo ultimo abajo y a la vista, lo viejo scrolleando para
      arriba. Antes habia que bajar media pantalla para ver que dijo recien. #}
-  <ol class="mensajes" data-al-final>
-    {% for m in d.mensajes %}
-    <li class="msj {{ 'cliente' if m.del_cliente else 'vos' }}" id="{{ m.ancla }}">
-      <div class="burbuja">
-        {% if m.es_audio %}
-          <span class="audio{% if m.transcripcion_dudosa %} dudosa{% endif %}">
-            {{ icono("mic") }}
-            {%- if not m.texto %}Audio sin transcribir
-            {%- elif m.transcripcion_dudosa %}Puede estar mal transcripto
-            {%- else %}Audio transcripto{% endif -%}
-          </span>
-          {# Transcribir se equivoca, y no siempre se nota leyendo: hay
-             frases que suenan a castellano y dicen otra cosa. Cuando
-             Whisper entendio poco, el original esta ahi al lado. #}
-          {% if m.escuchable %}<audio class="oir" controls preload="none" src="/audios/{{ m.id }}"></audio>{% endif %}
-        {% elif m.medio %}
-          <span class="audio">{{ icono("adjunto") }}{{ m.medio }}</span>
-        {% endif %}
-        {% if m.texto %}
-          {% if m.largo %}
-          {# Un audio largo o un chat pegado tapan la conversacion: se abre si hace falta. #}
-          <details class="msj-largo"><summary>{{ m.texto[:220] }}…</summary><p>{{ m.texto }}</p></details>
-          {% else %}<p>{{ m.texto }}</p>{% endif %}
-        {% endif %}
-        <span class="msj-hora">{{ m.hora }}</span>
-      </div>
-      {% if m.datos %}<div class="msj-datos">{% for x in m.datos %}<span>{{ x }}</span>{% endfor %}</div>{% endif %}
-    </li>
-    {% endfor %}
-  </ol>
+  {% set mensajes = d.mensajes %}{% include "_chat.html" %}
 </section>
 
 {# Todo lo de abajo es para revisar, no para cargar. #}
@@ -237,6 +211,7 @@
   </ul>
 </details>
 
+{% if not cot %}
 <details class="panel plegado">
   <summary>Precio{% if f.cotizado %} · {{ f.cotizado }}{% elif f.sugerido %} · sugerido {{ f.sugerido }}{% endif %}</summary>
   <div class="precios">
@@ -251,8 +226,12 @@
   <p class="sin-contar">Sin contar:</p>
   <ul class="sin-contar">{% for s in d.sin_contar %}<li>{{ s }}</li>{% endfor %}</ul>
   {% endif %}
+  {% if d.supuestos %}
+  <ul class="supuestos">{% for s in d.supuestos %}<li>{{ s }}</li>{% endfor %}</ul>
+  {% endif %}
   {% endif %}
 </details>
+{% endif %}
 
 {% if d.historia %}
 <details class="panel plegado">

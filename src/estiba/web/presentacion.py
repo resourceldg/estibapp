@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 import sqlite3
 from dataclasses import asdict, dataclass, field
+from decimal import Decimal
 from datetime import date, datetime, time, timedelta
 from urllib.parse import quote
 
@@ -80,6 +81,29 @@ def puede_realizarse(ev: Evaluacion) -> bool:
     if ev.job.state not in (JobState.DONE, JobState.CANCELLED):
         return True
     return ev.job.state is JobState.CANCELLED and ev.perdido_por_silencio
+
+
+def mensajes_de(conv: Conversation, ahora: datetime, por_mensaje: dict | None = None) -> list:
+    """El hilo como se dibuja: el mismo en un flete y en una charla apartada."""
+    por_mensaje = por_mensaje or {}
+    salida = []
+    for m in conv.messages:
+        if m.sent_at > ahora:
+            continue
+        salida.append(Mensaje(
+            id=m.id,
+            ancla=ancla(m.id),
+            del_cliente=m.from_customer,
+            hora=f"{fecha_corta(m.sent_at.date())} {m.sent_at:%H:%M}",
+            texto=conv.text_of(m),
+            es_audio=m.kind.value == "audio",
+            medio=ETIQUETAS_MEDIO.get(m.kind.value),
+            largo=len(conv.text_of(m) or "") > LARGO_PARA_PLEGAR,
+            escuchable=bool(m.media_path),
+            transcripcion_dudosa=(t.dudosa if (t := conv.transcripts.get(m.id)) else False),
+            datos=por_mensaje.get(m.id, []),
+        ))
+    return salida
 
 
 def fecha_corta(d: date) -> str:
@@ -288,6 +312,8 @@ class Flete:
         varios en la lista, todos se ven iguales.
         """
         return self.ruta if (self.origen or self.destino) else self.quien
+    #: Los km del recorrido, si el mapa los pudo calcular.
+    km: str | None = None
 
 
 @dataclass
@@ -299,6 +325,7 @@ class DetalleFlete:
     preguntas: list[str]
     desglose: list[tuple[str, str]]
     sin_contar: list[str]
+    supuestos: list[str]
     historia: list[Evento]
     mensajes: list[Mensaje]
     borradores: list[Borrador]
@@ -352,6 +379,8 @@ def flete(job_id: str, ev: Evaluacion, conv: Conversation, ahora: datetime,
         cotizado=pesos(job.quoted_price.value) if job.quoted_price else None,
         cotizado_crudo=f"{int(job.quoted_price.value)}" if job.quoted_price else None,
         sugerido=pesos(ev.presupuesto.total) if ev.presupuesto else None,
+        km=(f"{int(ev.presupuesto.detalle['km'])} km"
+            if ev.presupuesto and ev.presupuesto.detalle.get("km") is not None else None),
         sugerido_completo=bool(ev.presupuesto and ev.presupuesto.completo),
         alertas=ev.alertas,
         ultimo=hace(ultimo.sent_at, ahora),
@@ -436,23 +465,7 @@ def detalle(
             ancla=ancla(e.message_id) if e.message_id else None,
         ))
 
-    mensajes = []
-    for m in conv.messages:
-        if m.sent_at > ahora:
-            continue
-        mensajes.append(Mensaje(
-            id=m.id,
-            ancla=ancla(m.id),
-            del_cliente=m.from_customer,
-            hora=f"{fecha_corta(m.sent_at.date())} {m.sent_at:%H:%M}",
-            texto=conv.text_of(m),
-            es_audio=m.kind.value == "audio",
-            medio=ETIQUETAS_MEDIO.get(m.kind.value),
-            largo=len(conv.text_of(m) or "") > LARGO_PARA_PLEGAR,
-            escuchable=bool(m.media_path),
-            transcripcion_dudosa=(t.dudosa if (t := conv.transcripts.get(m.id)) else False),
-            datos=por_mensaje.get(m.id, []),
-        ))
+    mensajes = mensajes_de(conv, ahora, por_mensaje)
 
     p = ev.presupuesto
     return DetalleFlete(
@@ -463,6 +476,7 @@ def detalle(
         preguntas=ev.preguntas,
         desglose=[(c, pesos(m)) for c, m in p.desglose] if p else [],
         sin_contar=p.sin_contar if p else [],
+        supuestos=p.supuestos if p else [],
         historia=historia,
         mensajes=mensajes,
         borradores=[borrador(b) for b in borradores],
@@ -827,9 +841,26 @@ class VistaWhatsApp:
     url_waha: str | None
     #: Mientras no este conectado, la pagina se refresca sola.
     esperando: bool
+    #: Que paso la ultima vez que se buscaron mensajes perdidos.
+    al_dia: str | None = None
+    al_dia_error: bool = False
 
 
-def vista_whatsapp(whatsapp, info: dict | None, estado: str | None) -> VistaWhatsApp:
+def _al_dia(r: dict | None, ahora: datetime) -> tuple[str | None, bool]:
+    if not r:
+        return None, False
+    cuando = hace(r["cuando"], ahora)
+    if "error" in r:
+        return f"No se pudo revisar ({cuando}): {r['error']}. Se reintenta solo.", True
+    if not r["nuevos"]:
+        return f"Revisado {cuando}: no se había perdido nada.", False
+    n = r["nuevos"]
+    return (f"Revisado {cuando}: {n} {'mensaje que había' if n == 1 else 'mensajes que habían'} llegado "
+            f"con la app cerrada, de {r['chats']} {'chat' if r['chats'] == 1 else 'chats'}."), False
+
+
+def vista_whatsapp(whatsapp, info: dict | None, estado: str | None,
+                   recuperacion: dict | None = None, ahora: datetime | None = None) -> VistaWhatsApp:
     s = sesion_whatsapp(estado)
     me = (info or {}).get("me") or {}
     numero = me.get("id", "").split("@")[0] or None
@@ -840,6 +871,8 @@ def vista_whatsapp(whatsapp, info: dict | None, estado: str | None) -> VistaWhat
         nombre=me.get("pushName"),
         url_waha=whatsapp.cliente.config.url if whatsapp else None,
         esperando=s.estado in ("STARTING", "SCAN_QR_CODE", "PASSKEY_REQUIRED", "PASSKEY_CONFIRMATION_REQUIRED"),
+        al_dia=_al_dia(recuperacion, ahora)[0] if ahora else None,
+        al_dia_error=_al_dia(recuperacion, ahora)[1] if ahora else False,
     )
 
 
@@ -890,6 +923,7 @@ class GrupoCampos:
 #: que gasta la camioneta, la publicidad, la meta y lo que se cobra.
 _GRUPOS = [
     ("Fijos por mes", "Se pagan aunque no salga ningún flete.", [
+        ("credito", "Cuota del crédito de la camioneta", "$"),
         ("seguro", "Seguro de la camioneta", "$"),
         ("monotributo", "Monotributo", "$"),
         ("vtv_gnc", "VTV y prueba del GNC", "$", "Lo anual, dividido por 12."),
@@ -902,7 +936,14 @@ _GRUPOS = [
         ("aceite_km", "Aceite y filtros", "$/km", "Un cambio de $60.000 cada 3.000 km son $20 por km."),
         ("cubiertas_km", "Cubiertas", "$/km"),
         ("arreglos_km", "Arreglos y roturas", "$/km", "Frenos, embrague, tren delantero: un fondo para cuando toque."),
-        ("km_por_flete", "Km por flete", "km", "Ida y vuelta, promedio."),
+        ("km_por_flete", "Km por flete", "km", "Promedio. Se usa cuando el mapa no encuentra una dirección."),
+        ("factor_calles", "Vueltas de las calles", "×", "Km manejados por cada km en línea recta."),
+        ("velocidad_kmh", "Velocidad promedio", "km/h"),
+    ]),
+    ("Cada flete", "Con esto Estiba arma el precio de cada pedido.", [
+        ("horas_carga", "Cargar y descargar, lo mínimo", "h"),
+        ("horas_flete", "Lo que dura un flete promedio", "h", "De salir de casa a volver. Con esto se reparte la meta por hora."),
+        ("ayudante", "Lo que cobrás por ayudante", "$"),
     ]),
     ("Publicidad", "Para calcular cuánto cuesta conseguir un flete.", [
         ("costo_por_consulta", "Costo por conversación", "$", "Lo que dice Meta como costo por resultado."),
@@ -941,6 +982,8 @@ def grupos_de_costos(c) -> list[GrupoCampos]:
             grupo.total = f"{pesos(c.fijos_mes)} por mes"
         elif titulo == "La camioneta":
             grupo.total = f"{pesos(c.costo_km)} por km · {pesos(c.camioneta_por_flete)} por flete"
+        elif titulo == "Cada flete" and c.valor_hora is not None:
+            grupo.total = f"tu hora tiene que valer {pesos(c.valor_hora)} para llegar a la meta"
         elif titulo == "Publicidad" and c.publicidad_por_flete is not None:
             grupo.total = f"{pesos(c.publicidad_por_flete)} por flete hecho, con impuestos"
         salida.append(grupo)
@@ -987,6 +1030,11 @@ class Objetivos:
     cierre_medido: str | None
     ritmo_actual: float
     meta: str
+    #: Desde donde sale la camioneta, y como la encontro el mapa.
+    base: str = ""
+    base_nota: str | None = None
+    pronostico: dict | None = None
+    negocio: str = ""
 
 
 def _plan_vista(titulo: str, p, c) -> PlanVista:
@@ -1091,7 +1139,9 @@ def objetivos(c, b, mes, gastos, ahora: datetime, cierre_medido: tuple[int, int]
 
     filas = [
         Gasto(g["id"], f"{date.fromisoformat(g['period_start']):%d/%m} al "
-                       f"{date.fromisoformat(g['period_end']):%d/%m/%Y}", pesos(Decimal(g["spend"])))
+                       f"{date.fromisoformat(g['period_end']):%d/%m/%Y}"
+                       + (f" · {g['resultados']} conversaciones" if g["resultados"] else ""),
+                 pesos(Decimal(g["spend"])))
         for g in gastos
     ]
     medido = None
@@ -1100,3 +1150,152 @@ def objetivos(c, b, mes, gastos, ahora: datetime, cierre_medido: tuple[int, int]
         medido = f"Estiba midió {hechos / consultas:.0%}: {hechos} de {consultas} consultas en el período."
     return Objetivos(kpis, renglones, avisos, ritmo, planes, minimos, tarifas,
                      grupos_de_costos(c), filas, medido, ritmo_actual, pesos(c.ganancia_objetivo))
+
+
+def pronostico(p) -> dict:
+    """El pronostico del mes, listo para mostrar."""
+    def fuente(d, formato):
+        return {"valor": formato(d.valor), "medido": d.medido, "detalle": d.detalle}
+
+    return {
+        "datos": [
+            ("Cierre", fuente(p.cierre, lambda v: f"{v:.0f}%".replace(".", ","))),
+            ("Costo por conversación", fuente(p.costo_consulta, pesos)),
+            ("Cobrás en promedio", fuente(p.ticket, lambda v: pesos(v.quantize(Decimal(1))))),
+        ],
+        "escenarios": [
+            {"nombre": e.nombre, "cierre": f"{e.cierre:.0%}", "fletes": e.fletes,
+             "ingresos": pesos(e.ingresos), "ganancia": _signo(e.ganancia), "mal": e.ganancia < 0}
+            for e in p.escenarios
+        ],
+        "gasto_dia": pesos(p.gasto_dia.quantize(Decimal(1))),
+        "solos": f"{p.sin_publicidad_mes:.1f}".replace(".", ","),
+        "semana": p.semana,
+        "pocos": p.pocos_datos,
+    }
+
+
+# --------------------------------------------------------------------------
+# Cotizacion: el precio sugerido con todo lo que lo arma
+# --------------------------------------------------------------------------
+
+#: Nombre de cada parte del precio -> clase de color. Siempre el mismo color
+#: para la misma parte, en la tarjeta y en el informe.
+COLOR_PARTE = {"Camioneta": "p1", "Tu trabajo": "p2", "Publicidad": "p3", "Ayudantes": "p4"}
+
+
+@dataclass
+class ParteCotizacion:
+    nombre: str
+    monto: str
+    ancho: float  # 0..100 del total
+    color: str
+
+
+@dataclass
+class Cotizacion:
+    sugerido: str
+    sugerido_crudo: int
+    completo: bool
+    km: str | None
+    horas: str | None
+    paradas: list[tuple[str, bool]]  # (lugar, exacto)
+    partes: list[ParteCotizacion]
+    minimo: str | None
+    #: Donde cae lo que se cotizo o cobro, contra el minimo y el sugerido.
+    veredicto: str | None
+    tono: str
+    desglose: list[tuple[str, str]]
+    sin_contar: list[str]
+    supuestos: list[str]
+    #: Posicion (0..100) del minimo, del sugerido y de lo cotizado en la regla.
+    regla: dict | None
+    #: El slider para confirmar el precio, y la fecha y hora propuestas.
+    #: None si el flete ya se hizo o se perdio: ahi no hay nada que decidir.
+    ajuste: dict | None = None
+
+
+def _ajuste(p, minimo: Decimal | None, confirmado: Decimal | None, job) -> dict:
+    """El slider y los campos de fecha, con lo que Estiba ya sabe puesto."""
+    from estiba.agenda.evento import HORA_DE_FRANJA
+    from estiba.core.models import ExtractionMethod
+
+    total = Decimal(p.total)
+    piso = minimo if minimo is not None else total * Decimal("0.6")
+    lo = int(max(Decimal(5000), (piso * Decimal("0.7") / 1000).quantize(Decimal(1)) * 1000))
+    hi = int(((max(total, confirmado or 0) * Decimal("1.6")) / 1000).quantize(Decimal(1)) * 1000)
+    rango = (hi - lo) or 1
+    pos = lambda v: max(0.0, min(100.0, float((Decimal(v) - lo) / rango * 100))) if v is not None else None
+    fecha = hora = None
+    origen = "Estiba no encontró una fecha en el chat: ponela vos si ya la hablaron, o dejala vacía."
+    if job is not None and job.when is not None:
+        fecha = job.when.value.isoformat()
+        if job.when.evidence.method is ExtractionMethod.HUMAN:
+            origen = "La fecha la pusiste vos."
+        else:
+            origen = f"Estiba la entendió del chat: “{job.when.evidence.quote}”."
+    if job is not None and job.hour is not None:
+        hora = job.hour.value.strftime("%H:%M")
+    elif job is not None and job.daypart is not None and job.daypart.value in HORA_DE_FRANJA:
+        hora = HORA_DE_FRANJA[job.daypart.value].strftime("%H:%M")
+        origen += f" Dijo “a la {job.daypart.value.replace('manana', 'mañana')}”: la hora es aproximada."
+    return {
+        # De a mil: nadie cobra $72.500 un flete.
+        "min": lo, "max": hi, "paso": 1000,
+        "valor": int(((confirmado if confirmado is not None else total) / 1000).quantize(Decimal(1)) * 1000),
+        "minimo": int(minimo) if minimo is not None else None, "sugerido": int(total),
+        "pos_minimo": pos(minimo), "pos_sugerido": pos(total),
+        "confirmado": confirmado is not None,
+        "fecha": fecha, "hora": hora, "origen_fecha": origen,
+    }
+
+
+def cotizacion(p, cotizado: Decimal | None = None, cobrado: Decimal | None = None, *,
+               job=None, confirmado: Decimal | None = None, ajustable: bool = False) -> Cotizacion | None:
+    """La tarjeta de precio del flete. None si Estiba no pudo estimar nada."""
+    if p is None:
+        return None
+    d = p.detalle or {}
+    total = Decimal(p.total)
+    partes = [(n, m) for n, m in d.get("partes", []) if m]
+    suma = sum((m for _, m in partes), Decimal(0)) or Decimal(1)
+    minimo = d.get("minimo")
+    real = cobrado if cobrado is not None else cotizado
+    que = "Cobraste" if cobrado is not None else "Cotizaste"
+
+    veredicto, tono, regla = None, "", None
+    if real is not None and minimo is not None:
+        if real < minimo:
+            veredicto, tono = (f"{que} {pesos(real)}: menos que el mínimo ({pesos(minimo)}). "
+                               "Con este flete perdiste plata."), "mal"
+        elif real < total:
+            veredicto, tono = (f"{que} {pesos(real)}: cubre los costos, pero son {pesos(total - real)} "
+                               "menos de lo que pide tu meta."), "aviso"
+        else:
+            veredicto, tono = f"{que} {pesos(real)}: llega a lo que pide tu meta.", "ok"
+    if minimo is not None:
+        tope = max(total, real or 0, minimo) * Decimal("1.15")
+        pos = lambda v: float(v / tope * 100) if v is not None else None
+        regla = {"minimo": pos(minimo), "sugerido": pos(total), "real": pos(real),
+                 "real_etq": que.lower().replace("aste", "ado") if real is not None else None}
+
+    km = d.get("km")
+    horas = d.get("horas")
+    return Cotizacion(
+        sugerido=pesos(total),
+        sugerido_crudo=int(total),
+        completo=p.completo,
+        km=f"{int(km)} km" if km is not None else None,
+        horas=f"{float(horas):.1f} h".replace(".", ",") if horas is not None else None,
+        paradas=d.get("paradas", []),
+        partes=[ParteCotizacion(n, pesos(m.quantize(Decimal(1))), float(m / suma * 100), COLOR_PARTE.get(n, "p1"))
+                for n, m in partes],
+        minimo=pesos(minimo) if minimo is not None else None,
+        veredicto=veredicto,
+        tono=tono,
+        desglose=[(c, pesos(m)) for c, m in p.desglose],
+        sin_contar=p.sin_contar,
+        supuestos=p.supuestos,
+        regla=regla,
+        ajuste=_ajuste(p, minimo, confirmado, job) if ajustable else None,
+    )

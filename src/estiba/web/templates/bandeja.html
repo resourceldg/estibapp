@@ -11,6 +11,25 @@
   </p>
 </div>
 
+{# Una fecha que se nombro y nadie cerro se pasa si no se ve. Va arriba de
+   todo, antes que la lista: escribirle al cliente hoy es lo que salva el
+   flete. #}
+{% if por_confirmar %}
+<section class="por-confirmar" aria-label="Fechas por confirmar">
+  <h2>{{ icono("agenda") }}Fechas por confirmar</h2>
+  <ul>
+    {% for p in por_confirmar %}
+    <li><a href="/fletes/{{ p.job_id }}"{% if p.urgente %} class="urgente"{% endif %}>
+      <strong>{{ p.cuando }}</strong>
+      <span>{{ p.quien }}{% if p.ruta %} · {{ p.ruta }}{% endif %}</span>
+      {{ icono("flecha") }}
+    </a></li>
+    {% endfor %}
+  </ul>
+  <p class="nota">Se habló de esa fecha pero el cliente no la cerró. Escribile para confirmar; en el calendario del celular te avisa la víspera.</p>
+</section>
+{% endif %}
+
 {# El tiempo manda: los filtros acotan, no reordenan. Arriba el trabajo del
    dia; abajo, lo que ya se clasifico o se dio por perdido: esta, pero no
    se mezcla con los clientes. #}
@@ -41,7 +60,7 @@
 <ul class="lista">
   {% for a in apartadas %}
   <li>
-    <a class="conv" href="/fletes/{{ a.chat_id }}:job">
+    <a class="conv" href="/conversaciones/{{ a.chat_id }}">
       <div class="conv-linea1">
         <span class="conv-quien">{{ a.quien }}</span>
         <span class="conv-hora">{{ a.ultimo }}</span>

@@ -1222,7 +1222,8 @@ summary::-webkit-details-marker { display: none; }
   background: var(--superficie); color: var(--tinta); font: inherit; font-variant-numeric: tabular-nums;
 }
 .form-gasto .btn { min-height: 44px; }
-@media (min-width: 560px) { .form-gasto { grid-template-columns: 1fr 1fr 1fr auto; } }
+@media (min-width: 560px) { .form-gasto { grid-template-columns: 1fr 1fr 1fr 1fr auto; } }
+.form-gasto label small { font-size: 11px; color: var(--tenue); }
 
 .costos fieldset { margin: 16px 0 0; padding: 0; border: 0; }
 .costos legend { padding: 0; font-size: 15px; font-weight: 700; }
@@ -1235,3 +1236,235 @@ summary::-webkit-details-marker { display: none; }
 .costos input:focus, .form-gasto input:focus { outline: none; border-color: var(--primario); }
 .total-grupo { margin: 6px 0 0; font-size: 13px; font-weight: 650; color: var(--acento); text-align: right; }
 .costos .btn { margin-top: 18px; width: 100%; }
+.costos .campo.campo-ancho { grid-template-columns: 1fr; }
+.costos .campo-ancho input { text-align: left; }
+.supuestos { margin: 10px 0 0; padding-left: 18px; font-size: 13px; color: var(--tenue); }
+
+/* Pronostico: de donde sale cada numero se ve al lado del numero. */
+.fuentes { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 6px; }
+.fuentes li { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; font-size: 14px; }
+.fuentes li span { color: var(--tinta-2); }
+.fuentes li small { grid-column: 1 / -1; font-size: 12px; }
+.fuentes .medido { color: var(--ok); }
+.fuentes .supuesto { color: var(--aviso); }
+.escenarios { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 14px; }
+.escenario { padding: 10px; border-radius: var(--radio-chico); background: var(--superficie-2); min-width: 0; }
+.escenario.probable { outline: 1.5px solid var(--linea-2); }
+.escenario h3 { margin: 0; font-size: 12px; font-weight: 700; color: var(--tinta-2); }
+.esc-ganancia { white-space: nowrap; margin: 4px 0 2px; font-size: clamp(14px, 4.4vw, 18px); font-weight: 750; letter-spacing: -0.01em; }
+.esc-detalle { margin: 0; font-size: 12px; color: var(--tenue); }
+.escenario .tono-texto-mal { color: var(--mal); }
+.semana { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 8px; font-size: 14px; color: var(--tinta-2); }
+
+/* ---------------------------------------------------------- cotizacion */
+/* Cada parte del precio tiene un color fijo, el mismo en la tarjeta y en el
+   informe: camioneta, tu trabajo, publicidad, ayudantes. */
+:root {
+  --parte-1: #86a8ff;
+  --parte-2: #e0662a;
+  --parte-3: #c08bd9;
+  --parte-4: #6fb9c4;
+}
+.p1 { background: var(--parte-1); }
+.p2 { background: var(--parte-2); }
+.p3 { background: var(--parte-3); }
+.p4 { background: var(--parte-4); }
+
+.cotizacion { margin-bottom: 16px; }
+.cot-cab { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.cot-principal { display: grid; gap: 2px; }
+.cot-etq { font-size: 13px; font-weight: 650; color: var(--tinta-2); }
+.cot-precio { font-size: 36px; font-weight: 780; letter-spacing: -0.02em; line-height: 1.05; }
+.cot-precio small { font-size: 15px; font-weight: 600; color: var(--tenue); letter-spacing: 0; }
+.cot-datos { display: flex; gap: 12px; color: var(--tinta-2); font-weight: 650; font-size: 15px; }
+.cot-datos span { display: inline-flex; align-items: center; gap: 5px; }
+.cot-datos .ico { width: 17px; height: 17px; color: var(--tenue); }
+
+/* El recorrido como una linea de paradas: casa, origen, destino, casa. */
+.recorrido { list-style: none; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 0; margin: 12px 0 0; padding: 0; font-size: 13px; color: var(--tinta-2); }
+.recorrido li { display: inline-flex; align-items: center; }
+.recorrido li + li::before { content: "→"; margin: 0 6px; color: var(--tenue); }
+.recorrido li.aprox { text-decoration: underline dotted var(--aviso); text-underline-offset: 3px; }
+
+.cot-barra { display: flex; height: 12px; margin-top: 14px; border-radius: 6px; overflow: hidden; gap: 2px; background: var(--grafico-pista); }
+.cot-barra span { display: block; height: 100%; }
+.cot-partes { list-style: none; margin: 10px 0 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; font-size: 14px; }
+.cot-partes li { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.cot-partes i { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.cot-partes span { color: var(--tinta-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cot-partes strong { margin-left: auto; }
+
+/* La regla: de cero a un poco mas del sugerido. Lo que queda debajo del
+   minimo va sombreado: ahi se pierde plata. */
+.regla { position: relative; height: 44px; margin: 18px 4px 4px; }
+.regla-pista { position: absolute; top: 6px; left: 0; right: 0; height: 6px; border-radius: 3px; background: var(--ok-fondo); overflow: hidden; }
+.regla-pierde { display: block; height: 100%; background: var(--mal-fondo); }
+.regla-marca { position: absolute; top: 0; transform: translateX(-50%); display: grid; justify-items: center; font-size: 11px; font-weight: 650; color: var(--tinta-2); white-space: nowrap; }
+.regla-marca b { width: 2px; height: 18px; background: currentColor; border-radius: 1px; margin-bottom: 2px; }
+.regla-marca.minimo { color: var(--mal); }
+.regla-marca.sugerido { color: var(--ok); }
+.regla-marca.real { top: 22px; }
+.regla-marca.real b { height: 0; }
+.regla-marca.real::before { content: "▲"; font-size: 9px; line-height: 1; }
+.regla-marca.real.tono-mal { color: var(--mal); background: none; }
+.regla-marca.real.tono-aviso { color: var(--aviso); background: none; }
+.regla-marca.real.tono-ok { color: var(--ok); background: none; }
+.cot-veredicto { margin: 10px 0 0; font-size: 14px; font-weight: 600; }
+.tono-texto-aviso { color: var(--aviso); }
+.cotizacion .btn { margin-top: 14px; }
+.cot-calculo { margin-top: 12px; }
+.cot-calculo summary { cursor: pointer; font-size: 14px; font-weight: 600; color: var(--tinta-2); }
+.cot-calculo[open] summary { margin-bottom: 8px; }
+.cot-calculo .desglose-tabla td:last-child { text-align: right; white-space: nowrap; padding-left: 10px; }
+.cot-calculo a { color: var(--tinta-2); }
+
+/* En la bandeja: el sugerido y los km, sin entrar. */
+.conv-precio { font-size: 12px; font-weight: 650; color: var(--tinta-2); }
+
+/* ------------------------------------------------------------ tablero */
+.subtabs { flex-wrap: nowrap; }
+.filtros { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0 4px; }
+.filtros .periodos { margin-top: 0; }
+.filtro-mas { flex-basis: 100%; order: 3; }
+.filtro-mas summary { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: 14px; font-weight: 600; color: var(--tinta-2); list-style: none; }
+.filtro-mas summary::-webkit-details-marker { display: none; }
+.filtro-mas .ico { width: 16px; height: 16px; }
+.filtro-campos { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; align-items: end; }
+.filtro-campos label { display: grid; gap: 4px; font-size: 13px; color: var(--tinta-2); }
+.filtro-campos input, .filtro-campos select {
+  min-height: 40px; padding: 0 10px; border: 1.5px solid var(--linea-2); border-radius: 10px;
+  background: var(--superficie); color: var(--tinta); font: inherit; min-width: 0; width: 100%;
+}
+.descargar { margin-left: auto; }
+.filtro-leyenda { margin: 0 2px 14px; }
+@media (min-width: 640px) { .filtro-campos { grid-template-columns: 1fr 1fr 1fr auto; } }
+
+.tarjeta-titulo { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.decision { border-color: color-mix(in srgb, var(--ok) 40%, var(--linea)); }
+.hallazgos { margin: 10px 0 0; padding-left: 20px; display: grid; gap: 8px; font-size: 15px; color: var(--tinta-2); }
+.hallazgos li::marker { color: var(--acento); font-weight: 700; }
+.tablero-kpis { grid-template-columns: repeat(2, 1fr); }
+.tablero-kpis .kpi:first-child { grid-column: auto; }
+.tablero-kpis .kpi:first-child .kpi-val { font-size: 24px; }
+@media (min-width: 640px) { .tablero-kpis { grid-template-columns: repeat(3, 1fr); } }
+.cuentas th.d, .cuentas .d { text-align: right; }
+.cuentas th small { display: block; }
+.comparar td, .seguimiento td { text-align: right; font-weight: 650; }
+.comparar .tenue { color: var(--tenue); font-weight: 500; }
+.delta { font-size: 13px; white-space: nowrap; }
+.tono-texto-neutro { color: var(--tenue); }
+
+.tablero-grilla { display: grid; gap: 16px; margin-top: 16px; }
+.tablero-grilla > .panel + .panel { margin-top: 0; }
+@media (min-width: 1100px) {
+  .contenido:has(.tablero-grilla) { max-width: 1180px; }
+  .tablero-grilla { grid-template-columns: 1fr 1fr; }
+}
+.grafico-tarjeta .svg { margin-top: 12px; }
+.grafico-tarjeta svg { display: block; width: 100%; height: auto; }
+.lectura { margin: 10px 0 0; font-size: 14px; color: var(--tinta); line-height: 1.5; }
+.probas { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+.probas div { display: grid; gap: 2px; padding: 10px; border-radius: var(--radio-chico); background: var(--superficie-2); }
+.probas strong { font-size: 20px; font-weight: 760; letter-spacing: -0.01em; }
+.probas span { font-size: 12px; color: var(--tenue); }
+.supuestos-modelo { margin-top: 12px; }
+.supuestos-modelo summary { cursor: pointer; font-size: 14px; font-weight: 600; color: var(--tinta-2); }
+.modelo-form { display: grid; gap: 14px; margin-top: 12px; }
+.modelo-form label { display: grid; gap: 6px; font-size: 14px; font-weight: 600; }
+.modelo-form output { float: right; font-variant-numeric: tabular-nums; color: var(--acento); }
+.modelo-form small { font-size: 12px; font-weight: 400; color: var(--tenue); }
+.modelo-form input[type=range] { width: 100%; accent-color: var(--acento); }
+.modelo-form input[name=tope] { min-height: 40px; padding: 0 10px; border: 1.5px solid var(--linea-2); border-radius: 10px; background: var(--superficie); color: var(--tinta); font: inherit; }
+
+.calculadora, #escenarios { margin-top: 16px; }
+.calc-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+.calc-form label { display: grid; gap: 4px; font-size: 13px; color: var(--tinta-2); min-width: 0; }
+.calc-form input { width: 100%; min-width: 0; min-height: 42px; padding: 0 10px; border: 1.5px solid var(--linea-2); border-radius: 10px;
+                   background: var(--superficie); color: var(--tinta); font: inherit; font-variant-numeric: tabular-nums; text-align: right; }
+.calc-form input:focus { outline: none; border-color: var(--primario); }
+.calc-form .btn { grid-column: 1 / -1; justify-self: start; }
+@media (min-width: 720px) { .calc-form { grid-template-columns: repeat(4, 1fr); } }
+#sim-resultado { margin-top: 16px; }
+#sim-resultado.htmx-request { opacity: .6; }
+.sim-kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.sim-kpis div { display: grid; gap: 2px; padding: 10px; border-radius: var(--radio-chico); background: var(--superficie-2); min-width: 0; }
+.sim-kpis span { font-size: 12px; color: var(--tenue); }
+.sim-kpis strong { font-size: clamp(16px, 4.6vw, 22px); font-weight: 760; white-space: nowrap; }
+.sim-kpis small { font-size: 11px; color: var(--tenue); }
+.sim-kpis .mal strong { color: var(--mal); }
+.sim-kpis .ok strong { color: var(--ok); }
+.sim-meta { height: 8px; margin-top: 12px; border-radius: 4px; background: var(--grafico-pista); overflow: hidden; }
+.sim-meta-marca { display: block; height: 100%; background: var(--ok); }
+.sim-meta-texto { margin: 6px 0 0; font-size: 12px; color: var(--tenue); }
+.sim-barras { margin-top: 14px; display: grid; gap: 6px; }
+.sim-fila { display: grid; grid-template-columns: 70px 1fr; align-items: center; gap: 8px; font-size: 13px; color: var(--tinta-2); }
+.sim-pista { display: flex; height: 12px; border-radius: 6px; background: var(--grafico-pista); overflow: hidden; gap: 2px; }
+.sim-pista > span { display: block; height: 100%; }
+.sim-ingreso { background: var(--ok); }
+.pf { background: var(--neutro); }
+.sim-veredicto { margin: 10px 0 0; font-size: 14px; font-weight: 600; }
+.rangos { display: grid; gap: 12px; margin-top: 14px; }
+@media (min-width: 640px) { .rangos { grid-template-columns: 1fr 1fr; } }
+.rangos summary { cursor: pointer; font-size: 14px; font-weight: 650; color: var(--tinta-2); }
+.tabla-rango { width: 100%; margin-top: 6px; border-collapse: collapse; font-size: 13px; }
+.tabla-rango th { text-align: right; font-size: 11px; font-weight: 700; color: var(--tenue); padding: 4px 6px; }
+.tabla-rango th:first-child, .tabla-rango td:first-child { text-align: left; }
+.tabla-rango td { text-align: right; padding: 5px 6px; border-top: 1px solid var(--linea); font-weight: 600; }
+.tabla-rango tr.actual td { background: var(--superficie-3); }
+.tabla-rango tr.actual td:first-child::after { content: " · hoy"; color: var(--tenue); font-weight: 500; }
+.guardar-escenario { display: flex; gap: 8px; margin-top: 16px; }
+.guardar-escenario input { flex: 1; min-width: 0; min-height: 46px; padding: 0 12px; border: 1.5px solid var(--linea-2); border-radius: 12px;
+                           background: var(--superficie); color: var(--tinta); font: inherit; }
+.escenarios-tabla { overflow-x: auto; margin-top: 10px; }
+.escenarios-tabla table { min-width: 100%; }
+.escenarios-tabla td { text-align: right; font-weight: 650; white-space: nowrap; }
+.acciones-escenario form { display: inline-block; margin-left: 4px; }
+.acciones-escenario .btn { margin: 0; }
+.accion-semana { margin-top: 16px; border-left: 3px solid var(--acento); }
+.sim-barras .cot-partes { grid-template-columns: 1fr; }
+.escenarios-tabla th.d, .escenarios-tabla td { padding-left: 12px; }
+
+/* Fechas que se nombraron y nadie cerro: arriba de todo en Hoy. */
+.por-confirmar { margin: 0 0 16px; padding: 12px 14px; border-radius: var(--radio);
+                 border: 1px solid color-mix(in srgb, var(--aviso) 35%, transparent); background: var(--aviso-fondo); }
+.por-confirmar h2 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 15px; color: var(--aviso); }
+.por-confirmar h2 .ico { width: 18px; height: 18px; }
+.por-confirmar ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }
+.por-confirmar a { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; padding: 8px 4px;
+                   text-decoration: none; color: var(--tinta); border-top: 1px solid color-mix(in srgb, var(--aviso) 20%, transparent); }
+.por-confirmar a strong { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.por-confirmar a span { color: var(--tinta-2); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.por-confirmar a .ico { width: 16px; height: 16px; color: var(--tenue); }
+.por-confirmar a.urgente strong { color: var(--aviso); }
+.por-confirmar .nota { margin-top: 6px; }
+
+/* El slider del precio: la pista pintada por zonas (pierde / gana menos /
+   llega a la meta), con el minimo y la meta marcados debajo. */
+.ajustar { margin-top: 16px; }
+.ajustar-cab { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.ajustar-cab label { font-size: 13px; font-weight: 650; color: var(--tinta-2); }
+.ajustar-valor { font-size: 24px; font-weight: 760; letter-spacing: -0.01em; }
+.slider-precio {
+  -webkit-appearance: none; appearance: none; width: 100%; height: 10px; margin: 12px 0 0; border-radius: 5px; cursor: pointer;
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--mal) 55%, transparent) 0 var(--pos-min),
+    color-mix(in srgb, var(--aviso) 55%, transparent) var(--pos-min) var(--pos-sug),
+    color-mix(in srgb, var(--ok) 55%, transparent) var(--pos-sug) 100%);
+}
+.slider-precio::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 26px; height: 26px; border-radius: 50%;
+  background: var(--tinta); border: 3px solid var(--superficie); box-shadow: 0 1px 4px rgb(0 0 0 / .5);
+}
+.slider-precio::-moz-range-thumb { width: 22px; height: 22px; border-radius: 50%; background: var(--tinta); border: 3px solid var(--superficie); }
+.slider-precio:focus-visible { outline: 2px solid var(--primario); outline-offset: 4px; }
+.slider-marcas { position: relative; height: 22px; margin: 4px 0 0; }
+.slider-marcas span { position: absolute; top: 0; transform: translateX(-50%); font-size: 11px; font-weight: 650; white-space: nowrap; }
+.slider-marcas span::before { content: ""; display: block; width: 2px; height: 6px; margin: 0 auto 2px; background: currentColor; }
+.m-minimo { color: var(--mal); }
+.m-sugerido { color: var(--ok); }
+.ajustar-zona { min-height: 20px; margin: 4px 0 0; font-size: 14px; font-weight: 600; }
+.ajustar-fecha { display: grid; grid-template-columns: 1.4fr 1fr; gap: 10px; margin-top: 14px; }
+.ajustar-fecha label { display: grid; gap: 4px; font-size: 13px; color: var(--tinta-2); }
+.ajustar-fecha input { min-height: 44px; padding: 0 10px; border: 1.5px solid var(--linea-2); border-radius: 10px;
+                       background: var(--superficie); color: var(--tinta); font: inherit; color-scheme: dark; }
+.ajustar .btn { margin-top: 12px; }

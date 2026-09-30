@@ -1,0 +1,38 @@
+{# El resultado de la calculadora. Se reemplaza entero con cada cambio. #}
+<div class="sim-kpis">
+  <div><span>Fletes al mes</span><strong class="num">{{ r.fletes }}</strong><small>{{ r.consultas }} consultas</small></div>
+  <div><span>Facturás</span><strong class="num">{{ r.ingresos }}</strong><small>margen {{ r.margen }}</small></div>
+  <div class="{{ 'mal' if r.mal else 'ok' }}"><span>Te queda</span><strong class="num">{{ r.ganancia }}</strong><small>mínimo {{ r.minimo }} por flete</small></div>
+</div>
+<div class="sim-meta" role="img" aria-label="Avance hacia la meta">
+  <span class="sim-meta-marca" style="width: {{ '%.1f'|format(r.avance) }}%"></span>
+</div>
+<p class="sim-meta-texto">{{ '%.0f'|format(r.avance) }}% de la meta de {{ r.meta }}{% if r.equilibrio %} · salís hecho con {{ r.equilibrio }} fletes{% endif %}</p>
+
+<div class="sim-barras">
+  <div class="sim-fila"><span>Facturás</span><span class="sim-pista"><span class="sim-ingreso" style="width: {{ '%.1f'|format(r.ingreso_ancho) }}%"></span></span></div>
+  <div class="sim-fila"><span>Gastás</span><span class="sim-pista sim-apilada">
+    {% for b in r.barras %}<span class="{{ b.color }}" style="width: {{ '%.1f'|format(b.ancho) }}%" title="{{ b.nombre }} {{ b.monto }}"></span>{% endfor %}
+  </span></div>
+  <ul class="cot-partes">{% for b in r.barras %}<li><i class="{{ b.color }}"></i><span>{{ b.nombre }}</span><strong class="num">{{ b.monto }}</strong></li>{% endfor %}</ul>
+</div>
+
+{% for texto, tono in r.veredicto %}<p class="sim-veredicto tono-texto-{{ tono }}">{{ texto }}</p>{% endfor %}
+
+<div class="rangos">
+  <details open>
+    <summary>Si cambiás el precio</summary>
+    <table class="tabla-rango">
+      <tr><th>Precio</th><th>Fletes</th><th>Te queda</th></tr>
+      {% for f in r.rango_precio %}<tr class="{{ 'actual' if f.actual }}"><td class="num">{{ f.precio }}</td><td class="num">{{ f.fletes }}</td><td class="num tono-texto-{{ f.tono }}">{{ f.ganancia }}</td></tr>{% endfor %}
+    </table>
+  </details>
+  <details open>
+    <summary>Si cambiás la publicidad</summary>
+    <table class="tabla-rango">
+      <tr><th>Por día</th><th>Fletes</th><th>Te queda</th></tr>
+      {% for f in r.rango_gasto %}<tr class="{{ 'actual' if f.actual }}"><td class="num">{{ f.gasto }}</td><td class="num">{{ f.fletes }}</td><td class="num tono-texto-{{ f.tono }}">{{ f.ganancia }}</td></tr>{% endfor %}
+    </table>
+  </details>
+</div>
+<p class="nota">Verde: llega a la meta. Amarillo: gana, pero menos. Rojo: pierde. En las tablas, subir el precio baja el cierre y más publicidad rinde cada vez menos (los supuestos de “Mejor combinación”).</p>

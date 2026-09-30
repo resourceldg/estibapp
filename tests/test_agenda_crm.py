@@ -562,13 +562,19 @@ class TestAlarmasYTentativos:
         ics = calendario([(evento_de(_job(when=date(2026, 9, 25), hour=None)), False)], self.ESTAMPA)
         assert "TRIGGER:-PT15H" in ics
 
-    def test_lo_que_nadie_confirmo_entra_pero_no_suena(self):
+    def test_lo_que_nadie_confirmo_avisa_la_vispera_para_confirmar(self):
         """Una fecha que alguien nombro y no esta en ningun lado se pasa.
-        Pero no se madruga por un quizas."""
+        Avisa, pero distinto: el dia antes, para escribirle al cliente, no
+        dos horas antes para salir."""
         e = evento_de(_job(when=date(2026, 9, 30), hour=time(11)), tentativo=True)
         ics = calendario([(e, False)], self.ESTAMPA)
         assert "STATUS:TENTATIVE" in ics
-        assert "BEGIN:VALARM" not in ics
+        assert "TRIGGER:-P1D" in ics and "TRIGGER:-PT2H" not in ics
+        assert "¿Se confirma?" in ics
+
+    def test_uno_sin_confirmar_de_todo_el_dia_avisa_la_vispera_a_la_manana(self):
+        e = evento_de(_job(when=date(2026, 9, 30)), tentativo=True)
+        assert "TRIGGER:-PT14H" in calendario([(e, False)], self.ESTAMPA)
 
     def test_y_se_ve_que_no_esta_confirmado(self):
         """El calendario del celular no siempre distingue un TENTATIVE de un

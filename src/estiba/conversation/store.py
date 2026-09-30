@@ -7,6 +7,7 @@ se junta el hilo y se le pegan las transcripciones que correspondan.
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime
 
 from estiba.core.models import Conversation, Message
 from estiba.storage.repositories import MessageRepository, TranscriptRepository
@@ -35,3 +36,7 @@ class ConversationStore:
     def pending_audio(self) -> list[Message]:
         """Lo que le falta procesar al AudioPipeline."""
         return self.mensajes.pending_audio()
+
+    def ultimo_de(self, source: str) -> datetime | None:
+        """El mensaje mas nuevo que entro por `source` ("waha", "fixture"...)."""
+        return self.mensajes.ultimo_de(source)

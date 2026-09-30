@@ -14,14 +14,14 @@ demorar la respuesta hasta que el fletero mira el telefono.
 Hasta ahi, y ni un paso mas. En cuanto la persona contesta algo, vuelve el
 circuito de siempre: Estiba propone y el fletero decide.
 
-Las cinco condiciones son todas necesarias. Cualquiera que falte, no sale
+Las seis condiciones son todas necesarias. Cualquiera que falte, no sale
 nada y el borrador queda esperando aprobacion como cualquier otro.
 """
 
 from __future__ import annotations
 
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from estiba.bandeja.redactor import APERTURA
 from estiba.conversation.clasificacion import _DESDE_PUBLI
@@ -30,6 +30,11 @@ from estiba.extraction.texto import plano
 
 #: Apagarlo sin tocar codigo: ESTIBA_APERTURA_AUTOMATICA=0
 VARIABLE = "ESTIBA_APERTURA_AUTOMATICA"
+
+
+#: Pasado esto, un saludo automatico ya no es "al toque": es tarde, y tarde
+#: el que decide es el fletero.
+RECIEN = timedelta(hours=3)
 
 
 def encendido() -> bool:
@@ -75,4 +80,11 @@ def sale_sola(conv: Conversation, texto: str, ahora: datetime, ya_mando: bool) -
 
     # 5. Y no dijo nada mas. Si ademas del texto del anuncio escribio algo
     #    suyo, ya hay con que contestarle mejor que con un saludo.
-    return len(mensajes) == 1
+    if len(mensajes) != 1:
+        return False
+
+    # 6. Y llego hace poco. Lo que se recupera despues de tener la app
+    #    cerrada puede tener horas: un "¿que queres llevar?" automatico a la
+    #    noche por un mensaje de la mañana no es rapido, es raro. Queda en
+    #    la bandeja y lo manda el fletero, con las palabras que quiera.
+    return ahora - mensajes[0].sent_at <= RECIEN

@@ -215,3 +215,65 @@ document.addEventListener("htmx:beforeRequest", (e) => {
 document.addEventListener("htmx:afterRequest", (e) => {
   avisar(e.detail.successful ? "Listo." : "No se pudo. Probá de nuevo.");
 });
+
+// "Probar la combinacion optima": pone esos numeros en la calculadora y la
+// recalcula, como si se hubieran escrito a mano.
+document.addEventListener("click", (e) => {
+  const boton = e.target.closest("[data-llenar]");
+  if (!boton) return;
+  const form = document.getElementById("calc");
+  const valores = JSON.parse(boton.dataset.llenar);
+  for (const [nombre, valor] of Object.entries(valores)) {
+    const campo = form.querySelector(`[name="${nombre}"]`);
+    if (campo) campo.value = valor;
+  }
+  form.querySelector("input[name=precio]").dispatchEvent(new Event("input", { bubbles: true }));
+  form.scrollIntoView({ behavior: "smooth", block: "start" });
+});
+
+// Guardar escenario: manda los numeros que estan en la calculadora.
+document.addEventListener("submit", (e) => {
+  const form = e.target.closest("#guardar");
+  if (!form) return;
+  form.querySelectorAll("input[type=hidden]").forEach((x) => x.remove());
+  document.querySelectorAll("#calc input[name]").forEach((campo) => {
+    const copia = document.createElement("input");
+    copia.type = "hidden"; copia.name = campo.name; copia.value = campo.value;
+    form.appendChild(copia);
+  });
+});
+
+
+// El slider del precio: muestra el monto, de que lado del minimo y de la meta
+// cae, y deja el boton "Usar en el mensaje" con ese mismo numero.
+function pintarSlider(form) {
+  const slider = form.querySelector("[data-slider]");
+  const valor = parseInt(slider.value, 10);
+  const minimo = parseInt(form.dataset.minimo, 10) || 0;
+  const meta = parseInt(form.dataset.sugerido, 10);
+  const texto = conPuntos(valor);
+  form.querySelector("[data-salida]").textContent = "$" + texto;
+  slider.setAttribute("aria-valuetext", "$" + texto);
+  const zona = form.querySelector("[data-zona]");
+  zona.classList.remove("tono-texto-mal", "tono-texto-aviso", "tono-texto-ok");
+  if (minimo && valor < minimo) {
+    zona.textContent = `Debajo del mínimo: con este precio perdés $${conPuntos(minimo - valor)} en el flete.`;
+    zona.classList.add("tono-texto-mal");
+  } else if (valor < meta) {
+    zona.textContent = `Ganás, pero $${conPuntos(meta - valor)} menos de lo que pide tu meta.`;
+    zona.classList.add("tono-texto-aviso");
+  } else {
+    zona.textContent = valor === meta ? "Justo lo que pide tu meta." : `Llega a tu meta y te deja $${conPuntos(valor - meta)} de más.`;
+    zona.classList.add("tono-texto-ok");
+  }
+  const usar = document.querySelector("[data-usar-precio]");
+  if (usar) {
+    usar.dataset.usar = valor;
+    usar.querySelector("span").textContent = `Usar $${texto} en el mensaje`;
+  }
+}
+document.querySelectorAll("[data-ajustar]").forEach(pintarSlider);
+document.addEventListener("input", (e) => {
+  const form = e.target.closest("[data-ajustar]");
+  if (form && e.target.matches("[data-slider]")) pintarSlider(form);
+});

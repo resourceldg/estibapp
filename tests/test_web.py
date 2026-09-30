@@ -629,7 +629,10 @@ class TestCacheDelNavegador:
         css = AQUI / "static" / "estiba.css"
         stat = css.stat()
         try:
-            os.utime(css, (stat.st_atime, stat.st_mtime + 60))
+            # Mas nuevo que cualquier otro estatico: la version es la del ultimo
+            # que cambio, y el .js puede haberse tocado despues que el .css.
+            ultimo = max(f.stat().st_mtime for f in (AQUI / "static").glob("*.[cj]s*"))
+            os.utime(css, (stat.st_atime, ultimo + 60))
             despues = re.search(r'estiba\.css\?v=(\d+)', cliente.get("/").text).group(1)
             assert despues != antes
         finally:
@@ -820,10 +823,25 @@ class TestCotizarAMano:
 class TestVolverDelDescarte:
     """Una decision humana tiene que poder deshacerse."""
 
+    def test_la_lista_de_spam_lleva_a_una_pantalla_que_existe(self, cliente):
+        """"Si alguna es un cliente, abrila y corregilo": abrirla daba 404."""
+        chat = "5491122223333"
+        cliente.post(f"/fletes/{chat}:job2/no-es-cliente")
+        html = cliente.get("/?f=spam").text
+        assert f'href="/conversaciones/{chat}"' in html
+        pagina = cliente.get(f"/conversaciones/{chat}")
+        assert pagina.status_code == 200 and "Conversación" in pagina.text
+
+    def test_una_agenda_muy_lejos_no_rompe(self, cliente):
+        assert cliente.get("/agenda?mes=9999-12").status_code == 200
+
     def test_marcar_como_cliente_lo_trae_de_vuelta(self, cliente, db):
         chat = "5491122223333"
         cliente.post(f"/fletes/{chat}:job2/no-es-cliente")
-        assert cliente.get(f"/fletes/{chat}:job2").status_code == 404
+        # Ya no es un flete: el enlace lleva a la charla apartada, no a un 404.
+        r = cliente.get(f"/fletes/{chat}:job2", follow_redirects=False)
+        assert r.status_code == 303 and r.headers["location"] == f"/conversaciones/{chat}"
+        assert "la dejó afuera como" in cliente.get(f"/conversaciones/{chat}").text
 
         # Y despues se dice que si es un cliente: tiene que volver.
         cliente.post(f"/clientes/{chat}/clase", data={"clase": "cliente"})

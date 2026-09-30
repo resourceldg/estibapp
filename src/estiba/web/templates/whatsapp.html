@@ -22,6 +22,15 @@
 
 {% if w.sesion.estado == "WORKING" %}
 <section class="panel">
+  <h2>Lo que llegó con la app cerrada</h2>
+  <p class="ayuda">Cuando Estiba está cerrada, WhatsApp igual recibe. Al abrirse, y después cada 10 minutos, busca lo que no le llegó y lo procesa como cualquier mensaje.</p>
+  {% if w.al_dia %}<p class="{{ 'error-envio' if w.al_dia_error else 'nota' }}">{{ w.al_dia }}</p>{% endif %}
+  <form method="post" action="/whatsapp/al-dia" hx-post="/whatsapp/al-dia" class="importar">
+    <button class="btn secundario" type="submit">{{ icono("actualizar") }}<span>Revisar ahora</span></button>
+  </form>
+</section>
+
+<section class="panel">
   <h2>Traer conversaciones anteriores</h2>
   <p class="ayuda">Los mensajes nuevos entran solos. Para arrancar con lo que ya venías hablando, importá el historial. Se puede repetir: no duplica nada.</p>
   <form class="importar" method="post" action="/whatsapp/importar" hx-post="/whatsapp/importar">

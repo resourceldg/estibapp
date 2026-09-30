@@ -17,6 +17,32 @@
 </section>
 {% endif %}
 
+{% if o.pronostico %}{% set pr = o.pronostico %}
+<section class="panel pronostico">
+  <h2>Cómo termina el mes</h2>
+  <p class="ayuda">Con lo que venís poniendo en Meta ({{ pr.gasto_dia }} por día) y lo que viene pasando. Lo que llega sin publicidad: {{ pr.solos }} fletes por mes.</p>
+  <ul class="fuentes">
+    {% for etq, d in pr.datos %}
+    <li><span>{{ etq }}</span> <strong class="num">{{ d.valor }}</strong>
+      <small class="{{ 'medido' if d.medido else 'supuesto' }}">{{ "medido" if d.medido else "supuesto" }}: {{ d.detalle }}</small></li>
+    {% endfor %}
+  </ul>
+  <div class="escenarios">
+    {% for e in pr.escenarios %}
+    <article class="escenario{% if loop.index == 2 %} probable{% endif %}">
+      <h3>{{ e.nombre }}</h3>
+      <p class="esc-ganancia num {{ 'tono-texto-mal' if e.mal }}">{{ e.ganancia }}</p>
+      <p class="esc-detalle">{{ e.fletes }} fletes · {{ e.ingresos }} facturado · cierre {{ e.cierre }}</p>
+    </article>
+    {% endfor %}
+  </div>
+  <h3 class="sub-titulo">Esta semana</h3>
+  <ol class="semana">
+    {% for paso in pr.semana %}<li>{{ paso }}</li>{% endfor %}
+  </ol>
+</section>
+{% endif %}
+
 <div class="encabezado-periodo">
   <h2 class="seccion-titulo">Lo que dejó</h2>
   <nav class="periodos" aria-label="Período">
@@ -114,6 +140,7 @@
     <label>Desde<input type="date" name="desde" required></label>
     <label>Hasta<input type="date" name="hasta" required></label>
     <label>Gastado<input name="monto" inputmode="decimal" placeholder="53.608" required></label>
+    <label>Conversaciones <small>(Meta)</small><input name="resultados" inputmode="numeric" placeholder="29"></label>
     <button class="btn secundario" type="submit">Cargar</button>
   </form>
 </section>
@@ -122,6 +149,22 @@
   <h2>Tus costos</h2>
   <p class="ayuda">Los números que vienen puestos son una estimación para arrancar: cambialos por lo que pagás de verdad. Todo lo de arriba se recalcula con esto.</p>
   <form method="post" action="/numeros/objetivos">
+    <fieldset>
+      <legend>Tu negocio</legend>
+      <div class="campo campo-ancho">
+        <label for="c-negocio">Nombre, para el informe</label>
+        <input id="c-negocio" name="negocio" value="{{ o.negocio }}" autocomplete="off" placeholder="Fletes Surfero">
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>De dónde sale la camioneta</legend>
+      <p class="ayuda">Cada flete cuenta la ida desde acá y la vuelta.</p>
+      <div class="campo campo-ancho">
+        <label for="c-base">Dirección</label>
+        <input id="c-base" name="base" value="{{ o.base }}" autocomplete="off">
+      </div>
+      {% if o.base_nota %}<p class="total-grupo">{{ o.base_nota }}</p>{% endif %}
+    </fieldset>
     {% for g in o.grupos %}
     <fieldset>
       <legend>{{ g.titulo }}</legend>

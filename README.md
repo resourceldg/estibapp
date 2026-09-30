@@ -38,10 +38,12 @@ uv run estiba wer                       # error contra transcripcion_esperada
 uv run estiba extract                   # datos del flete con su evidencia, dudas y faltantes
 uv run estiba jobs                      # estado, historia, precio sugerido, qué preguntar
 uv run estiba jobs --ahora 2026-09-21T12:00   # evaluar como si fuera otra fecha
-uv run estiba serve                     # dashboard en http://127.0.0.1:8000, API en /docs
+uv run estiba serve                     # dashboard en http://127.0.0.1:8001, API en /docs
 uv run estiba serve --ahora 2026-09-18T12:00  # demo con las conversaciones de prueba
 uv run estiba sync                      # evaluar todo, agendar y dejar la bandeja al día
 uv run estiba waha estado|conectar|importar   # WhatsApp desde la terminal
+uv run estiba mapa descargar            # calles de la provincia (INDEC), una vez: ~5 min
+uv run estiba mapa buscar "Catamarca 1185" --telefono 5492235550001
 uv run pytest                           # 236 tests, no necesitan Whisper, CalDAV ni WAHA
 ```
 
@@ -104,6 +106,39 @@ modelo, poné ahí tus audios, cargá su `transcripcion_esperada` en el fixture 
 corré `estiba transcribe --modelo small`, después
 `estiba transcribe --modelo medium --comparar`, y mirá `estiba wer`. Cada modelo guarda su propia transcripción y gana la de mayor
 confianza.
+
+## Precio, plata y objetivos
+
+Sin un `tarifa.toml`, Estiba cotiza cada flete con tus costos y tu meta
+(`finanzas/precio.py`): los km de verdad desde la base (ida, viaje y
+vuelta), las horas que lleva a lo que tiene que valer tu hora para llegar
+a la meta, la publicidad promedio por flete y los ayudantes. Todo se
+configura en **Números → Plata y objetivos**, donde también está el
+pronóstico del mes con lo medido y un rango honesto.
+
+Los km salen de un mapa propio: las cuadras y esquinas del INDEC que
+publica [Georef](https://datosgobar.github.io/georef-ar-api/), bajadas una
+vez con `estiba mapa descargar` a `data/mapa.db`. Ubicar una dirección no
+sale de tu máquina. La característica del teléfono dice la ciudad del
+cliente, salvo el 11.
+
+**Números → Tablero** es el tablero de decisiones: lo que dejó el período
+(con filtros por fechas y por origen del cliente, y comparado con el período
+anterior), el embudo, una simulación Monte Carlo del mes, el análisis de
+sensibilidad (tornado), el mapa de calor precio × publicidad con el óptimo,
+la calculadora "¿y si…?" con rangos, y los escenarios: se guardan, se
+comparan y, al aplicar uno, su meta y su capacidad pasan a la configuración
+(y con eso cambia el precio sugerido de cada flete). El mismo contenido sale
+como informe PDF (`uv sync --extra informe`, usa WeasyPrint).
+
+Avisos con sonido en el escritorio (`notify-send` + sonido del tema): cuando
+aparece una fecha posible, la víspera de un flete (a las 10 lo sin
+confirmar, a las 18 lo confirmado), cuando escribe un cliente y cuando se
+recuperan mensajes. Se apagan con `ESTIBA_AVISOS=0`. En Hoy, arriba,
+"Fechas por confirmar" lista lo que se habló y nadie cerró.
+
+Si Estiba estuvo cerrada, al abrirse (y cada 10 minutos) le pregunta a
+WAHA por lo que no le llegó por webhook y lo procesa.
 
 ## WhatsApp
 
@@ -179,7 +214,7 @@ misma red hay que ponerle clave (sin clave, se niega a arrancar):
 ESTIBA_CLAVE='una-clave-larga' uv run estiba serve --host 0.0.0.0
 ```
 
-y entrás a `http://<ip-de-tu-máquina>:8000`. Desde fuera de tu casa, mejor
+y entrás a `http://<ip-de-tu-máquina>:8001`. Desde fuera de tu casa, mejor
 por una VPN como Tailscale que abriendo un puerto. En el celular, "Agregar a
 la pantalla de inicio" la deja como una app.
 

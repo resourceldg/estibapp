@@ -133,6 +133,11 @@ def _fecha_ical(valor: date | datetime) -> str:
 #: dia siguiente; las dos horas, para salir a tiempo.
 AVISO_VISPERA = "-PT15H"   # desde un evento de todo el dia: 18 h del dia anterior
 AVISO_ANTES = "-PT2H"
+#: Lo que no se confirmo tambien avisa, pero distinto: la vispera a las 10,
+#: para escribirle al cliente con tiempo, no para salir. Antes no avisaba
+#: nada, y una fecha nombrada en un audio se pasaba sin que nadie la viera.
+AVISO_TENTATIVO_DIA = "-PT14H"   # todo el dia: 10 h del dia anterior
+AVISO_TENTATIVO_HORA = "-P1D"    # con hora: la misma hora del dia anterior
 
 
 def _valarm(disparo: str, texto: str) -> list[str]:
@@ -149,8 +154,8 @@ def vevent(e: Evento, estampa: datetime, cancelado: bool = False) -> list[str]:
     """Un VEVENT, con alarma si es un flete de verdad.
 
     El .ics al que se suscribe el celular no tenia ninguna alarma: estaba
-    suscripto y no sonaba nunca. Ahora suena, salvo para lo tentativo: no
-    se madruga por una fecha que el cliente no confirmo.
+    suscripto y no sonaba nunca. Ahora suena. Lo tentativo avisa aparte:
+    la vispera a la mañana, para confirmar con el cliente, no para salir.
     """
     tipo = ";VALUE=DATE" if e.todo_el_dia else ""
     estado = "CANCELLED" if cancelado else ("TENTATIVE" if e.tentativo else "CONFIRMED")
@@ -166,6 +171,9 @@ def vevent(e: Evento, estampa: datetime, cancelado: bool = False) -> list[str]:
     ]
     if not cancelado and not e.tentativo:
         lineas += _valarm(AVISO_VISPERA if e.todo_el_dia else AVISO_ANTES, e.titulo)
+    elif not cancelado:
+        texto = f"¿Se confirma? {e.titulo.removeprefix('Sin confirmar · ')}: escribile al cliente"
+        lineas += _valarm(AVISO_TENTATIVO_DIA if e.todo_el_dia else AVISO_TENTATIVO_HORA, texto)
     lineas.append("END:VEVENT")
     return lineas
 

@@ -29,7 +29,8 @@ CATEGORIAS = {
     "mesa": "mediano", "escritorio": "mediano", "televisor": "mediano",
     "cajonera": "mediano", "comoda": "mediano", "rack": "mediano",
     "bicicleta": "mediano", "microondas": "chico", "silla": "chico",
-    "caja": "caja",
+    "caja": "caja", "maquina": "mediano", "cocina": "grande", "alacena": "mediano",
+    "baul": "mediano", "ventana": "mediano", "termotanque": "grande", "bulto": "chico",
 }
 #: Si se lleva un juego de comedor, la mesa y las sillas son parte del juego.
 _INCLUIDO_EN_JUEGO = {"mesa", "silla"}
@@ -68,6 +69,12 @@ class Presupuesto:
     desglose: list[tuple[str, Decimal]] = field(default_factory=list)
     #: Lo que no se pudo contar. Si no esta vacio, el total es un piso.
     sin_contar: list[str] = field(default_factory=list)
+    #: Lo que se supuso para poder dar un numero: "no encontre la direccion,
+    #: use el promedio de km". El total no es un piso, pero hay que saberlo.
+    supuestos: list[str] = field(default_factory=list)
+    #: Los numeros sueltos para dibujar la cotizacion (km, horas, recorrido,
+    #: partes, minimo). Vacio con la tarifa fija, que no los tiene.
+    detalle: dict = field(default_factory=dict)
 
     @property
     def completo(self) -> bool:
@@ -77,6 +84,9 @@ class Presupuesto:
 class PricingEngine:
     def __init__(self, tarifa: Tarifa | None = None) -> None:
         self.tarifa = tarifa or Tarifa()
+
+    def preparar(self, conn) -> None:
+        """Antes de cada sincronizacion. La tarifa fija no necesita nada."""
 
     def estimate(self, job: FreightJob) -> Presupuesto | None:
         """None si falta lo minimo (lugares o que se lleva) para estimar algo."""

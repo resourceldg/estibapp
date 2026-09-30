@@ -64,6 +64,20 @@ _A_LAS = re.compile(r"\ba\s+las?\s+(\d{1,2})(?:[:.](\d{2}))?\b(?!\s*(?:cajas|sil
 _HS = re.compile(r"\b(\d{1,2})(?:[:.](\d{2}))?\s*(?:hs|hrs|horas|h)\b")
 
 
+#: "12 de Octubre", "25 de Mayo", "9 de Julio": en cualquier ciudad argentina
+#: son calles. Un audio real ("de 12 de octubre y tal, a aca") termino como
+#: un flete para el 12/10. Es calle si viene con otra calle o una altura
+#: ("12 de octubre y Garcia Lorca", "25 de mayo al 1400", "9 de julio 3200")
+#: o si se la nombra como calle ("la avenida 12 de octubre").
+_SIGUE_CALLE = re.compile(r"^\s+(?:y|e|al|entre|esquina|esq)\b|^\s+\d{2,5}\b")
+_ANTES_CALLE = re.compile(r"\b(?:calle|avenida|av|diagonal|pasaje)\s*$")
+
+
+def es_calle(p: str, m: re.Match) -> bool:
+    """Si ese "N de mes" (en texto plano) es el nombre de una calle y no una fecha."""
+    return bool(_SIGUE_CALLE.match(p[m.end():]) or _ANTES_CALLE.search(p[: m.start()]))
+
+
 def _fecha(dia: date, texto: str, m: re.Match, confianza: float, duda: str | None = None) -> Hallazgo:
     return Hallazgo("when", dia, confianza, cita(texto, m), duda)
 
@@ -98,7 +112,9 @@ def fechas(texto: str, enviado: datetime) -> list[Hallazgo]:
                                f"dijo {m.group(1)} {m.group(2)}, pero el {dia:%d/%m} "
                                f"es {NOMBRE_DIA[dia.weekday()]}")]
             return [_fecha(dia, texto, m, 0.9)]
-    if m := _NUMERO_DE_MES.search(p):
+    for m in _NUMERO_DE_MES.finditer(p):
+        if es_calle(p, m):
+            continue
         if (dia := _dia_del_mes(ref, int(m.group(1)), MESES[m.group(2)])) is not None:
             return [_fecha(dia, texto, m, 0.9)]
     if m := _BARRA.search(p):
