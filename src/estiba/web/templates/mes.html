@@ -10,6 +10,7 @@
   <h2>¿Cómo estoy este mes?</h2>
   <p class="eval-titular">{{ v.frase }}</p>
   <p class="nota">{{ v.nota }}</p>
+  {% if v.aprender %}<p class="ayuda">Lo que más necesitamos aprender ahora: {{ v.aprender }} <a href="/numeros/validacion">Ver la evidencia</a></p>{% endif %}
 </section>
 
 {% for a in v.avisos %}

@@ -60,6 +60,7 @@ from estiba.conversation.clasificacion import _DESDE_PUBLI
 from estiba.extraction.texto import plano
 from estiba.finanzas.precio import BASE_DEFAULT
 from estiba.economia import cargar as eco
+from estiba.economia import evidencia
 from estiba.economia import mes as eco_mes
 from estiba.economia import registro
 from estiba.economia.cuentas import Actividad
@@ -1491,8 +1492,15 @@ def create_app(
     # ------------------------------------------------------------------
 
     def _fletes_del_mes(e, hoy: date) -> tuple[list, list]:
-        """Los hechos del mes y los de los 60 dias anteriores, con lo mejor que se sepa
-        de cada uno: el cierre confirmado, si no la evaluacion, si no tu promedio."""
+        """Los hechos del mes y los de los 60 dias anteriores."""
+        todos = _fletes_eco(e)
+        desde = hoy.replace(day=1)
+        return ([f for f in todos if desde <= f.dia <= hoy],
+                sorted((f for f in todos if desde - timedelta(days=60) <= f.dia < desde), key=lambda f: f.dia))
+
+    def _fletes_eco(e) -> list:
+        """Todos los hechos, con lo mejor que se sepa de cada uno: el cierre
+        confirmado, si no la evaluacion, si no tu promedio."""
         conn = estado.conectar()
         try:
             reales = FleteRealRepository(conn).todos()
@@ -1513,9 +1521,35 @@ def create_app(
                 directos=r.directos if r else (est.ayudante_pagado if est else Decimal(0)),
                 recurrente=(r.canal == "recurrente") if r else bool(ev and ev.cliente.recurrente),
                 medido=bool(r and r.medido)))
-        desde = hoy.replace(day=1)
-        return ([f for f in salida if desde <= f.dia <= hoy],
-                sorted((f for f in salida if desde - timedelta(days=60) <= f.dia < desde), key=lambda f: f.dia))
+        return sorted(salida, key=lambda f: f.dia)
+
+    def _evidencia():
+        hoy = estado.ahora().date()
+        e = _economia()
+        fletes = _fletes_eco(e)
+        hechos = _fletes_hechos()
+        _, gastos = _gastos()
+        h = _historia(hechos, gastos, hoy)
+        conn = estado.conectar()
+        try:
+            cambios = EconomiaRepository(conn).historial_precio_base()
+        finally:
+            conn.close()
+        cambio = date.fromisoformat(cambios[0]["desde"]) if len(cambios) > 1 else None
+        datos = evidencia.Datos(
+            fletes=fletes, cliente_de={f.job_id: f.job_id.split(":job")[0] for f in fletes},
+            consultas_publicidad=h.consultas_meta or h.consultas_publicidad,
+            hechos_publicidad=h.hechos_publicidad, dias_publicidad=h.dias, cambio_precio=cambio)
+        return e, evidencia.catalogo(e, datos, hoy), hoy
+
+    @app.get("/numeros/validacion", response_class=HTMLResponse, include_in_schema=False)
+    def pagina_validacion(request: Request):
+        e, cat, hoy = _evidencia()
+        v = evidencia.validar(e, cat, hoy)
+        return templates.TemplateResponse(
+            request, "validacion.html",
+            _contexto(request, v=v, metricas=EV.vista_catalogo(cat), titulo="¿Vale la pena?"),
+        )
 
     def _prioridades() -> tuple[str, ...]:
         conn = estado.conectar()
@@ -1538,10 +1572,11 @@ def create_app(
     @app.get("/numeros/mes", response_class=HTMLResponse, include_in_schema=False)
     def pagina_mes(request: Request):
         m, c = _mes_actual()
+        _, cat, _ = _evidencia()
         textos = {k: v[0] for k, v in eco_mes.PRIORIDADES.items()}
         return templates.TemplateResponse(
             request, "mes.html",
-            _contexto(request, v=EV.vista_mes(m, c, textos), opciones=list(textos.items()),
+            _contexto(request, v=EV.vista_mes(m, c, textos, cat), opciones=list(textos.items()),
                       elegidas=list(m.prioridades), titulo="¿Cómo estoy?"),
         )
 

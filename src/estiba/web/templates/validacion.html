@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icono %}
+{% block contenido %}
+<div class="encabezado">
+  <h1>Números</h1>
+  {% include "_numeros_tabs.html" %}
+</div>
+
+<section class="panel">
+  <h2>¿Vale la pena seguir invirtiendo tiempo y capital?</h2>
+  <p class="ayuda">Estiba no responde sí o no antes de tiempo. Esto es lo que dicen los datos, y cuánto creerles.</p>
+  <h3 class="sub-titulo">Evidencia a favor</h3>
+  <ul class="frases">{% for x in v.a_favor %}<li>{{ x }}</li>{% else %}<li>Todavía nada firme.</li>{% endfor %}</ul>
+  <h3 class="sub-titulo">Evidencia en contra</h3>
+  <ul class="frases">{% for x in v.en_contra %}<li>{{ x }}</li>{% else %}<li>Nada firme en contra.</li>{% endfor %}</ul>
+  <h3 class="sub-titulo">Lo que todavía no sabemos</h3>
+  <ul class="frases">{% for x in v.no_sabemos %}<li>{{ x }}</li>{% else %}<li>Nada importante.</li>{% endfor %}</ul>
+  {% if v.proximo_dato %}
+  <h3 class="sub-titulo">El próximo dato que más reduciría la incertidumbre</h3>
+  <p class="eval-titular">{{ v.proximo_dato }}</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2>¿Puede reemplazar {{ "${:,.0f}".format(v.meta).replace(",", ".") }} por mes sin pedirte más tiempo?</h2>
+  <p class="eval-titular">{{ v.conclusion }}</p>
+  <table class="cuentas">
+    {% for c in v.compatibilidad %}
+    <tr><th scope="row">{{ c.dimension|capitalize }}<small>{{ c.estado.etiqueta }}</small></th><td>{{ c.frase }}</td></tr>
+    {% endfor %}
+  </table>
+</section>
+
+<section class="panel">
+  <h2>Qué tan firme es cada dato</h2>
+  <p class="ayuda">Exploratorio · emergente · utilizable · robusto. No depende solo de cuántos casos hay: también de cuánto varían, de qué tan viejos son, de si vienen de pocos clientes y de si son medidos o estimados.</p>
+  <table class="cuentas">
+    {% for x in metricas %}
+    <tr><th scope="row">{{ x.metrica }}<small>{{ x.estado }}{% if x.razones %} · {{ x.razones }}{% endif %}</small></th>
+        <td class="num">{{ x.valor }}</td></tr>
+    {% endfor %}
+  </table>
+</section>
+{% endblock %}

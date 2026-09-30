@@ -82,6 +82,21 @@ class TestKmVacios:
         assert ev.tipo is Tipo.ESTIMADO
 
 
+class TestIncertidumbre:
+    def test_si_la_distancia_estimada_cambia_el_veredicto_pide_decision(self):
+        """Cerca del limite, un km supuesto no alcanza para una recomendacion fuerte."""
+        from estiba.economia.estructura import rinde_base
+        km_max = rinde_base(_e(), SEP).km_max
+        p = Pedido(km=km_max.quantize(D(1)), km_tipo=Tipo.SUPUESTO, tramos=None)
+        ev = evaluar(_e(), SEP, p, VUELVE)
+        assert ev.veredicto is Veredicto.DECISION
+        assert "confirmá las direcciones" in " ".join(ev.razones)
+
+    def test_lejos_del_limite_la_estimacion_alcanza(self):
+        p = Pedido(km=D(15), km_tipo=Tipo.SUPUESTO, tramos=None)
+        assert evaluar(_e(), SEP, p, VUELVE).veredicto is Veredicto.CONVIENE
+
+
 class TestVeredicto:
     def test_corto_y_recurrente_se_cobra_a_precio_base(self):
         ev = evaluar(_e(), SEP, _pedido(km=20, ida=8, carga=4, vuelta=8), VUELVE)

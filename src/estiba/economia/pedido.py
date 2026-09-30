@@ -175,6 +175,13 @@ def evaluar(e: Economia, mes: date, p: Pedido, cliente: Cliente, *, objetivo_cum
         razones.append(f"La distancia es tu promedio ({p.km:.0f} km): el mapa no ubicó las direcciones.")
 
     tradeoffs = []
+    # Si la distancia no es segura y moverla un 30 % cambia el veredicto, la
+    # incertidumbre decide: no se da una recomendacion fuerte.
+    if p.km_tipo is not Tipo.CALCULADO and veredicto is not Veredicto.DECISION:
+        alternativos = {_veredicto_con_km(e, mes, p, cliente, f) for f in (Decimal("0.7"), Decimal("1.3"))}
+        if alternativos - {veredicto}:
+            tradeoffs.append("La distancia no es segura y un 30 % más o menos cambia el veredicto: "
+                             "confirmá las direcciones antes de cerrar el precio.")
     if horas > d.horas_dia / 2:
         tradeoffs.append(f"Ocupa {horas:.1f} h, más de media jornada.".replace(".", ",", 1))
     if p.fletes_ese_dia >= d.fletes_dia_pico:
@@ -214,6 +221,18 @@ def evaluar(e: Economia, mes: date, p: Pedido, cliente: Cliente, *, objetivo_cum
         margen_hora=margen_hora, cac=cac, cliente=cliente, partes=pr.partes,
         tipo=combinar(pr.tipo, cac.tipo), supuestos=p.supuestos,
     )
+
+
+def _veredicto_con_km(e: Economia, mes: date, p: Pedido, cliente: Cliente, factor: Decimal) -> Veredicto:
+    cac = cac_de(e, cliente).monto or CERO
+    km = p.km * factor
+    pr = precios(e, mes, km, horas_de(e, km, p.horas_carga_extra), cac=cac, directos=p.directos)
+    P = p.precio_hablado if p.precio_hablado is not None else e.precio_base
+    if pr.recomendado is None or pr.minimo is None:
+        return Veredicto.DECISION
+    if P >= pr.recomendado:
+        return Veredicto.CONVIENE
+    return Veredicto.AJUSTE if P >= pr.minimo else Veredicto.NO_CONVIENE
 
 
 def objetivo_por_hora(e: Economia, mes: date) -> Decimal | None:

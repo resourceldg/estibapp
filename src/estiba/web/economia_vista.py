@@ -239,7 +239,20 @@ def _pct(x: float | None) -> str:
     return "—" if x is None else f"{x:.0%}"
 
 
-def frase_mes(m) -> str:
+def rango_faltan(m, margen_s) -> tuple[int, int] | None:
+    """Si el margen tipico no es firme, cuantos fletes faltan como rango."""
+    import math
+
+    if margen_s is None or margen_s.fuerte or not m.falta_para_pagarse:
+        return None
+    if not margen_s.lo or not margen_s.hi or margen_s.lo <= 0:
+        return None
+    falta = float(m.falta_para_pagarse)
+    lo, hi = math.ceil(falta / margen_s.hi), math.ceil(falta / margen_s.lo)
+    return (lo, hi) if lo != hi else None
+
+
+def frase_mes(m, rango: tuple[int, int] | None = None) -> str:
     """La linea que responde "¿como voy?". Nunca empuja a trabajar mas."""
     if m.objetivo_cumplido:
         return "Objetivo del mes alcanzado. No necesitás tomar más trabajos para cumplir lo que te propusiste."
@@ -256,12 +269,24 @@ def frase_mes(m) -> str:
     if not m.fletes:
         return (f"Todavía no hay fletes este mes. Para que la camioneta se pague sola hacen falta unos "
                 f"{m.fletes_que_faltan} como los últimos.")
+    if rango:
+        return (f"Faltan entre {rango[0]} y {rango[1]} fletes como los últimos para que la camioneta se pague "
+                "sola este mes (todavía hay pocos datos para decirlo más preciso).")
     return (f"Faltan unos {m.fletes_que_faltan} fletes como los últimos para que la camioneta se pague sola "
             "este mes.")
 
 
-def vista_mes(m, economico, prioridades_texto: dict[str, str]) -> dict:
+def vista_mes(m, economico, prioridades_texto: dict[str, str], cat=None) -> dict:
     from estiba.economia.mes import tipo_de_horas
+    from estiba.economia.suficiencia import lo_que_mas_falta
+
+    rango = rango_faltan(m, cat.margen if cat else None)
+    aprender = None
+    if cat is not None:
+        from estiba.economia.evidencia import IMPORTANCIA
+
+        prox = lo_que_mas_falta([(x, IMPORTANCIA.get(x.metrica, 1)) for x in cat.todas()])
+        aprender = f"{prox.falta} ({prox.metrica}: {prox.estado.etiqueta})." if prox else None
 
     tipo_h = ETIQUETA_TIPO[tipo_de_horas(m)]
     horas_eco = economico.resultado_economico / m.horas if m.horas else None
@@ -283,7 +308,8 @@ def vista_mes(m, economico, prioridades_texto: dict[str, str]) -> dict:
          f"ticket {plata(m.ticket)} · {_pct(m.recurrentes)} de clientes que vuelven" if m.fletes else ""),
     ]
     return {
-        "frase": frase_mes(m),
+        "frase": frase_mes(m, rango),
+        "aprender": aprender,
         "nota": f"Cuenta de caja: la cuota entra entera. ({confianza})",
         "escalones": [{"nivel": x.nivel, "nombre": x.nombre, "monto": plata(x.monto), "detalle": x.detalle,
                        "lleno": round(x.lleno * 100), "alcanzado": x.nivel <= m.nivel,
@@ -296,3 +322,21 @@ def vista_mes(m, economico, prioridades_texto: dict[str, str]) -> dict:
         "sin_contar": economico.sin_contar,
         "resultado": plata(economico.resultado_economico),
     }
+
+
+def vista_catalogo(cat) -> list[dict]:
+    """Cada metrica con su estado, su valor a la precision que tiene y lo que le falta."""
+    from estiba.economia.suficiencia import mostrar
+
+    unidades = {"ticket": "$", "margen por flete": "$", "horas por flete": "h", "km por flete": "km"}
+    salida = []
+    for x in cat.todas():
+        if x.metrica in unidades:
+            valor = mostrar(x.valor, x, unidades[x.metrica])
+        elif x.valor is not None and x.lo is not None:
+            valor = f"{x.valor:.0%} (entre {x.lo:.0%} y {x.hi:.0%})"
+        else:
+            valor = "—"
+        salida.append({"metrica": x.metrica.capitalize(), "estado": x.estado.etiqueta, "valor": valor,
+                       "razones": "; ".join(x.razones), "falta": x.falta, "n": x.n})
+    return salida
