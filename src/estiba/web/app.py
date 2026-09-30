@@ -61,6 +61,7 @@ from estiba.extraction.texto import plano
 from estiba.finanzas.precio import BASE_DEFAULT
 from estiba.economia import cargar as eco
 from estiba.economia import evidencia
+from estiba.economia import optimizar
 from estiba.economia import mes as eco_mes
 from estiba.economia import registro
 from estiba.economia.cuentas import Actividad
@@ -1398,6 +1399,7 @@ def create_app(
             ("tope_horas_mes", "Tope de horas por mes (opcional)", EV.campo(d.tope_horas_mes), "h"),
             ("coordinacion_min", "Coordinar un flete (mensajes, presupuesto)", EV.campo(d.h_coordinacion * 60), "min"),
             ("cobro_min", "Cobrar y cerrar", EV.campo(d.h_cobro * 60), "min"),
+            ("valor_hora_libre", "Cuánto vale para vos una hora libre (opcional)", EV.campo(d.valor_hora_libre), "$"),
         ]
         c = e.camioneta
         activo = [
@@ -1451,8 +1453,9 @@ def create_app(
         for clave in ("dias_semana", "fletes_dia_comodo", "fletes_dia_pico", "horas_dia"):
             if (v := _opcional(form, clave)) is not None:
                 actual[clave] = v
-        if "tope_horas_mes" in form:
-            actual["tope_horas_mes"] = _opcional(form, "tope_horas_mes")
+        for clave in ("tope_horas_mes", "valor_hora_libre"):
+            if clave in form:
+                actual[clave] = _opcional(form, clave)
         for campo_min, clave in (("coordinacion_min", "h_coordinacion"), ("cobro_min", "h_cobro")):
             if (v := _opcional(form, campo_min)) is not None:
                 actual[clave] = str(Decimal(v) / 60)
@@ -1541,6 +1544,60 @@ def create_app(
             consultas_publicidad=h.consultas_meta or h.consultas_publicidad,
             hechos_publicidad=h.hechos_publicidad, dias_publicidad=h.dias, cambio_precio=cambio)
         return e, evidencia.catalogo(e, datos, hoy), hoy
+
+    def _base_plan(e, cat, fletes, hoy):
+        """El flete tipico y la demanda, desde lo medido; lo que falta, de tu configuracion."""
+        _, gastos = _gastos()
+        h = _historia(_fletes_hechos(), gastos, hoy)
+        dias = max(h.dias, 1)
+        tasa = e.costos.impuestos_publicidad
+        consultas = h.consultas_meta or h.consultas_publicidad
+        pagado = float(sum((g.pagado_dentro(hoy - timedelta(days=dias - 1), hoy, tasa) for g in gastos), Decimal(0)))
+        con_vacios = [f for f in fletes if f.km_vacios is not None and f.km]
+        prop_vacios = (float(sum(f.km_vacios for f in con_vacios) / sum(f.km for f in con_vacios))
+                       if con_vacios else 0.75)
+        km = float(cat.km.valor or e.costos.km_por_flete)
+        return optimizar.Base(
+            ticket=float(cat.ticket.valor or e.precio_base),
+            km=km, km_vacios=km * prop_vacios,
+            horas=float(cat.horas.valor or e.costos.horas_flete),
+            directos=float(sum(f.directos for f in fletes) / len(fletes)) if fletes else 0.0,
+            organicos=h.hechos_sin_publicidad * 30 / dias,
+            cierre=float(cat.conversion.valor if cat.conversion.valor is not None else e.costos.cierre / 100),
+            costo_conversacion=(pagado / consultas if consultas and pagado
+                                else float(e.costos.costo_por_consulta * e.costos.con_impuestos)),
+            conversaciones_base=consultas * 30 / dias if consultas else 0.0,
+            calidad={"margen": cat.margen.estado, "horas": cat.horas.estado, "conversión": cat.conversion.estado,
+                     "ticket": cat.ticket.estado, "km": cat.km.estado, "recurrencia": cat.recurrencia.estado,
+                     "elasticidad": cat.elasticidad.estado},
+        )
+
+    @app.get("/numeros/plan", response_class=HTMLResponse, include_in_schema=False)
+    def pagina_plan(request: Request):
+        e, cat, hoy = _evidencia()
+        m, _ = _mes_actual()
+        fletes = _fletes_eco(e)
+        b = _base_plan(e, cat, fletes, hoy)
+        uso = e.costos.costo_km
+        rec = optimizar.lo_mas_simple(
+            e, b, hoy, m.prioridades, ya_dejado=float(m.disponible - m.km * uso),
+            dias_restantes=m.dias_mes - hoy.day, horas_hechas=float(m.horas))
+        proyectados = max(1, round(len(m.fletes) * m.dias_mes / max(1, hoy.day))) if m.fletes else \
+            max(1, round(float(e.disponibilidad.fletes_mes())))
+        puntos = optimizar.curva(e, b, hoy)
+        sim = optimizar.simular_mes(e, b, hoy, [float(f.cobrado) for f in fletes if f.cobrado],
+                                    [float(f.km) for f in fletes])
+        return templates.TemplateResponse(
+            request, "plan.html",
+            _contexto(request, v=EV.vista_plan(rec, optimizar.escenarios(
+                e, b, hoy, proyectados, "Como vengo" if m.fletes else "Tu ritmo cómodo"), puntos,
+                                               optimizar.marginal_por_hora(puntos),
+                                               optimizar.hasta_donde_conviene(
+                                                   puntos, float(e.disponibilidad.valor_hora_libre)
+                                                   if e.disponibilidad.valor_hora_libre else None),
+                                               optimizar.mejor_por_hora(puntos), sim, m),
+                      titulo="¿Qué pasa si…?"),
+        )
 
     @app.get("/numeros/validacion", response_class=HTMLResponse, include_in_schema=False)
     def pagina_validacion(request: Request):

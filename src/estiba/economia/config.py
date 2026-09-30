@@ -113,6 +113,9 @@ class Disponibilidad:
     h_cobro: Decimal = Decimal("0.1")
     dias_no: tuple[str, ...] = ()
     franjas: tuple[str, ...] = ()
+    #: Cuanto vale para vos una hora libre. Opcional: sin esto Estiba no
+    #: decide por vos cuando dejar de agregar trabajo.
+    valor_hora_libre: Decimal | None = None
 
     @classmethod
     def desde_dict(cls, d: dict | None) -> Disponibilidad:
@@ -124,7 +127,7 @@ class Disponibilidad:
                 continue
             if f.name in ("dias_no", "franjas"):
                 cambios[f.name] = tuple(str(x) for x in (d[f.name] or []))
-            elif f.name == "tope_horas_mes":
+            elif f.name in ("tope_horas_mes", "valor_hora_libre"):
                 cambios[f.name] = _dec(d[f.name])
             elif (v := _dec(d[f.name])) is not None and v >= 0:
                 cambios[f.name] = v

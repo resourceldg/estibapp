@@ -54,6 +54,8 @@ def horas(h: Decimal | None) -> str:
     """A la media hora: "2 h 30", "45 min"."""
     if h is None:
         return "—"
+    if h <= 0:
+        return "0 h"
     medias = int((h * 2).quantize(Decimal(1), ROUND_HALF_UP))
     if medias <= 0:
         minutos = int((h * 60).quantize(Decimal(1), ROUND_HALF_UP))
@@ -340,3 +342,44 @@ def vista_catalogo(cat) -> list[dict]:
         salida.append({"metrica": x.metrica.capitalize(), "estado": x.estado.etiqueta, "valor": valor,
                        "razones": "; ".join(x.razones), "falta": x.falta, "n": x.n})
     return salida
+
+
+# --------------------------------------------------------------------------
+# ¿Que pasa si...? El plan del mes, escenarios, curva y simulacion
+# --------------------------------------------------------------------------
+
+
+def vista_plan(rec, escenarios, puntos, marginales, conviene_hasta, mejor, sim, m) -> dict:
+    exploratorio = rec.exploratoria
+    fmt = (lambda x: f"~{plata(x)}") if exploratorio else plata
+    filas = []
+    for x in escenarios:
+        filas.append({
+            "nombre": x.nombre, "fletes": x.fletes, "horas": horas(Decimal(str(x.horas))),
+            "km": km(Decimal(str(x.km))), "deja": fmt(Decimal(str(x.deja))),
+            "cuota": _pct(x.cuota_cubierta), "viajes": _pct(x.viajes_cubiertos),
+            "por_hora": fmt(Decimal(str(x.por_hora))) if x.por_hora is not None else "—",
+        })
+    curva = []
+    for p, marg in zip(puntos, marginales):
+        marca = []
+        if mejor is not None and p.fletes == mejor.fletes:
+            marca.append("mejor promedio por hora")
+        if conviene_hasta is not None and p.fletes == conviene_hasta.fletes:
+            marca.append("hasta acá la hora extra vale más que tu hora libre")
+        if p.dias_pico:
+            marca.append(f"{p.dias_pico} días pico")
+        curva.append({"fletes": p.fletes, "horas": horas(Decimal(str(p.horas))), "deja": fmt(Decimal(str(p.deja))),
+                      "promedio": fmt(Decimal(str(p.por_hora))) if p.por_hora is not None else "—",
+                      "marginal": fmt(Decimal(str(marg))) if marg is not None else "—",
+                      "marca": " · ".join(marca)})
+    return {
+        "frase": rec.frase,
+        "cumple": rec.cumple, "afuera": rec.afuera,
+        "exploratorio": exploratorio,
+        "escenarios": filas,
+        "curva": curva,
+        "sim": {"p10": plata(Decimal(str(sim.p10))), "p50": plata(Decimal(str(sim.p50))),
+                "p90": plata(Decimal(str(sim.p90))), "se_paga": _pct(sim.p_se_paga),
+                "rotura": _pct(sim.con_rotura), "entradas": sim.entradas, "exploratoria": sim.exploratoria},
+    }

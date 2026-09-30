@@ -1491,3 +1491,4 @@ details > summary { cursor: pointer; margin-top: 10px; color: var(--tinta-2); fo
 .escalera small { color: var(--tinta-2); font-size: 12px; }
 .linea-mes { margin: 0 0 12px; font-size: 14px; color: var(--tinta-2); }
 .linea-mes a { color: inherit; }
+.tabla-scroll { overflow-x: auto; }

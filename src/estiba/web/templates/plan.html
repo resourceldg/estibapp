@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icono %}
+{% block contenido %}
+<div class="encabezado">
+  <h1>Números</h1>
+  {% include "_numeros_tabs.html" %}
+</div>
+
+<section class="panel">
+  <h2>¿Cuál es la forma más simple de cumplir este mes?</h2>
+  <p class="eval-titular">{{ v.frase }}</p>
+  {% if v.cumple %}<p class="ayuda">Cumple: {{ v.cumple|join(", ") }}.</p>{% endif %}
+  <p class="nota">Orden de preferencia: cumplir tus prioridades, con la menor cantidad de horas, de km vacíos, de desgaste y de días pico; recién después, más ganancia.</p>
+</section>
+
+<section class="panel">
+  <h2>¿Qué pasa si…?</h2>
+  {% if v.exploratorio %}<p class="aviso">{{ icono("aviso") }}<span>Escenarios exploratorios: el margen, las horas o la conversión todavía tienen pocos datos. Sirven para comparar, no para decidir.</span></p>{% endif %}
+  <div class="tabla-scroll">
+  <table class="cuentas">
+    <tr><th>Escenario</th><th>Fletes</th><th>Horas</th><th>Km</th><th>Deja</th><th>Cuota</th><th>Viajes</th><th>Por hora</th></tr>
+    {% for x in v.escenarios %}
+    <tr><th scope="row">{{ x.nombre }}</th><td class="num">{{ x.fletes }}</td><td class="num">{{ x.horas }}</td><td class="num">{{ x.km }}</td>
+        <td class="num">{{ x.deja }}</td><td class="num">{{ x.cuota }}</td><td class="num">{{ x.viajes }}</td><td class="num">{{ x.por_hora }}</td></tr>
+    {% endfor %}
+  </table>
+  </div>
+  <p class="nota">"Deja" es lo que queda en el mes después de uso, publicidad, estructura y cuota. "Cuota" y "Viajes": cuánto de cada uno queda cubierto.</p>
+</section>
+
+<section class="panel">
+  <h2>¿Dónde deja de tener sentido agregar trabajo?</h2>
+  <p class="ayuda">El promedio por hora puede seguir subiendo porque los fijos se reparten; lo que importa es cuánto agrega cada hora de más. Cargá cuánto vale para vos una hora libre en Camioneta y Estiba marca el punto.</p>
+  <div class="tabla-scroll">
+  <table class="cuentas">
+    <tr><th>Fletes</th><th>Horas</th><th>Deja</th><th>Promedio por hora</th><th>Cada hora de más</th><th></th></tr>
+    {% for p in v.curva %}
+    <tr><td class="num">{{ p.fletes }}</td><td class="num">{{ p.horas }}</td><td class="num">{{ p.deja }}</td>
+        <td class="num">{{ p.promedio }}</td><td class="num">{{ p.marginal }}</td><td><small>{{ p.marca }}</small></td></tr>
+    {% endfor %}
+  </table>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Simulación del mes (exploración, no pronóstico)</h2>
+  {% if v.sim.exploratoria %}<p class="aviso">{{ icono("aviso") }}<span>Escenario exploratorio: hay insumos críticos con pocos datos.</span></p>{% endif %}
+  <p>En 8 de cada 10 meses simulados, lo que deja el mes cae entre <strong>{{ v.sim.p10 }}</strong> y <strong>{{ v.sim.p90 }}</strong> (el del medio: {{ v.sim.p50 }}). La camioneta se paga sola en el {{ v.sim.se_paga }} de los meses; en el {{ v.sim.rotura }} hay una rotura grande.</p>
+  <details>
+    <summary>Con qué calidad entra cada dato</summary>
+    <table class="cuentas">{% for n, q in v.sim.entradas %}<tr><th scope="row">{{ n|capitalize }}</th><td>{{ q }}</td></tr>{% endfor %}</table>
+  </details>
+</section>
+{% endblock %}
