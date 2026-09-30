@@ -98,6 +98,14 @@
   </form>
 </section>
 
+{% if despues %}
+<section class="panel" id="despues">
+  <h2>Cuando termines de pagar la camioneta</h2>
+  <p>{{ despues.frase }}</p>
+  {% if despues.sugerencia %}<p class="ayuda">{{ despues.sugerencia }}</p>{% endif %}
+</section>
+{% endif %}
+
 <section class="panel costos" id="fondos">
   <h2>Fondos</h2>
   <p class="ayuda">Plata que la camioneta aparta cada mes. Los de conservación existen aunque estés pagando el crédito: pagar capital no deja plata para arreglarla.</p>
@@ -107,10 +115,48 @@
       <legend>{{ f.nombre }}</legend>
       <div class="campo"><label for="f-{{ f.clave }}-aporte">Aporte por mes</label>
         <span class="entrada"><span class="unidad">$</span><input id="f-{{ f.clave }}-aporte" name="{{ f.clave }}__aporte_mes" value="{{ f.aporte }}" inputmode="decimal"></span></div>
+      <p class="total-grupo">Saldo: {{ f.saldo }}</p>
       <div class="campo"><label for="f-{{ f.clave }}-obj">Objetivo acumulado<small>opcional</small></label>
         <span class="entrada"><span class="unidad">$</span><input id="f-{{ f.clave }}-obj" name="{{ f.clave }}__objetivo" value="{{ f.objetivo }}" inputmode="decimal"></span></div>
     </fieldset>
     {% endfor %}
+    <button class="btn secundario" type="submit">Guardar</button>
+  </form>
+  <h3 class="sub-titulo">Anotar lo que apartaste</h3>
+  {% for f in fondos %}
+  <form class="form-gasto" method="post" action="/numeros/camioneta/fondos/{{ f.clave }}/mover">
+    <label>{{ f.nombre }}<input name="monto" inputmode="numeric" placeholder="$" required></label>
+    <select name="tipo"><option value="aporte">aparté</option><option value="gasto">saqué</option></select>
+    <button class="btn secundario" type="submit">Anotar</button>
+  </form>
+  {% endfor %}
+</section>
+
+<section class="panel costos" id="reparaciones">
+  <h2>Reparaciones y días parada</h2>
+  <p class="ayuda">Lo único nuevo que conviene anotar a mano. Una reparación grande (caja, motor, embrague…) es la que tiene que salir del fondo; los días parada se ven como fletes que no se pudieron hacer.</p>
+  <form class="form-gasto" method="post" action="/numeros/camioneta/reparacion">
+    <label>Fecha<input type="date" name="fecha" value="{{ hoy }}" required></label>
+    <label>Qué se arregló<input name="componente" required placeholder="embrague"></label>
+    <label>Costo<input name="costo" inputmode="numeric" required placeholder="$"></label>
+    <label>Km del odómetro<input name="km" inputmode="numeric"></label>
+    <label>Días parada<input name="dias_parada" inputmode="numeric" value="0"></label>
+    <label>Tipo<select name="tipo"><option value="">que lo deduzca</option><option value="ordinaria">ordinaria</option><option value="extraordinaria">extraordinaria</option></select></label>
+    <label>La pagué con<select name="fondo"><option value="">la caja</option>{% for f in fondos %}<option value="{{ f.clave }}">{{ f.nombre }}</option>{% endfor %}</select></label>
+    <button class="btn secundario" type="submit">Anotar</button>
+  </form>
+  {% if reparaciones %}
+  <table class="cuentas">
+    {% for r in reparaciones %}<tr><th scope="row">{{ r.componente|capitalize }}<small>{{ r.fecha }} · {{ r.tipo }} · {{ r.dias }} días parada · {{ r.pago }}</small></th><td class="num">{{ r.costo }}</td></tr>{% endfor %}
+  </table>
+  {% endif %}
+</section>
+
+<section class="panel costos" id="modo">
+  <h2>Mínima intervención</h2>
+  <p class="ayuda">Estiba trabaja primero y te pide criterio solo donde hace falta: Hoy abre en "Para decidir" y lo que conviene queda con su cotización lista para aprobar. Nada se manda solo.</p>
+  <form method="post" action="/numeros/camioneta/modo">
+    <label><input type="checkbox" name="minima" value="1"{% if minima %} checked{% endif %}> Activar</label>
     <button class="btn secundario" type="submit">Guardar</button>
   </form>
 </section>

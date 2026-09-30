@@ -118,6 +118,9 @@ class Mes:
     medidos: int
     #: Cuantos fletes entran en lo que queda del mes, al ritmo comodo (no al pico).
     capacidad_restante: Decimal = CERO
+    reparaciones_caja: Decimal = CERO
+    dias_parada: int = 0
+    fletes_perdidos: Decimal = CERO
     avisos: list[str] = field(default_factory=list)
 
     @property
@@ -157,7 +160,8 @@ def margen(f: FleteDelMes, uso_km: Decimal) -> Decimal:
 
 
 def calcular(e: Economia, hoy: date, fletes: list[FleteDelMes], publicidad_por_dia: dict[date, Decimal],
-             historia: list[FleteDelMes] = (), prioridades: tuple[str, ...] = PRIORIDADES_INICIALES) -> Mes:
+             historia: list[FleteDelMes] = (), prioridades: tuple[str, ...] = PRIORIDADES_INICIALES, *,
+             reparaciones_caja: Decimal = CERO, dias_parada: int = 0, fletes_perdidos: Decimal = CERO) -> Mes:
     """`fletes`: los hechos del mes de `hoy`. `historia`: los hechos antes, para el margen tipico.
 
     `publicidad_por_dia`: lo pagado en publicidad cada dia del mes (prorrateado).
@@ -169,7 +173,8 @@ def calcular(e: Economia, hoy: date, fletes: list[FleteDelMes], publicidad_por_d
     ingresos = sum((f.cobrado for f in del_mes), CERO)
     directos = sum((f.directos for f in del_mes), CERO)
     publicidad = sum((m for d, m in publicidad_por_dia.items() if desde <= d <= hoy), CERO)
-    disponible = ingresos - directos - publicidad
+    # Una reparacion pagada de la caja (no del fondo) sale de lo disponible.
+    disponible = ingresos - directos - publicidad - reparaciones_caja
     km = sum((f.km for f in del_mes), CERO)
     vacios = [f.km_vacios for f in del_mes]
     km_vacios = sum(vacios, CERO) if del_mes and all(v is not None for v in vacios) else None
@@ -237,8 +242,15 @@ def calcular(e: Economia, hoy: date, fletes: list[FleteDelMes], publicidad_por_d
         avisos.append("Este mes ya pasaste tus horas deseadas.")
     d_ = e.disponibilidad
     restantes = Decimal(dias_mes - hoy.day) / 7 * d_.dias_semana * d_.fletes_dia_comodo
+    if dias_parada:
+        avisos.append(f"La camioneta estuvo parada {dias_parada} {'día' if dias_parada == 1 else 'días'}: "
+                      f"unos {fletes_perdidos:.0f} fletes de tu ritmo cómodo que no se pudieron hacer.")
+    if reparaciones_caja:
+        avisos.append(f"Este mes salieron ${int(reparaciones_caja):,} de reparaciones de la caja, no de un fondo."
+                      .replace(",", "."))
     return Mes(
-        capacidad_restante=restantes,
+        capacidad_restante=restantes, reparaciones_caja=reparaciones_caja, dias_parada=dias_parada,
+        fletes_perdidos=fletes_perdidos,
         desde=desde, hasta=hoy, dias_mes=dias_mes, fletes=del_mes, ingresos=ingresos, publicidad=publicidad,
         directos=directos, disponible=disponible, km=km, km_vacios=km_vacios, horas=horas,
         horas_deseadas=h_des, escalones=escalones, nivel=nivel, autonomia=autonomia,

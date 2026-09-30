@@ -410,3 +410,32 @@ def vista_historia(segmentos, canales, jornadas, conclusion_jornadas, valores, o
                  "ltv": plata(v.ltv)} for v in valores[:8]],
         "oportunidad": "Se calcula con la historia." if ok_oportunidad else f"Todavía no: {porque}.",
     }
+
+
+def despues_del_credito(e, hoy: date) -> dict | None:
+    """Como cambia la estructura cuando termina el credito, y que hacer con esa plata."""
+    from dataclasses import replace as _replace
+
+    ultima = e.credito.ultima()
+    if e.costos.credito <= 0:
+        return None
+    if ultima is None:
+        return {"frase": "Cargá el mes de la primera cuota para ver qué cambia cuando termines de pagarla."}
+    despues = date(ultima.year + (ultima.month // 12), ultima.month % 12 + 1, 1)
+    antes_w = contribucion_por_hora(e, hoy)
+    luego_w = contribucion_por_hora(e, despues)
+    if antes_w.objetivo is None or luego_w.objetivo is None:
+        return None
+    cuota = plata(e.costos.credito)
+    return {
+        "frase": (f"Desde {despues:%m/%Y}, sin la cuota de {cuota}, cada hora tiene que aportar "
+                  f"{plata(luego_w.objetivo)} en vez de {plata(antes_w.objetivo)}."),
+        "sugerencia": (f"Para que esos {cuota} no desaparezcan sin plan, podés pasar parte al fondo de reposición "
+                       "(la próxima camioneta), parte a mantenimiento y parte a viajes. Se configura en Fondos."),
+    }
+
+
+def vista_reparaciones(reps) -> list[dict]:
+    return [{"fecha": r.fecha.strftime("%d/%m/%Y"), "componente": r.componente, "tipo": r.tipo,
+             "costo": plata(r.costo), "dias": r.dias_parada,
+             "pago": f"fondo {r.fondo}" if r.fondo else "caja"} for r in reps[:10]]

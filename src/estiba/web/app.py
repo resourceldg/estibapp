@@ -65,6 +65,7 @@ from estiba.economia import historia
 from estiba.economia import optimizar
 from estiba.economia import mes as eco_mes
 from estiba.economia import registro
+from estiba.economia import reparaciones
 from estiba.economia.cuentas import Actividad
 from estiba.economia.cuentas import cuentas as cuentas_economia
 from estiba.economia.config import Camioneta, Credito, Disponibilidad, Fondo, a_json
@@ -91,6 +92,7 @@ from estiba.storage.repositories import (
     DecisionRepository,
     EconomiaRepository,
     FleteRealRepository,
+    ReparacionRepository,
     GastoRepository,
     PanelRepository,
     SettingsRepository,
@@ -434,7 +436,7 @@ def create_app(
     #: y "Cotizado" estaban a un caracter de distancia y querian decir lo
     #: contrario; "Confirmados" mostraba fletes cuyo chip decia "Agendado".
     FILTROS = [
-        ("todos", "Todos"), ("hoy", "Hoy"), ("responder", "Responder"),
+        ("todos", "Todos"), ("decidir", "Para decidir"), ("hoy", "Hoy"), ("responder", "Responder"),
         ("faltan", "Faltan datos"), ("cotizar", "Para cotizar"),
         ("seguimiento", "Seguimiento"), ("confirmados", "Para hacer"),
     ]
@@ -461,6 +463,13 @@ def create_app(
             return f.ultimo_at[:10] == hoy
         if filtro == "confirmados":
             return f.estado in (JobState.CONFIRMED.value, JobState.SCHEDULED.value)
+        if filtro == "decidir":
+            # Minima intervencion: solo lo que necesita criterio. Un pedido que
+            # conviene y ya tiene su cotizacion lista no molesta.
+            if b is None:
+                return False
+            ev = estado.resultado.evaluaciones.get(f.job_id)
+            return ev is None or ev.capa.value != "automatico" or b.tipo != "cotizacion"
         tipos = {"responder": "respuesta", "faltan": "preguntas",
                  "cotizar": "cotizacion", "seguimiento": "seguimiento"}
         if filtro in tipos:
@@ -697,14 +706,28 @@ def create_app(
         return salida
 
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
-    def pagina_bandeja(request: Request, f: str = "todos"):
+    def pagina_bandeja(request: Request, f: str | None = None):
         validos = [c for c, _ in FILTROS + FILTROS_APARTE]
-        filtro = f if f in validos else "todos"
+        # En modo minima intervencion, Hoy abre en lo que necesita criterio.
+        defecto = "decidir" if _minima_intervencion() else "todos"
+        filtro = f if f in validos else defecto
         return templates.TemplateResponse(
             request, "bandeja.html",
             _contexto(request, **_conversaciones(filtro), por_confirmar=_por_confirmar(), titulo="Hoy",
                       linea_mes=_linea_mes()),
         )
+
+    def _minima_intervencion() -> bool:
+        conn = estado.conectar()
+        try:
+            return bool((EconomiaRepository(conn).config("modo") or {}).get("minima"))
+        finally:
+            conn.close()
+
+    @app.post("/numeros/camioneta/modo", include_in_schema=False)
+    def guardar_modo(minima: str = Form("")):
+        _guardar_eco("modo", {"minima": minima == "1"})
+        return RedirectResponse("/numeros/camioneta#modo", status_code=303)
 
     def _linea_mes() -> str | None:
         """Una sola linea en Hoy: como va la camioneta este mes. Si algo falla,
@@ -1410,13 +1433,57 @@ def create_app(
             ("depreciacion_mes", "Depreciación por mes", EV.campo(c.depreciacion_mes), "$",
              "opcional: un supuesto tuyo; vacío = no se descuenta"),
         ]
+        conn = estado.conectar()
+        try:
+            rrepo = ReparacionRepository(conn)
+            saldos = {f.clave: reparaciones.saldo(rrepo.movimientos(f.clave)) for f in e.fondos}
+            reps = rrepo.todas()
+        finally:
+            conn.close()
         fondos = [{"clave": f.clave, "nombre": f.nombre, "aporte": EV.campo(f.aporte_mes) if f.aporte_mes else "",
-                   "objetivo": EV.campo(f.objetivo)} for f in e.fondos]
+                   "objetivo": EV.campo(f.objetivo), "saldo": EV.plata(saldos[f.clave])} for f in e.fondos]
         return templates.TemplateResponse(
             request, "camioneta.html",
             _contexto(request, v=EV.vista_camioneta(e, hoy, historial), disp=disp, activo=activo, fondos=fondos,
-                      hoy=hoy.isoformat(), titulo="Camioneta"),
+                      hoy=hoy.isoformat(), titulo="Camioneta", despues=EV.despues_del_credito(e, hoy),
+                      reparaciones=EV.vista_reparaciones(reps), minima=_minima_intervencion()),
         )
+
+    @app.post("/numeros/camioneta/reparacion", include_in_schema=False)
+    def cargar_reparacion(fecha: str = Form(...), componente: str = Form(...), costo: str = Form(...),
+                          km: str = Form(""), dias_parada: str = Form("0"), tipo: str = Form(""),
+                          fondo: str = Form("")):
+        try:
+            dia = date.fromisoformat(fecha)
+        except ValueError as e:
+            raise HTTPException(422, "la fecha no se entiende") from e
+        valor = _monto(costo)
+        if not valor or not componente.strip():
+            raise HTTPException(422, "falta qué se arregló o cuánto costó")
+        comp = componente.strip()[:80]
+        rep = reparaciones.Reparacion(
+            dia, comp, tipo if tipo in (reparaciones.ORDINARIA, reparaciones.EXTRAORDINARIA)
+            else reparaciones.tipo_sugerido(comp), valor, _numero(km) if km.strip() else None,
+            int(_numero(dias_parada) or 0), fondo.strip() or None)
+        conn = estado.conectar()
+        try:
+            ReparacionRepository(conn).cargar(rep, estado.ahora())
+        finally:
+            conn.close()
+        return RedirectResponse("/numeros/camioneta#reparaciones", status_code=303)
+
+    @app.post("/numeros/camioneta/fondos/{clave}/mover", include_in_schema=False)
+    def mover_fondo(clave: str, monto: str = Form(...), tipo: str = Form("aporte")):
+        valor = _monto(monto)
+        if not valor:
+            raise HTTPException(422, "falta el monto")
+        conn = estado.conectar()
+        try:
+            ReparacionRepository(conn).mover(clave, estado.ahora().date(), valor if tipo == "aporte" else -valor,
+                                             estado.ahora(), "aporte" if tipo == "aporte" else "ajuste")
+        finally:
+            conn.close()
+        return RedirectResponse("/numeros/camioneta#fondos", status_code=303)
 
     def _guardar_eco(clave: str, valor) -> None:
         conn = estado.conectar()
@@ -1527,6 +1594,13 @@ def create_app(
                 medido=bool(r and r.medido)))
         return sorted(salida, key=lambda f: f.dia)
 
+    def _reparaciones() -> list:
+        conn = estado.conectar()
+        try:
+            return ReparacionRepository(conn).todas()
+        finally:
+            conn.close()
+
     def _evidencia():
         hoy = estado.ahora().date()
         e = _economia()
@@ -1543,7 +1617,8 @@ def create_app(
         datos = evidencia.Datos(
             fletes=fletes, cliente_de={f.job_id: f.job_id.split(":job")[0] for f in fletes},
             consultas_publicidad=h.consultas_meta or h.consultas_publicidad,
-            hechos_publicidad=h.hechos_publicidad, dias_publicidad=h.dias, cambio_precio=cambio)
+            hechos_publicidad=h.hechos_publicidad, dias_publicidad=h.dias, cambio_precio=cambio,
+            reparaciones_grandes=reparaciones.extraordinarias(_reparaciones()))
         return e, evidencia.catalogo(e, datos, hoy), hoy
 
     def _base_plan(e, cat, fletes, hoy):
@@ -1668,7 +1743,15 @@ def create_app(
         del_mes, historia = _fletes_del_mes(e, hoy)
         _, gastos = _gastos()
         publicidad = eco_mes.publicidad_diaria(gastos, e.costos.impuestos_publicidad, hoy.replace(day=1), hoy)
-        m = eco_mes.calcular(e, hoy, del_mes, publicidad, historia, _prioridades())
+        conn = estado.conectar()
+        try:
+            reps = ReparacionRepository(conn).todas()
+        finally:
+            conn.close()
+        parada = reparaciones.del_periodo(reps, hoy.replace(day=1), hoy, e.disponibilidad)
+        m = eco_mes.calcular(e, hoy, del_mes, publicidad, historia, _prioridades(),
+                             reparaciones_caja=parada.costo_caja, dias_parada=parada.dias,
+                             fletes_perdidos=parada.fletes_perdidos)
         fraccion = Decimal(hoy.day) / Decimal(m.dias_mes)
         c = cuentas_economia(e, hoy, Actividad(m.ingresos, m.km, m.publicidad, m.directos, m.horas), fraccion)
         return m, c

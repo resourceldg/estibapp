@@ -1008,3 +1008,42 @@ class FleteRealRepository:
                         espera_h=num("espera_h") or Decimal(0), ayudante_pagado=num("ayudante_pagado") or Decimal(0),
                         otros_gastos=num("otros_gastos") or Decimal(0), canal=f["canal"] or "otro",
                         fuente=f["fuente"])
+
+
+class ReparacionRepository:
+    """Reparaciones y movimientos de fondos. Ver migracion 025."""
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self.conn = conn
+
+    def cargar(self, r, ahora: datetime, nota: str | None = None) -> int:
+        with self.conn:
+            cur = self.conn.execute(
+                "INSERT INTO reparaciones (fecha, componente, tipo, costo, km, dias_parada, fondo, nota, at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (r.fecha.isoformat(), r.componente, r.tipo, str(r.costo), str(r.km) if r.km is not None else None,
+                 r.dias_parada, r.fondo, nota, _a_texto(ahora)))
+            if r.fondo:
+                self.conn.execute(
+                    "INSERT INTO fondo_movimientos (fondo, fecha, monto, origen, nota, at) VALUES (?, ?, ?, ?, ?, ?)",
+                    (r.fondo, r.fecha.isoformat(), str(-r.costo), "reparacion", r.componente, _a_texto(ahora)))
+        return cur.lastrowid
+
+    def todas(self) -> list:
+        from estiba.economia.reparaciones import Reparacion
+
+        filas = self.conn.execute("SELECT * FROM reparaciones ORDER BY fecha DESC, id DESC").fetchall()
+        return [Reparacion(date.fromisoformat(f["fecha"]), f["componente"], f["tipo"], Decimal(f["costo"]),
+                           Decimal(f["km"]) if f["km"] is not None else None, f["dias_parada"], f["fondo"])
+                for f in filas]
+
+    def mover(self, fondo: str, fecha: date, monto: Decimal, ahora: datetime, origen: str = "aporte",
+              nota: str | None = None) -> None:
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO fondo_movimientos (fondo, fecha, monto, origen, nota, at) VALUES (?, ?, ?, ?, ?, ?)",
+                (fondo, fecha.isoformat(), str(monto), origen, nota, _a_texto(ahora)))
+
+    def movimientos(self, fondo: str) -> list[tuple[date, Decimal]]:
+        return [(date.fromisoformat(f["fecha"]), Decimal(f["monto"])) for f in self.conn.execute(
+            "SELECT fecha, monto FROM fondo_movimientos WHERE fondo = ? ORDER BY fecha, id", (fondo,))]
