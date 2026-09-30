@@ -948,7 +948,7 @@ _GRUPOS = [
     ("Publicidad", "Para calcular cuánto cuesta conseguir un flete.", [
         ("costo_por_consulta", "Costo por conversación", "$", "Lo que dice Meta como costo por resultado."),
         ("cierre", "De cada 100 consultas, se hacen", "%"),
-        ("impuestos_publicidad", "Impuestos sobre lo gastado", "%", "IVA y percepciones: fijate en la factura de Meta."),
+        ("impuestos_publicidad", "Impuestos sobre lo gastado", "%", "Solo se usa cuando cargás el neto de Meta sin los impuestos: fijate en la factura."),
     ]),
     ("La meta", "", [
         ("ganancia_objetivo", "Ganancia limpia por mes", "$"),
@@ -1014,6 +1014,30 @@ class Gasto:
     id: str
     periodo: str
     monto: str
+    #: Que es el monto y de donde salen los impuestos, en palabras.
+    detalle: str = ""
+
+
+def gasto_nota(fila, tasa) -> tuple[str, bool]:
+    """Como se leyo una carga de gasto: (explicacion, impuestos estimados)."""
+    from decimal import Decimal
+
+    if fila["incluye_impuestos"]:
+        return "total pagado, impuestos incluidos", False
+    if fila["impuestos"] is not None:
+        return f"neto + {pesos(Decimal(fila['impuestos']))} de impuestos cargados", False
+    if tasa:
+        return f"neto + {_mostrar_numero(tasa)}% de impuestos estimados", True
+    return "neto, sin impuestos", False
+
+
+def nota_publicidad(gastos, tasa) -> str:
+    """La nota del renglon de publicidad: siempre lo pagado, y si hay estimacion, se dice."""
+    estimados = sum(1 for g in gastos if gasto_nota(g, tasa)[1])
+    if not estimados:
+        return "lo pagado a Meta, impuestos incluidos"
+    return (f"lo pagado a Meta; en {estimados} {'carga' if estimados == 1 else 'cargas'} los impuestos "
+            f"son un {_mostrar_numero(tasa)}% estimado")
 
 
 @dataclass
@@ -1073,8 +1097,7 @@ def objetivos(c, b, mes, gastos, ahora: datetime, cierre_medido: tuple[int, int]
         Renglon("Facturado", pesos(b.ingresos), f"{b.fletes} fletes", "ok"),
         Renglon("Camioneta", _signo(-b.camioneta),
                 f"{b.fletes} × {_mostrar_numero(c.km_por_flete)} km × {pesos(c.costo_km)}/km"),
-        Renglon("Publicidad", _signo(-b.publicidad),
-                f"lo gastado + {_mostrar_numero(c.impuestos_publicidad)}% de impuestos"),
+        Renglon("Publicidad", _signo(-b.publicidad), nota_publicidad(gastos, c.impuestos_publicidad)),
         Renglon("Fijos", _signo(-b.fijos), f"{pesos(c.fijos_mes)} por mes, {b.dias} días"),
         Renglon("Te queda", _signo(b.ganancia), _pct(b.margen) + " de margen",
                 "ok" if b.ganancia >= 0 else "mal"),
@@ -1141,7 +1164,7 @@ def objetivos(c, b, mes, gastos, ahora: datetime, cierre_medido: tuple[int, int]
         Gasto(g["id"], f"{date.fromisoformat(g['period_start']):%d/%m} al "
                        f"{date.fromisoformat(g['period_end']):%d/%m/%Y}"
                        + (f" · {g['resultados']} conversaciones" if g["resultados"] else ""),
-                 pesos(Decimal(g["spend"])))
+                 pesos(Decimal(g["spend"])), gasto_nota(g, c.impuestos_publicidad)[0])
         for g in gastos
     ]
     medido = None

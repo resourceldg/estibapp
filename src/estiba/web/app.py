@@ -840,7 +840,9 @@ def create_app(
             conn.close()
         return filas, [
             F.GastoPublicidad(date.fromisoformat(g["period_start"]), date.fromisoformat(g["period_end"]),
-                              Decimal(g["spend"]), g["resultados"])
+                              Decimal(g["spend"]), g["resultados"],
+                              Decimal(g["impuestos"]) if g["impuestos"] is not None else None,
+                              bool(g["incluye_impuestos"]))
             for g in filas
         ]
 
@@ -886,6 +888,9 @@ def create_app(
         desde = hoy - timedelta(days=29)
         if gastos:
             desde = max(desde, min(g.desde for g in gastos))
+        # El pronostico razona en las unidades de Meta (sin impuestos): el
+        # impuesto se agrega una sola vez, al pasar a plata pagada.
+        tasa = _costos().impuestos_publicidad
         de_publi = set()
         consultas = hechos_publi = hechos_otros = 0
         for lead in estado.resultado.leads:
@@ -908,7 +913,7 @@ def create_app(
             consultas_publicidad=consultas,
             hechos_publicidad=hechos_publi,
             hechos_sin_publicidad=hechos_otros,
-            gasto=sum((g.dentro(desde, hoy) for g in gastos), Decimal(0)),
+            gasto=sum((g.neto_dentro(desde, hoy, tasa) for g in gastos), Decimal(0)),
             # Solo si todos los gastos de la ventana dicen cuantas trajeron:
             # mezclar las de Meta con las que reconoce Estiba no da nada.
             consultas_meta=round(sum(g.resultados * g.parte(desde, hoy) for g in en_ventana))
@@ -1220,7 +1225,7 @@ def create_app(
             dias = (hoy - desde).days + 1
             desde_entonces = [x for x in hechos if x.dia >= desde]
             cobrados = [x.cobrado for x in desde_entonces if x.cobrado is not None]
-            gasto = sum((g.dentro(desde, hoy) for g in gastos), Decimal(0))
+            gasto = sum((g.neto_dentro(desde, hoy, c.impuestos_publicidad) for g in gastos), Decimal(0))
             v = vigente["v"]
             meta_fletes = Decimal(vigente["r"]["fletes"]) * dias / 30
             seguimiento = [
@@ -1309,7 +1314,8 @@ def create_app(
 
     @app.post("/numeros/objetivos/gasto", include_in_schema=False)
     def cargar_gasto(desde: str = Form(...), hasta: str = Form(...), monto: str = Form(...),
-                     resultados: str = Form("")):
+                     resultados: str = Form(""), impuestos: str = Form(""), tipo: str = Form("neto")):
+        """`tipo` dice que es el monto: "neto" (lo que muestra Meta) o "total" (la factura)."""
         try:
             d, h = date.fromisoformat(desde), date.fromisoformat(hasta)
         except ValueError as e:
@@ -1322,7 +1328,9 @@ def create_app(
         conn = estado.conectar()
         try:
             conversaciones = int(r) if (r := _numero(resultados)) else None
-            GastoRepository(conn).cargar(d, h, valor, resultados=conversaciones)
+            GastoRepository(conn).cargar(d, h, valor, resultados=conversaciones,
+                                         impuestos=_numero(impuestos) if impuestos.strip() else None,
+                                         incluye_impuestos=tipo == "total")
         finally:
             conn.close()
         return RedirectResponse("/numeros/objetivos#publicidad", status_code=303)

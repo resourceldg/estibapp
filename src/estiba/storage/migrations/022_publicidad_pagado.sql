@@ -1,0 +1,23 @@
+-- Lo que de verdad salio del bolsillo por la publicidad.
+--
+-- Hasta aca `spend` era "lo que Meta muestra como gastado, sin impuestos"
+-- y los impuestos se agregaban siempre con un porcentaje configurado. Si
+-- alguien cargaba el total de la factura (impuestos incluidos), se cobraban
+-- dos veces. Ahora cada carga dice que es:
+--
+--   incluye_impuestos = 0, impuestos NULL  -> spend es neto; los impuestos se
+--                                             estiman con el % configurado y
+--                                             se muestran como estimacion.
+--   incluye_impuestos = 0, impuestos = X   -> spend es neto; se pago spend + X.
+--   incluye_impuestos = 1                  -> spend es el total pagado; no se
+--                                             le suma nada. Si ademas se sabe
+--                                             X, el neto es spend - X.
+--
+-- Las filas que ya existen se cargaron con la pantalla que decia "sin
+-- impuestos": quedan como neto con impuestos estimados, que es exactamente
+-- como se venian contando. No cambia ningun numero.
+--
+-- Rollback: las dos columnas son nuevas y opcionales; el codigo anterior
+-- las ignora.
+ALTER TABLE campaigns ADD COLUMN impuestos TEXT;
+ALTER TABLE campaigns ADD COLUMN incluye_impuestos INTEGER NOT NULL DEFAULT 0;

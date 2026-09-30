@@ -162,11 +162,47 @@ class FleteHecho:
 
 @dataclass(frozen=True)
 class GastoPublicidad:
+    """Una carga de gasto en Meta. Ver la migracion 022.
+
+    `monto` es lo que se cargo; que representa lo dicen los otros dos
+    campos. Nunca se le suman impuestos a un total que ya los incluye.
+    """
+
     desde: date
     hasta: date  # inclusive
-    monto: Decimal  # tal como lo muestra Meta, sin impuestos
+    monto: Decimal
     #: Conversaciones que dice Meta que trajo. None si no se cargo.
     resultados: int | None = None
+    #: Impuestos y cargos, si se saben. None: no se cargaron.
+    impuestos: Decimal | None = None
+    #: True si `monto` ya es el total pagado.
+    incluye_impuestos: bool = False
+
+    def neto(self, tasa: Decimal) -> Decimal:
+        """Lo que Meta cuenta como gastado, sin impuestos."""
+        if not self.incluye_impuestos:
+            return self.monto
+        if self.impuestos is not None:
+            return self.monto - self.impuestos
+        return self.monto / (1 + tasa / 100)
+
+    def pagado(self, tasa: Decimal) -> Decimal:
+        """Lo que salio del bolsillo. `tasa` (en %) solo se usa si no se sabe."""
+        if self.incluye_impuestos:
+            return self.monto
+        if self.impuestos is not None:
+            return self.monto + self.impuestos
+        return self.monto * (1 + tasa / 100)
+
+    def impuestos_estimados(self, tasa: Decimal) -> bool:
+        """True si el pagado (o el neto) sale de un % supuesto, no de la factura."""
+        return self.impuestos is None and tasa != 0
+
+    def pagado_dentro(self, desde: date | None, hasta: date, tasa: Decimal) -> Decimal:
+        return self.pagado(tasa) * self.parte(desde, hasta)
+
+    def neto_dentro(self, desde: date | None, hasta: date, tasa: Decimal) -> Decimal:
+        return self.neto(tasa) * self.parte(desde, hasta)
 
     def parte(self, desde: date | None, hasta: date) -> Decimal:
         """Que fraccion de los dias de este gasto cae entre `desde` y `hasta`."""
@@ -177,9 +213,6 @@ class GastoPublicidad:
             return CERO
         return Decimal((fin - inicio).days + 1) / Decimal(dias)
 
-    def dentro(self, desde: date | None, hasta: date) -> Decimal:
-        """La parte de este gasto que cae entre `desde` y `hasta` (inclusive)."""
-        return self.monto * self.parte(desde, hasta)
 
 
 @dataclass(frozen=True)
@@ -191,7 +224,7 @@ class Balance:
     sin_monto: int  # hechos sin nada cobrado ni cotizado: no suman
     ingresos: Decimal
     camioneta: Decimal
-    publicidad: Decimal  # con impuestos
+    publicidad: Decimal  # lo pagado, impuestos incluidos
     fijos: Decimal  # prorrateados al periodo
 
     @property
@@ -230,7 +263,8 @@ def balance(c: Costos, fletes: list[FleteHecho], gastos: list[GastoPublicidad],
     else:
         inicio = desde
     dias = (hasta - inicio).days + 1
-    publicidad = sum((g.dentro(desde, hasta) for g in gastos), CERO) * c.con_impuestos
+    # Lo pagado de verdad: si la carga ya incluia impuestos, no se suman otra vez.
+    publicidad = sum((g.pagado_dentro(desde, hasta, c.impuestos_publicidad) for g in gastos), CERO)
     return Balance(
         dias=dias,
         fletes=len(del_periodo),

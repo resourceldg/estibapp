@@ -187,7 +187,10 @@ def datos(*, negocio: str, periodo: str, desde: date | None, hoy: date, ahora: d
         "cuenta": [
             ("Facturado", pesos(b.ingresos), f"{b.fletes} fletes"),
             ("Camioneta", _signo(-b.camioneta), f"{b.fletes} × {int(c.km_por_flete)} km × {pesos(c.costo_km)}/km"),
-            ("Publicidad", _signo(-b.publicidad), f"lo gastado + {int(c.impuestos_publicidad)}% de impuestos"),
+            ("Publicidad", _signo(-b.publicidad),
+             "lo pagado a Meta" + (f" (impuestos estimados al {int(c.impuestos_publicidad)}% donde no se cargaron)"
+                                   if any(g.impuestos_estimados(c.impuestos_publicidad) for g in gastos) else
+                                   ", impuestos incluidos")),
             ("Fijos", _signo(-b.fijos), f"{pesos(c.fijos_mes)} por mes, {b.dias} días"),
             ("Te queda", _signo(b.ganancia), f"{_pct(b.margen)} de margen"),
         ],

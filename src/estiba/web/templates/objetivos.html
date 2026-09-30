@@ -121,13 +121,14 @@
 
 <section class="panel" id="publicidad">
   <h2>Gasto en publicidad</h2>
-  <p class="ayuda">Lo que Meta muestra como gastado, sin impuestos. Si un período corta un gasto por la mitad, se cuenta la parte de esos días.</p>
+  <p class="ayuda">Cargá lo que muestra Meta (neto) o el total de la factura: decí cuál es, así los impuestos no se cuentan dos veces. Si un período corta un gasto por la mitad, se cuenta la parte de esos días.</p>
   {% if o.gastos %}
   <ul class="gastos">
     {% for g in o.gastos %}
     <li>
       <span>{{ g.periodo }}</span>
       <strong class="num">{{ g.monto }}</strong>
+      {% if g.detalle %}<small>{{ g.detalle }}</small>{% endif %}
       <form method="post" action="/numeros/objetivos/gasto/{{ g.id }}/borrar"
             onsubmit="return confirm('¿Borrar este gasto?')">
         <button class="btn-icono" type="submit" title="Borrar" aria-label="Borrar gasto {{ g.periodo }}">{{ icono("cruz") }}</button>
@@ -139,7 +140,13 @@
   <form class="form-gasto" method="post" action="/numeros/objetivos/gasto">
     <label>Desde<input type="date" name="desde" required></label>
     <label>Hasta<input type="date" name="hasta" required></label>
-    <label>Gastado<input name="monto" inputmode="decimal" placeholder="53.608" required></label>
+    <label>Monto<input name="monto" inputmode="decimal" placeholder="53.608" required></label>
+    <label>Es
+      <select name="tipo">
+        <option value="neto">lo que muestra Meta (sin impuestos)</option>
+        <option value="total">el total de la factura</option>
+      </select></label>
+    <label>Impuestos <small>(si los sabés)</small><input name="impuestos" inputmode="decimal" placeholder="13.402"></label>
     <label>Conversaciones <small>(Meta)</small><input name="resultados" inputmode="numeric" placeholder="29"></label>
     <button class="btn secundario" type="submit">Cargar</button>
   </form>

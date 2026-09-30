@@ -864,16 +864,18 @@ class GastoRepository:
         self.conn = conn
 
     def cargar(self, desde: date, hasta: date, monto: Decimal, campania: str | None = None,
-               resultados: int | None = None) -> str:
+               resultados: int | None = None, impuestos: Decimal | None = None,
+               incluye_impuestos: bool = False) -> str:
+        """`monto` es neto salvo que `incluye_impuestos` diga que es el total pagado."""
         import secrets
 
         gasto_id = secrets.token_hex(6)
         with self.conn:
             self.conn.execute(
-                "INSERT INTO campaigns (id, platform, external_id, period_start, period_end, spend, resultados) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO campaigns (id, platform, external_id, period_start, period_end, spend, resultados, "
+                "impuestos, incluye_impuestos) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (gasto_id, "meta", campania or "manual", desde.isoformat(), hasta.isoformat(), str(monto),
-                 resultados),
+                 resultados, str(impuestos) if impuestos is not None else None, int(incluye_impuestos)),
             )
         return gasto_id
 
