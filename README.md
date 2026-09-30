@@ -131,6 +131,17 @@ comparan y, al aplicar uno, su meta y su capacidad pasan a la configuración
 (y con eso cambia el precio sugerido de cada flete). El mismo contenido sale
 como informe PDF (`uv sync --extra informe`, usa WeasyPrint).
 
+**El motor económico** (`estiba/economia`, ver `docs/motor-economico.md`)
+cambia la pregunta: no cuánto más se puede trabajar, sino cuál es la forma
+más simple de que la camioneta se pague sola, se conserve y financie tus
+objetivos con la menor cantidad de horas. Cada pedido sale evaluado
+("Tomaría este flete desde $X", con el porqué); al cerrarlo se confirma de
+un toque cómo fue; **¿Cómo estoy?** muestra la escalera del mes y el día en
+que la camioneta se pagó; **¿Vale la pena?** dice cuánto creerle a cada dato;
+**¿Qué pasa si…?** da el plan más simple y los escenarios; **Camioneta** tiene
+el precio base con su historia, lo que querés trabajar, fondos, crédito y
+reparaciones.
+
 Avisos con sonido en el escritorio (`notify-send` + sonido del tema): cuando
 aparece una fecha posible, la víspera de un flete (a las 10 lo sin
 confirmar, a las 18 lo confirmado), cuando escribe un cliente y cuando se
