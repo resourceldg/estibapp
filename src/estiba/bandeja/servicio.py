@@ -23,7 +23,8 @@ from estiba.conversation.clasificacion import _DESDE_PUBLI
 from estiba.core.models import Conversation, JobState
 from estiba.economia import cargar as eco
 from estiba.economia import cotizar
-from estiba.economia.pedido import Cliente, Evaluacion, evaluar
+from estiba.economia.pedido import Cliente, evaluar
+from estiba.economia.pedido import Evaluacion as EvaluacionPedido
 from estiba.extraction.texto import plano
 from estiba.crm.leads import LeadInfo, lead_de
 from estiba.jobs.engine import AGENDADO, Evaluacion, JobEngine
@@ -52,7 +53,7 @@ class Resultado:
     clases: dict[str, Clasificacion] = field(default_factory=dict)
     espejo_error: str | None = None
     #: La evaluacion economica de cada flete que se pudo evaluar.
-    evaluaciones: dict[str, Evaluacion] = field(default_factory=dict)
+    evaluaciones: dict[str, EvaluacionPedido] = field(default_factory=dict)
 
 
 def sincronizar(conn: sqlite3.Connection, engine: JobEngine, ahora: datetime, espejo=None) -> Resultado:
