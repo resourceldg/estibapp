@@ -77,6 +77,13 @@ def por_canal(fletes, canal_de: dict[str, str], uso_km, cliente_de, hoy) -> list
                    "Anotar cómo llegó cada cliente al cerrar el flete")
 
 
+def por_anuncio(fletes, anuncio_de: dict[str, str], uso_km, cliente_de, hoy) -> list[Grupo]:
+    """Solo los fletes que vinieron de un anuncio: cual trae fletes que dejan plata."""
+    con = [f for f in fletes if f.job_id in anuncio_de]
+    return _grupos(con, lambda f: anuncio_de[f.job_id], uso_km, cliente_de, hoy,
+                   "Más fletes de este anuncio, cerrados confirmando km y horas")
+
+
 def jornadas(fletes, uso_km, cliente_de, hoy) -> tuple[list[Grupo], str | None]:
     """Agrupa por cuantos fletes hubo ese dia. La conclusion solo si los intervalos no se pisan."""
     por_dia: dict[date, int] = {}

@@ -58,9 +58,12 @@ def _cosas(items: list[str]) -> str:
 #: asi que ese ofrecimiento se cumple. Cuando Estiba sepa mirar una foto,
 #: vuelve a la invitacion.
 APERTURA = (
-    "🚚 ¡Hola! Gracias por escribir. Contame qué tenés que llevar y te paso "
-    "un precio. Si te resulta más fácil, mandame un audio 🎤"
+    "🚚 ¡Hola! Gracias por escribir a Flete Surfero. Contame qué hay que llevar, "
+    "desde dónde y hasta dónde, y te paso el precio."
 )
+#: Sin pedir fotos ni audios: pedir una foto se siente como perder
+#: privacidad, y Estiba igual no la puede leer. Lo que hace falta para
+#: cotizar se dice en una linea.
 
 
 def _primer_contacto(conv: Conversation, ahora: datetime) -> bool:

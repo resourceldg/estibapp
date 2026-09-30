@@ -70,12 +70,36 @@ _ES_HANDLE = re.compile(r"^[a-z][a-z._-]{5,}\d{2,}$")
 #: hacia que no se reconociera: 3 de las 20 conversaciones que arrancan
 #: pidiendo informacion quedaban afuera. No se notaba porque esas tres
 #: contaban de que se trataba enseguida y entraban como lead por la ruta.
+#: Los mensajes que cada anuncio deja escritos al tocar "Enviar mensaje".
+#: Desde el test A/B de octubre 2026 cada anuncio nuevo trae el suyo, asi se
+#: sabe de cual vino cada conversacion (y, con eso, cada flete). Se buscan
+#: sobre el texto `plano` (minusculas, sin tildes).
+ANUNCIOS = {
+    "B1 ¿Qué hay que mover?": re.compile(r"\bquiero\s+cotizar\s+un\s+flete\b"),
+    "B2 Te lo llevamos hoy": re.compile(r"\bnecesito\s+un\s+flete\s+para\s+hoy\b"),
+    "B3 Marketplace": re.compile(r"\bflete\s+para\s+algo\s+de\s+marketplace\b"),
+    "B4 Reel": re.compile(r"\bvi\s+el\s+video,?\s+necesito\s+un\s+flete\b"),
+}
+
 _DESDE_PUBLI = re.compile(
     r"\b(?:quiero|quisiera|necesito|me\s+gustaria|me\s+interesa)\s+"
     r"(?:\w+\s+){0,2}m[aá]s\s+informaci"
     r"|\bme\s+interesa\s+(?:este|esta|lo\s+que)\b"
     r"|\bvi\s+(?:tu|la|el)\s+(?:publicaci[oó]n|anuncio|aviso|publicidad)\b"
+    + "".join("|" + r.pattern for r in ANUNCIOS.values())
 )
+
+
+def anuncio_de(texto_plano: str) -> str | None:
+    """De que anuncio vino una conversacion, por su primer mensaje (ya `plano`).
+
+    "A (anteriores)" para los que abren con el texto generico de antes, que
+    no dice cual de los anuncios viejos fue. None si no vino de un anuncio.
+    """
+    for nombre, patron in ANUNCIOS.items():
+        if patron.search(texto_plano):
+            return nombre
+    return "A (anteriores)" if _DESDE_PUBLI.search(texto_plano) else None
 
 #: Alguien que ofrece su servicio en vez de pedir el tuyo. No dice "promo"
 #: ni "descuento": es una propuesta escrita a mano, y entra igual como lead.

@@ -517,7 +517,7 @@ CANAL_NOMBRE = dict(_CANALES)
 
 
 def vista_historia(segmentos, canales, jornadas, conclusion_jornadas, valores, oportunidad,
-                   nombres: dict[str, str] | None = None) -> dict:
+                   nombres: dict[str, str] | None = None, anuncios=()) -> dict:
     from estiba.formato import telefono
 
     ok_oportunidad, porque = oportunidad
@@ -528,12 +528,14 @@ def vista_historia(segmentos, canales, jornadas, conclusion_jornadas, valores, o
             "canales": _intervalos([_con_nombre(g, CANAL_NOMBRE.get(g.nombre, g.nombre)) for g in canales],
                                    "Margen por hora por cómo llegó el cliente"),
             "jornadas": _intervalos(jornadas, "Margen por hora por jornada"),
+            "anuncios": _intervalos(list(anuncios), "Margen por hora por anuncio"),
             "ltv": G.barras([(nombre(v_.cliente), float(v_.ltv), "g-s1" if v_.ltv >= 0 else "g-s2")
                              for v_ in valores[:8]], G.pesos_cortos, titulo="Lo que dejó cada cliente", izq=150),
         },
         "segmentos": [_fila_grupo(g) for g in segmentos],
         "canales": [_fila_grupo(_con_nombre(g, CANAL_NOMBRE.get(g.nombre, g.nombre))) for g in canales],
         "jornadas": [_fila_grupo(g) for g in jornadas],
+        "anuncios": [_fila_grupo(g) for g in anuncios],
         "conclusion_jornadas": conclusion_jornadas or "Todavía no hay jornadas suficientes para comparar.",
         "ltv": [{"cliente": nombre(v.cliente), "fletes": v.fletes, "margen": plata(v.margen), "cac": plata(v.cac),
                  "ltv": plata(v.ltv)} for v in valores[:8]],

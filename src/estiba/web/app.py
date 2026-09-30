@@ -57,6 +57,7 @@ from estiba.finanzas.simular import simular
 from estiba.informe import generar as informe
 from estiba.informe import graficos
 from estiba.conversation.clasificacion import _DESDE_PUBLI
+from estiba.conversation.clasificacion import anuncio_de as clasif_anuncio
 from estiba.extraction.texto import plano
 from estiba.finanzas.precio import BASE_DEFAULT
 from estiba.economia import cargar as eco
@@ -1707,12 +1708,19 @@ def create_app(
             if ev is not None and ev.cac.monto:
                 cac_de_cliente.setdefault(cliente_de[f.job_id], ev.cac.monto)
         uso = e.costos.costo_km
+        anuncio_de = {}
+        for f in fletes:
+            par = estado.resultado.fletes.get(f.job_id)
+            if par and par[1].messages:
+                if (cual := clasif_anuncio(plano(par[1].text_of(par[1].messages[0]) or ""))) is not None:
+                    anuncio_de[f.job_id] = cual
         grupos_j, conclusion_j = historia.jornadas(fletes, uso, cliente_de, hoy)
         oportunidad = historia.costo_oportunidad_disponible(fletes, hoy)
         return EV.vista_historia(
             historia.por_segmento(fletes, segmento_de, uso, cliente_de, hoy),
             historia.por_canal(fletes, canal_de, uso, cliente_de, hoy),
-            grupos_j, conclusion_j, historia.ltv(fletes, cliente_de, cac_de_cliente, uso), oportunidad, _nombres())
+            grupos_j, conclusion_j, historia.ltv(fletes, cliente_de, cac_de_cliente, uso), oportunidad, _nombres(),
+            historia.por_anuncio(fletes, anuncio_de, uso, cliente_de, hoy))
 
     def _encadenables(e):
         pedidos = []

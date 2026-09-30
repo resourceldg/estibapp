@@ -24,7 +24,7 @@ import os
 from datetime import datetime, timedelta
 
 from estiba.bandeja.redactor import APERTURA
-from estiba.conversation.clasificacion import _DESDE_PUBLI
+from estiba.conversation.clasificacion import _DESDE_PUBLI, ANUNCIOS
 from estiba.core.models import Conversation
 from estiba.extraction.texto import plano
 
@@ -76,6 +76,12 @@ def sale_sola(conv: Conversation, texto: str, ahora: datetime, ya_mando: bool) -
     #    "hola" escrito a mano puede ser cualquier cosa y espera.
     primero = conv.text_of(mensajes[0]) or ""
     if not _DESDE_PUBLI.search(plano(primero)):
+        return False
+
+    # 4b. Los anuncios nuevos ya saludan desde Meta ("Mandanos una foto...")
+    #     y la persona dijo que manda la foto: una segunda apertura le
+    #     pediria lo mismo dos veces. Se espera la foto.
+    if any(patron.search(plano(primero)) for patron in ANUNCIOS.values()):
         return False
 
     # 5. Y no dijo nada mas. Si ademas del texto del anuncio escribio algo

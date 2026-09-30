@@ -48,7 +48,7 @@
   <h2>Lo que se aprende de tu historia</h2>
   <p class="ayuda">Margen por hora, por tipo de flete, por cómo llegó el cliente y por cuántos fletes hubo ese día. Nada se afirma sin datos suficientes.</p>
   <p class="nota">Cada punto es el margen por hora; la línea, lo que permiten los datos. En gris, lo que todavía no alcanza para concluir.</p>
-  {% for titulo, clave, filas in [("Por tipo de flete", "segmentos", h.segmentos), ("Por cómo llegó el cliente", "canales", h.canales), ("Por jornada", "jornadas", h.jornadas)] %}
+  {% for titulo, clave, filas in [("Por tipo de flete", "segmentos", h.segmentos), ("Por cómo llegó el cliente", "canales", h.canales), ("Por anuncio", "anuncios", h.anuncios), ("Por jornada", "jornadas", h.jornadas)] %}
   <h3 class="sub-titulo">{{ titulo }}</h3>
   {% if h.graficos[clave] %}{{ h.graficos[clave] | safe }}{% else %}<p class="ayuda">Sin fletes todavía.</p>{% endif %}
   <details class="como-tabla"><summary>Ver como tabla</summary>

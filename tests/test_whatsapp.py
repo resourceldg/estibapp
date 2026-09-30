@@ -532,7 +532,7 @@ class TestLaAperturaSaleSola:
                                     "payload": mensaje(**self.DE_LA_PAUTA)})
         app_con_waha.post(f"/webhooks/waha/{_secreto(app_con_waha)}", content=cuerpo, headers=headers)
         assert len(falso.enviados) == 1, "no le contesto a alguien que llego del anuncio"
-        assert "Contame qué tenés que llevar" in falso.enviados[0]["text"]
+        assert "Contame qué hay que llevar" in falso.enviados[0]["text"]
 
     def test_y_no_le_queda_pendiente_para_aprobar(self, app_con_waha, falso):
         """Si ademas quedara en la bandeja, el fletero lo mandaria dos veces."""
@@ -582,7 +582,7 @@ class TestLaAperturaSaleSola:
         app_con_waha.post(f"/webhooks/waha/{_secreto(app_con_waha)}", content=cuerpo, headers=headers)
         html = app_con_waha.get(f"/fletes/{CLIENTE}:job").text
         assert "Estiba le contestó sola porque llegó por la publicidad" in html
-        assert "Contame qué tenés que llevar" in html, "y se ve que fue lo que salio"
+        assert "Contame qué hay que llevar" in html, "y se ve que fue lo que salio"
 
     def test_lo_que_aprobaste_vos_no_dice_eso(self, app_con_waha, falso):
         cuerpo, headers = _firmado({"event": "message.any", "session": "default",
