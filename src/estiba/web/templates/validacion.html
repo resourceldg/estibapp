@@ -41,4 +41,27 @@
     {% endfor %}
   </table>
 </section>
+<section class="panel">
+  <h2>Lo que se aprende de tu historia</h2>
+  <p class="ayuda">Margen por hora, por tipo de flete, por cómo llegó el cliente y por cuántos fletes hubo ese día. Nada se afirma sin datos suficientes.</p>
+  {% for titulo, filas in [("Por tipo de flete", h.segmentos), ("Por cómo llegó el cliente", h.canales), ("Por jornada", h.jornadas)] %}
+  <h3 class="sub-titulo">{{ titulo }}</h3>
+  <table class="cuentas">
+    {% for g in filas %}
+    <tr><th scope="row">{{ g.nombre|capitalize }}<small>{{ g.n }} {{ "flete" if g.n == 1 else "fletes" }} · {{ g.estado }}{% if g.nota %} · {{ g.nota }}{% endif %}</small></th>
+        <td class="num">{{ g.valor }}{% if g.valor != "—" %}<small> por hora</small>{% endif %}</td></tr>
+    {% else %}<tr><td>Sin fletes todavía.</td></tr>{% endfor %}
+  </table>
+  {% endfor %}
+  <p class="ayuda">{{ h.conclusion_jornadas }}</p>
+  {% if h.ltv %}
+  <h3 class="sub-titulo">Lo que deja cada cliente (LTV)</h3>
+  <table class="cuentas">
+    <tr><th>Cliente</th><th>Fletes</th><th>Margen</th><th>Costó conseguirlo</th><th>Deja</th></tr>
+    {% for c in h.ltv %}<tr><td>{{ c.cliente }}</td><td class="num">{{ c.fletes }}</td><td class="num">{{ c.margen }}</td><td class="num">{{ c.cac }}</td><td class="num">{{ c.ltv }}</td></tr>{% endfor %}
+  </table>
+  {% endif %}
+  <h3 class="sub-titulo">Costo de oportunidad</h3>
+  <p class="ayuda">{{ h.oportunidad }}</p>
+</section>
 {% endblock %}

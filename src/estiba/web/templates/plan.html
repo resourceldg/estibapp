@@ -13,6 +13,15 @@
   <p class="nota">Orden de preferencia: cumplir tus prioridades, con la menor cantidad de horas, de km vacíos, de desgaste y de días pico; recién después, más ganancia.</p>
 </section>
 
+{% if encadenar %}
+<section class="panel">
+  <h2>Fletes que se pueden encadenar</h2>
+  <ul class="frases">
+    {% for x in encadenar %}<li>El {{ x.dia }}, {{ x.a }} y después {{ x.b }}: se ahorran unos {{ x.km }} km vacíos sin cambiar el precio.</li>{% endfor %}
+  </ul>
+</section>
+{% endif %}
+
 <section class="panel">
   <h2>¿Qué pasa si…?</h2>
   {% if v.exploratorio %}<p class="aviso">{{ icono("aviso") }}<span>Escenarios exploratorios: el margen, las horas o la conversión todavía tienen pocos datos. Sirven para comparar, no para decidir.</span></p>{% endif %}

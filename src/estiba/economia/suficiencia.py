@@ -339,7 +339,7 @@ def mostrar(valor: float | Decimal | None, s: Suficiencia, unidad: str = "$") ->
             return f"entre {fmt(s.lo, paso_fino)} y {fmt(s.hi, paso_fino)}"
         if s.lo is not None:
             return f"~{fmt(valor, paso_fino)} (pocos datos)"
-        return f"~{fmt(valor, paso_fino * 5)} (supuesto)"
+        return f"~{fmt(valor, paso_fino * 5)} ({'un solo dato' if s.n == 1 else 'supuesto'})"
     if s.estado is Estado.EMERGENTE:
         return f"~{fmt(valor, paso_fino * 5)}"
     return fmt(valor, paso_fino)

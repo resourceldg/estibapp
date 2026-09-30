@@ -61,6 +61,7 @@ from estiba.extraction.texto import plano
 from estiba.finanzas.precio import BASE_DEFAULT
 from estiba.economia import cargar as eco
 from estiba.economia import evidencia
+from estiba.economia import historia
 from estiba.economia import optimizar
 from estiba.economia import mes as eco_mes
 from estiba.economia import registro
@@ -1587,6 +1588,7 @@ def create_app(
         puntos = optimizar.curva(e, b, hoy)
         sim = optimizar.simular_mes(e, b, hoy, [float(f.cobrado) for f in fletes if f.cobrado],
                                     [float(f.km) for f in fletes])
+        nombres = _fletes()
         return templates.TemplateResponse(
             request, "plan.html",
             _contexto(request, v=EV.vista_plan(rec, optimizar.escenarios(
@@ -1596,8 +1598,52 @@ def create_app(
                                                    puntos, float(e.disponibilidad.valor_hora_libre)
                                                    if e.disponibilidad.valor_hora_libre else None),
                                                optimizar.mejor_por_hora(puntos), sim, m),
+                      encadenar=[{"a": nombres[x.primero].quien if x.primero in nombres else x.primero,
+                                  "b": nombres[x.segundo].quien if x.segundo in nombres else x.segundo,
+                                  "dia": x.dia.strftime("%d/%m"), "km": round(x.ahorro_km)}
+                                 for x in _encadenables(e)],
                       titulo="¿Qué pasa si…?"),
         )
+
+    def _historia_aprendida(e, hoy):
+        """Segmentos, canales, jornadas, LTV y oportunidad: cada uno con su suficiencia."""
+        fletes = _fletes_eco(e)
+        conn = estado.conectar()
+        try:
+            reales = FleteRealRepository(conn).todos()
+        finally:
+            conn.close()
+        cliente_de = {f.job_id: f.job_id.split(":job")[0] for f in fletes}
+        segmento_de, canal_de, cac_de_cliente = {}, {}, {}
+        for f in fletes:
+            par = estado.resultado.fletes.get(f.job_id)
+            job = par[0].job if par else None
+            segmento_de[f.job_id] = historia.segmento(
+                f.km, job.origin.value if job and job.origin else None,
+                job.destination.value if job and job.destination else None,
+                job.items.value if job and job.items else None)
+            ev = estado.resultado.evaluaciones.get(f.job_id)
+            r = reales.get(f.job_id)
+            canal_de[f.job_id] = r.canal if r else registro.canal_inferido(
+                bool(ev and ev.cliente.recurrente), bool(ev and ev.cliente.por_publicidad))
+            if ev is not None and ev.cac.monto:
+                cac_de_cliente.setdefault(cliente_de[f.job_id], ev.cac.monto)
+        uso = e.costos.costo_km
+        grupos_j, conclusion_j = historia.jornadas(fletes, uso, cliente_de, hoy)
+        oportunidad = historia.costo_oportunidad_disponible(fletes, hoy)
+        return EV.vista_historia(
+            historia.por_segmento(fletes, segmento_de, uso, cliente_de, hoy),
+            historia.por_canal(fletes, canal_de, uso, cliente_de, hoy),
+            grupos_j, conclusion_j, historia.ltv(fletes, cliente_de, cac_de_cliente, uso), oportunidad)
+
+    def _encadenables(e):
+        pedidos = []
+        for job_id, (ev, _) in estado.resultado.fletes.items():
+            if ev.job.state in (JobState.DONE, JobState.CANCELLED) or ev.presupuesto is None or not ev.job.when:
+                continue
+            d = ev.presupuesto.detalle or {}
+            pedidos.append((job_id, ev.job.when.value, d.get("tramos"), d.get("puntos")))
+        return historia.encadenables(pedidos, float(e.costos.factor_calles))
 
     @app.get("/numeros/validacion", response_class=HTMLResponse, include_in_schema=False)
     def pagina_validacion(request: Request):
@@ -1605,7 +1651,8 @@ def create_app(
         v = evidencia.validar(e, cat, hoy)
         return templates.TemplateResponse(
             request, "validacion.html",
-            _contexto(request, v=v, metricas=EV.vista_catalogo(cat), titulo="¿Vale la pena?"),
+            _contexto(request, v=v, metricas=EV.vista_catalogo(cat), h=_historia_aprendida(e, hoy),
+                      titulo="¿Vale la pena?"),
         )
 
     def _prioridades() -> tuple[str, ...]:

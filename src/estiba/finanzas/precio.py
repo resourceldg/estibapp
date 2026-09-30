@@ -134,6 +134,7 @@ class PrecioPorObjetivos:
         minimo = camioneta + horas * fijos_hora + pub + ayudantes
         p.detalle = {
             "tramos": p.detalle.get("tramos"),
+            "puntos": p.detalle.get("puntos"),
             "km": km, "horas": horas, "manejo": manejo, "carga": carga,
             "paradas": paradas,
             "partes": [("Camioneta", camioneta), ("Tu trabajo", trabajo),
@@ -174,6 +175,8 @@ class PrecioPorObjetivos:
         # Por tramo, para saber cuantos km se andan sin carga (ida y vuelta).
         p.detalle["tramos"] = {k: (Decimal(str(v)) * c.factor_calles).quantize(Decimal("0.1"), ROUND_HALF_UP)
                                for k, v in tramos.items()}
+        # Para encadenar fletes del mismo dia: donde empieza y donde termina.
+        p.detalle["puntos"] = {"origen": desde.punto, "destino": hasta.punto}
         paradas = [
             ("Casa", True),
             (desde.como.split(",")[0], desde.precision != CALLE),

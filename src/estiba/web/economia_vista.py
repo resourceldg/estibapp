@@ -383,3 +383,30 @@ def vista_plan(rec, escenarios, puntos, marginales, conviene_hasta, mejor, sim, 
                 "p90": plata(Decimal(str(sim.p90))), "se_paga": _pct(sim.p_se_paga),
                 "rotura": _pct(sim.con_rotura), "entradas": sim.entradas, "exploratoria": sim.exploratoria},
     }
+
+
+# --------------------------------------------------------------------------
+# Lo que se aprende de la historia
+# --------------------------------------------------------------------------
+
+
+def _fila_grupo(g) -> dict:
+    from estiba.economia.suficiencia import mostrar
+
+    s = g.margen_hora
+    return {"nombre": g.nombre, "n": g.n, "estado": s.estado.etiqueta,
+            "valor": mostrar(s.valor, s) if s.valor is not None else "—",
+            "nota": "" if s.fuerte else (s.razones[0] if s.razones else s.falta)}
+
+
+def vista_historia(segmentos, canales, jornadas, conclusion_jornadas, valores, oportunidad) -> dict:
+    ok_oportunidad, porque = oportunidad
+    return {
+        "segmentos": [_fila_grupo(g) for g in segmentos],
+        "canales": [_fila_grupo(g) for g in canales],
+        "jornadas": [_fila_grupo(g) for g in jornadas],
+        "conclusion_jornadas": conclusion_jornadas or "Todavía no hay jornadas suficientes para comparar.",
+        "ltv": [{"cliente": v.cliente, "fletes": v.fletes, "margen": plata(v.margen), "cac": plata(v.cac),
+                 "ltv": plata(v.ltv)} for v in valores[:8]],
+        "oportunidad": "Se calcula con la historia." if ok_oportunidad else f"Todavía no: {porque}.",
+    }
