@@ -359,3 +359,15 @@ if (matchMedia("(min-width: 1100px)").matches) {
     }
   });
 })();
+
+// Recuperacion: "Abrir en WhatsApp" abre el chat con el mensaje escrito
+// (lo mandas vos desde el celular o WhatsApp Web) y deja anotado que salio.
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-abrir-wa]");
+  if (!b) return;
+  const form = b.closest("form");
+  const texto = form.querySelector("textarea[name=texto]").value;
+  window.open(`https://wa.me/${b.dataset.abrirWa}?text=${encodeURIComponent(texto)}`, "_blank", "noopener");
+  form.action = b.dataset.copiado;
+  form.submit();
+});

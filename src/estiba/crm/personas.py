@@ -46,6 +46,7 @@ EVENTOS = {
     "dificil": "Difícil de coordinar",
     "origen": "Origen",
     "programado": "Seguimiento programado",
+    "recuperado": "Recuperado (contrató por otro lado)",
 }
 
 

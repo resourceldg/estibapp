@@ -176,3 +176,149 @@ class TestFicha:
         assert web.post(f"/clientes/{chat}/evento", data={"tipo": "inventado"}).status_code == 422
         assert web.post(f"/clientes/{chat}/evento", data={"tipo": "reputacion", "valor": "300"}).status_code == 422
         assert "no-contactar" in web.get("/clientes?situacion=no-contactar").text
+
+
+# --------------------------------------------------------------------------
+# Cola, plantillas y secuencias
+# --------------------------------------------------------------------------
+
+from datetime import timedelta  # noqa: E402
+
+from estiba.crm import recuperacion as R  # noqa: E402
+
+
+def _perdida_en(codigo, dia, decidida=True, silencio=False):
+    return Perdida(codigo, codigo, None, None, datetime(2026, 9, dia, 12), decidida, silencio)
+
+
+def _perdido(n, dia, codigo, alcanzo=Stage.QUOTED, decidida=True, silencio=False):
+    return _op(n, Stage.LOST, dia, alcanzo=alcanzo, perdida=_perdida_en(codigo, dia, decidida, silencio))
+
+
+def _rc(id_, dia, estado="enviado", hora=10):
+    return PS.Recontacto(id_, "precio", "precio", 1, "hola", estado, datetime(2026, 9, dia, 9),
+                         datetime(2026, 9, dia, hora) if estado != "preparado" else None)
+
+
+def _persona(ops, eventos=(), recontactos=(), ultimo_suyo=None, nombre="Juan Pérez"):
+    p = _p(ops, eventos)
+    p.nombre, p.recontactos, p.ultimo_suyo = nombre, list(recontactos), ultimo_suyo
+    return p
+
+
+HOY = datetime(2026, 9, 30, 12)
+
+
+class TestPlantillas:
+    def test_completa_variables_y_no_deja_huecos(self):
+        p = _persona([_perdido(1, 20, "precio")])
+        v = R.variables(p, p.oportunidades[0], HOY.date())
+        assert R.redactar("Hola {{nombre}}, de {{origen}} a {{destino}} ({{precio_anterior}})", v) == \
+            "Hola Juan, de A a B ($40.000)"
+        p.nombre = None
+        assert R.redactar("Hola {{nombre}}, ¿cómo estás?", R.variables(p, None, HOY.date())) == "Hola, ¿cómo estás?"
+
+    def test_ninguna_plantilla_promete_descuentos(self):
+        assert not any("descuento" in pl["texto"].lower() for pl in R.PLANTILLAS.values())
+
+
+class TestCola:
+    def test_un_hola_sin_presupuesto_no_se_persigue(self):
+        hola = _perdido(1, 1, "no-respondio", alcanzo=Stage.NEW, decidida=False, silencio=True)
+        assert R.item_de(_persona([hola]), HOY) is None
+
+    def test_lo_que_no_se_arregla_escribiendo_no_entra(self):
+        assert R.item_de(_persona([_perdido(1, 1, "zona")]), HOY) is None
+
+    def test_perdido_por_precio_entra_a_los_siete_dias(self):
+        assert R.item_de(_persona([_perdido(1, 27, "precio")]), HOY).estado == R.PROGRAMADO
+        item = R.item_de(_persona([_perdido(1, 20, "precio")]), HOY)
+        assert (item.estado, item.plantilla, item.paso, item.pasos) == (R.PENDIENTE, "precio", 1, 3)
+
+    def test_caso_b_sin_lugar_vale_mas_y_espera_treinta_dias(self):
+        sin_lugar = R.item_de(_persona([_perdido(1, 20, "sin-lugar")]), HOY)
+        consultaba = R.item_de(_persona([_perdido(1, 1, "consultaba")]), HOY + timedelta(days=60))
+        assert sin_lugar.estado == R.PROGRAMADO and sin_lugar.debido == datetime(2026, 10, 20).date()
+        assert sin_lugar.puntaje > consultaba.puntaje
+        assert any("lo quería hacer" in t for _, t in sin_lugar.motivos)
+
+    def test_caso_c_cliente_anterior_a_los_noventa_dias(self):
+        p = _persona([_op(1, Stage.DONE, 1), _op(2, Stage.DONE, 2), _op(3, Stage.DONE, 3)])
+        assert R.item_de(p, HOY).estado == R.PROGRAMADO
+        item = R.item_de(p, HOY + timedelta(days=90))
+        assert item.estado == R.PENDIENTE and item.plantilla == "cliente-anterior"
+        assert any("cliente anterior" in t for _, t in item.motivos)
+
+    def test_caso_d_no_contactar_lo_saca_en_el_momento(self):
+        p = _persona([_perdido(1, 20, "precio")], [("no_contactar", None, "no me escribas más")])
+        assert R.item_de(p, HOY).estado == R.NO_CONTACTAR
+        assert R.NO_CONTACTAR not in R.ACCIONABLES
+
+    def test_se_detiene_si_responde(self):
+        p = _persona([_perdido(1, 1, "precio")], recontactos=[_rc(1, 10)], ultimo_suyo=datetime(2026, 9, 11, 8))
+        assert R.item_de(p, HOY).estado == R.RESPONDIO
+
+    def test_se_detiene_si_contrata(self):
+        p = _persona([_perdido(1, 1, "precio"), _op(2, Stage.DONE, 15)], recontactos=[_rc(1, 10)])
+        # La ultima oportunidad es un flete hecho: ya no esta perdido; y el resumen lo cuenta recuperado.
+        p2 = _persona([_perdido(1, 1, "precio")], [("recuperado", None, None)], recontactos=[_rc(1, 10)])
+        assert R.item_de(p2, HOY).estado == R.RECUPERADO
+        assert p.recuperado
+
+    def test_despues_de_enviar_espera_el_paso_siguiente_y_el_intervalo(self):
+        p = _persona([_perdido(1, 1, "precio")], recontactos=[_rc(1, 28)])
+        item = R.item_de(p, HOY)
+        assert item.estado == R.ENVIADO and item.paso == 2 and item.debido >= datetime(2026, 10, 5).date()
+
+    def test_no_duplica_un_mensaje_preparado(self):
+        p = _persona([_perdido(1, 1, "precio")], recontactos=[_rc(1, 29, "preparado")])
+        assert R.item_de(p, HOY).estado == R.PREPARADO
+
+    def test_se_cierra_al_agotar_la_secuencia_o_el_tope(self):
+        p = _persona([_perdido(1, 1, "consultaba")], recontactos=[_rc(1, 5)])
+        assert R.item_de(p, HOY).estado == R.CADUCADO
+        tope = R.Reglas(max_por_persona=1)
+        p = _persona([_perdido(1, 1, "precio")], recontactos=[_rc(1, 5)])
+        assert R.item_de(p, HOY + timedelta(days=60), tope).estado == R.CADUCADO
+
+    def test_la_cola_pone_primero_lo_de_hoy(self):
+        gente = [_persona([_perdido(1, 27, "precio")]), _persona([_perdido(1, 20, "precio")])]
+        assert [i.estado for i in R.cola(gente, HOY)] == [R.PENDIENTE, R.PROGRAMADO]
+
+
+class TestFlujoWeb:
+    """Caso A completo por la pantalla: perdido, preparar, mandar (copiado) y nunca dos veces."""
+
+    def test_preparar_copiar_y_no_repetir(self, web):
+        job, chat = "5491155556666:job", "5491155556666"
+        web.post(f"/fletes/{job}/perdido", data={"motivo": "sin-lugar"})
+        web.post(f"/clientes/{chat}/evento", data={"tipo": "programado", "valor": "2026-09-18"})
+        html = web.get("/recuperacion?ver=todos").text
+        assert f'id="p-{chat}"' in html
+        # Todavia no tocan los 30 dias: no se puede preparar si no esta pendiente? Se puede igual.
+        r = web.post(f"/recuperacion/{chat}/preparar", data={"plantilla": "sin-lugar"})
+        assert r.status_code in (200, 303)
+        html = web.get("/recuperacion?ver=hoy").text
+        assert "no tenía lugar" in html and "Enviar por WhatsApp" not in html   # sin WhatsApp conectado
+        conn = connect(web.app.state.estado.db)
+        rid = conn.execute("SELECT id FROM recontactos WHERE chat_id = ?", (chat,)).fetchone()[0]
+        conn.close()
+        assert web.post(f"/recontactos/{rid}/enviar", data={"texto": "hola"}).status_code == 409
+        assert web.post(f"/recontactos/{rid}/copiado", data={"texto": "hola editado"}).status_code in (200, 303)
+        assert web.post(f"/recontactos/{rid}/copiado", data={"texto": "otra vez"}).status_code == 409
+        assert "Mensaje de recuperación" in web.get(f"/clientes/{chat}").text
+
+    def test_no_contactar_bloquea_preparar(self, web):
+        job, chat = "5491155556666:job", "5491155556666"
+        web.post(f"/fletes/{job}/perdido", data={"motivo": "precio"})
+        web.post(f"/clientes/{chat}/evento", data={"tipo": "no_contactar"})
+        assert web.post(f"/recuperacion/{chat}/preparar").status_code == 409
+
+    def test_las_plantillas_se_editan_desde_la_app(self, web):
+        html = web.get("/recuperacion/plantillas").text
+        assert "Perdido por precio" in html
+        datos = {"p-precio-texto": "Hola {{nombre}}, texto nuevo", "s-precio-0-dias": "10"}
+        assert web.post("/recuperacion/plantillas", data=datos).status_code in (200, 303)
+        html = web.get("/recuperacion/plantillas").text
+        assert "texto nuevo" in html and 'value="10"' in html
+        assert web.post("/recuperacion/plantillas", data={"s-precio-0-dias": "9999"}).status_code == 422

@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icono %}
+{% block contenido %}
+{# La cola de recuperacion. Una tarjeta por persona, ordenadas por lo que
+   pide hacer algo hoy y por puntaje. Una sola accion principal por tarjeta
+   (la que toca segun el estado); lo demas, plegado. Nada sale solo: se
+   prepara, se revisa y se manda o se copia. Ver docs/recuperacion.md. #}
+<div class="encabezado">
+  <h1>Recuperación</h1>
+  <p class="bajada">Gente que no contrató y a la que tiene sentido volver a escribirle, cuando tiene sentido. Nada sale solo.</p>
+  <nav class="periodos" aria-label="Qué mirar">
+    {% for clave, etq in filtros %}
+    <a href="?ver={{ clave }}" {% if clave == ver %}aria-current="true"{% endif %}>{{ etq }}{% if cuenta.get(clave) %} <span class="cuenta-tenue">{{ cuenta[clave] }}</span>{% endif %}</a>
+    {% endfor %}
+  </nav>
+  <form class="filtros-cola" method="get">
+    <input type="hidden" name="ver" value="{{ ver }}">
+    <select name="motivo" onchange="this.form.submit()" aria-label="Motivo">
+      <option value="">Cualquier motivo</option>
+      {% for m in motivos %}<option{% if m == motivo %} selected{% endif %}>{{ m }}</option>{% endfor %}
+    </select>
+    <select name="previo" onchange="this.form.submit()" aria-label="Cliente anterior">
+      <option value="">Clientes y no clientes</option>
+      <option value="si"{% if previo == "si" %} selected{% endif %}>Ya contrataron antes</option>
+      <option value="no"{% if previo == "no" %} selected{% endif %}>Nunca contrataron</option>
+    </select>
+    {% if etiquetas %}
+    <select name="etiqueta" onchange="this.form.submit()" aria-label="Etiqueta">
+      <option value="">Cualquier etiqueta</option>
+      {% for e in etiquetas %}<option value="{{ e }}"{% if e == etiqueta %} selected{% endif %}>{{ e|replace("_", " ") }}</option>{% endfor %}
+    </select>
+    {% endif %}
+    <a class="btn fantasma chico" href="/recuperacion/plantillas">Plantillas y secuencias</a>
+  </form>
+</div>
+
+{% if not en_horario %}<p class="aviso">{{ icono("aviso") }}<span>Fuera de horario: se puede preparar, pero se manda entre las 9 y las 20.</span></p>{% endif %}
+
+{% if items %}
+<ul class="cola">
+  {% for i in items %}
+  {% set p = i.persona %}{% set o = i.oportunidad %}
+  <li class="cola-item estado-{{ i.estado|lower|replace(' ', '-')|replace('ó', 'o') }}" id="p-{{ p.chat_id }}">
+    <div class="cola-cab">
+      <div class="cola-quien">
+        <a href="/clientes/{{ p.chat_id }}"><strong>{{ p.nombre or p.telefono }}</strong></a>
+        <span class="cola-sub">{% if p.nombre %}{{ p.telefono }} · {% endif %}{{ p.situacion }}{% if o and o.ruta and "¿?" not in o.ruta %} · {{ o.ruta }}{% endif %}</span>
+      </div>
+      <span class="cola-puntaje" title="{% for s, t in i.motivos %}{{ s }} {{ t }}&#10;{% endfor %}">{{ i.puntaje }}</span>
+    </div>
+    <p class="cola-datos">
+      <span class="chip-motivo">{{ i.motivo }}</span>
+      <span>{{ i.estado }}{% if i.estado == "Programado" and i.debido %} para el {{ i.debido.strftime("%d/%m") }}{% elif i.estado == "Enviado" and i.ultimo_enviado %} el {{ i.ultimo_enviado.decidido.strftime("%d/%m") }}{% endif %}</span>
+      {% if i.paso and i.estado in ("Pendiente", "Programado", "Enviado") %}<span>paso {{ i.paso }} de {{ i.pasos }} · {{ secuencias[i.secuencia].nombre }}</span>{% endif %}
+      <span>hace {{ (hoy - i.base.date()).days }} días</span>
+      {% if o and o.cotizado %}<span>presupuesto {{ o.cotizado|int|pesos }}</span>{% endif %}
+      {% if i.intentos %}<span>{{ i.intentos }} {{ "mensaje" if i.intentos == 1 else "mensajes" }} sin respuesta{% if i.estado == "Respondió" %} · respondió{% endif %}</span>{% endif %}
+    </p>
+    <details class="cola-porque"><summary>Por qué este puntaje</summary>
+      <ul class="motivos-rep">{% for s, t in i.motivos %}<li class="signo-{{ 'mas' if s == '+' else 'menos' }}"><b>{{ s }}</b> {{ t }}</li>{% endfor %}</ul>
+    </details>
+
+    {# La accion principal, segun el estado. #}
+    {% if i.estado == "Mensaje preparado" and i.preparado %}
+    <form class="cola-mensaje" method="post" action="/recontactos/{{ i.preparado.id }}/enviar">
+      <textarea name="texto" rows="4" aria-label="Mensaje">{{ i.preparado.texto }}</textarea>
+      <div class="cola-acciones">
+        {% if envio_directo %}<button class="btn primario" type="submit"{% if not en_horario %} disabled{% endif %}>{{ icono("check") }}<span>Enviar por WhatsApp</span></button>{% endif %}
+        <button class="btn secundario" type="button" data-abrir-wa="{{ p.chat_id.split('@')[0] }}" data-copiado="/recontactos/{{ i.preparado.id }}/copiado">Abrir en WhatsApp</button>
+        <button class="btn fantasma chico" type="submit" formaction="/recontactos/{{ i.preparado.id }}/descartar">Descartar</button>
+      </div>
+      <p class="nota">Plantilla "{{ plantillas[i.preparado.plantilla].nombre if i.preparado.plantilla in plantillas else i.preparado.plantilla }}". Revisalo antes: lo que diga sale con tu nombre.</p>
+    </form>
+    {% elif i.estado == "Respondió" %}
+    <div class="cola-acciones">
+      <a class="btn primario" href="/fletes/{{ p.oportunidades[-1].job_id }}">{{ icono("chat") }}<span>Contestó: abrir la charla</span></a>
+    </div>
+    {% elif i.estado == "Pendiente" %}
+    <form class="cola-acciones" method="post" action="/recuperacion/{{ p.chat_id }}/preparar">
+      <button class="btn primario" type="submit">Preparar mensaje</button>
+      <select name="plantilla" aria-label="Plantilla">
+        {% for clave, pl in plantillas.items() %}<option value="{{ clave }}"{% if clave == i.plantilla %} selected{% endif %}>{{ pl.nombre }}</option>{% endfor %}
+      </select>
+    </form>
+    {% endif %}
+
+    <details class="cola-mas">
+      <summary>Más</summary>
+      <div class="cola-acciones">
+        <a class="btn fantasma chico" href="/clientes/{{ p.chat_id }}">Ver cliente</a>
+        {% if o and o.perdida_ok %}<a class="btn fantasma chico" href="/fletes/{{ o.job_id }}#motivo">Editar motivo</a>{% endif %}
+        {% if i.estado not in ("Recuperado", "No contactar", "No interesado") %}
+        <form method="post" action="/clientes/{{ p.chat_id }}/evento" class="form-linea">
+          <input type="hidden" name="tipo" value="programado">
+          <input type="date" name="valor" required aria-label="Volver a escribirle desde">
+          <button class="btn fantasma chico" type="submit">Programar</button>
+        </form>
+        <form method="post" action="/clientes/{{ p.chat_id }}/evento"><input type="hidden" name="tipo" value="recuperado"><button class="btn fantasma chico" type="submit">Marcar recuperado</button></form>
+        <form method="post" action="/clientes/{{ p.chat_id }}/evento"><input type="hidden" name="tipo" value="no_interesado"><button class="btn fantasma chico" type="submit">No le interesa</button></form>
+        <form method="post" action="/clientes/{{ p.chat_id }}/evento"><input type="hidden" name="tipo" value="no_contactar"><button class="btn fantasma peligro chico" type="submit">No contactar</button></form>
+        {% endif %}
+      </div>
+    </details>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<div class="vacio">
+  <div class="vacio-ico neutro">{{ icono("clientes") }}</div>
+  <h2>Nada para hacer acá</h2>
+  <p>{% if ver == "hoy" %}Hoy no hay a quién escribirle. Lo que viene está en Programados.{% else %}Nadie con este filtro.{% endif %}</p>
+</div>
+{% endif %}
+{% endblock %}

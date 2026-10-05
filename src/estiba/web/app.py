@@ -71,7 +71,7 @@ from estiba.economia.cuentas import Actividad
 from estiba.economia.cuentas import cuentas as cuentas_economia
 from estiba.economia.config import Camioneta, Credito, Disponibilidad, Fondo, a_json
 from estiba.bandeja.avisos import merece_aviso
-from estiba.crm import personas
+from estiba.crm import personas, recuperacion
 from estiba.crm.perdida import perdida_de
 from estiba.web import economia_vista as EV
 from estiba.formato import pesos, telefono
@@ -2090,6 +2090,209 @@ def create_app(
             media_type="text/csv; charset=utf-8",
             headers={"Content-Disposition": f'attachment; filename="{nombre}.csv"'},
         )
+
+    # ------------------------------------------------------------------
+    # Recuperacion: volver a escribirle a quien no contrato (docs/recuperacion.md)
+    # ------------------------------------------------------------------
+
+    def _config_recuperacion() -> tuple[dict, dict]:
+        """Plantillas y secuencias: las de fabrica, con lo que se edito encima."""
+        conn = estado.conectar()
+        try:
+            guardado = SettingsRepository(conn).json("recuperacion") or {}
+        finally:
+            conn.close()
+        plantillas = {k: dict(v) for k, v in recuperacion.PLANTILLAS.items()}
+        for k, v in (guardado.get("plantillas") or {}).items():
+            plantillas.setdefault(k, {}).update(v)
+        secuencias = {k: dict(v) for k, v in recuperacion.SECUENCIAS.items()}
+        for k, v in (guardado.get("secuencias") or {}).items():
+            if k in secuencias:
+                secuencias[k].update(v)
+        return plantillas, secuencias
+
+    FILTROS_COLA = [("hoy", "Para hacer hoy"), ("programados", "Programados"), ("enviados", "Enviados"),
+                    ("recuperados", "Recuperados"), ("todos", "Todos")]
+
+    @app.get("/recuperacion", response_class=HTMLResponse, include_in_schema=False)
+    def pagina_recuperacion(request: Request, ver: str = "hoy", motivo: str = "", previo: str = "",
+                            etiqueta: str = ""):
+        plantillas, secuencias = _config_recuperacion()
+        gente = list(_personas().values())
+        ahora = estado.ahora()
+        items = recuperacion.cola(gente, ahora, secuencias=secuencias)
+        grupos = {"hoy": recuperacion.ACCIONABLES, "programados": (recuperacion.PROGRAMADO,),
+                  "enviados": (recuperacion.ENVIADO,), "recuperados": (recuperacion.RECUPERADO,)}
+        vista = [i for i in items
+                 if (ver == "todos" or i.estado in grupos.get(ver, recuperacion.ACCIONABLES))
+                 and (not motivo or i.motivo == motivo)
+                 and (not previo or (previo == "si") == bool(i.persona.completados))
+                 and (not etiqueta or etiqueta in i.persona.etiquetas)]
+        return templates.TemplateResponse(
+            request, "recuperacion.html",
+            _contexto(request, items=vista, cuenta={k: sum(1 for i in items if i.estado in v)
+                                                     for k, v in grupos.items()},
+                      ver=ver, filtros=FILTROS_COLA, motivo=motivo, previo=previo, etiqueta=etiqueta,
+                      motivos=sorted({i.motivo for i in items}),
+                      etiquetas=sorted({e for i in items for e in i.persona.etiquetas}),
+                      plantillas=plantillas, secuencias=secuencias, hoy=ahora.date(),
+                      en_horario=recuperacion.REGLAS.en_horario(ahora), envio_directo=estado.whatsapp is not None,
+                      titulo="Recuperación"))
+
+    @app.get("/recuperacion/plantillas", response_class=HTMLResponse, include_in_schema=False)
+    def pagina_plantillas(request: Request):
+        plantillas, secuencias = _config_recuperacion()
+        return templates.TemplateResponse(
+            request, "plantillas.html",
+            _contexto(request, plantillas=plantillas, secuencias=secuencias, reglas=recuperacion.REGLAS,
+                      variables=["nombre", "origen", "destino", "fecha_consulta", "precio_anterior",
+                                 "dias_desde_consulta", "tipo_flete"],
+                      titulo="Plantillas y secuencias"))
+
+    @app.post("/recuperacion/plantillas", include_in_schema=False)
+    async def guardar_plantillas(request: Request):
+        """Textos y dias editados. Lo de fabrica queda debajo: borrar un texto lo vuelve al original."""
+        form = await request.form()
+        plantillas, secuencias = _config_recuperacion()
+        guardar: dict = {"plantillas": {}, "secuencias": {}}
+        for clave in plantillas:
+            nombre = str(form.get(f"p-{clave}-nombre", "")).strip()
+            texto = str(form.get(f"p-{clave}-texto", "")).strip()
+            original = recuperacion.PLANTILLAS.get(clave, {})
+            cambio = {k: v for k, v in (("nombre", nombre), ("texto", texto)) if v and v != original.get(k)}
+            if cambio:
+                guardar["plantillas"][clave] = cambio
+        nueva = re.sub(r"[^a-z0-9-]+", "-", plano(str(form.get("nueva-clave", ""))).lower()).strip("-")
+        if nueva and str(form.get("nueva-texto", "")).strip():
+            guardar["plantillas"][nueva] = {"nombre": str(form.get("nueva-nombre", "")).strip() or nueva,
+                                            "texto": str(form.get("nueva-texto", "")).strip()}
+        for clave, sec in secuencias.items():
+            pasos = []
+            for i, (dias, plantilla) in enumerate(sec["pasos"]):
+                d = str(form.get(f"s-{clave}-{i}-dias", dias)).strip()
+                pl = str(form.get(f"s-{clave}-{i}-plantilla", plantilla))
+                if not d.isdigit() or not 1 <= int(d) <= 730:
+                    raise HTTPException(422, "los días van de 1 a 730")
+                if pl not in plantillas and pl not in guardar["plantillas"]:
+                    raise HTTPException(422, f"no hay una plantilla {pl}")
+                pasos.append([int(d), pl])
+            if pasos != recuperacion.SECUENCIAS[clave]["pasos"]:
+                guardar["secuencias"][clave] = {"pasos": pasos}
+        conn = estado.conectar()
+        try:
+            SettingsRepository(conn).guardar_json("recuperacion", guardar)
+        finally:
+            conn.close()
+        return RedirectResponse("/recuperacion/plantillas", status_code=303)
+
+    @app.post("/recuperacion/{chat_id}/preparar", include_in_schema=False)
+    def preparar_recontacto(request: Request, chat_id: str, plantilla: str = Form("")):
+        """Escribe el mensaje con la plantilla del paso (o la elegida). No lo manda."""
+        plantillas, secuencias = _config_recuperacion()
+        p = _personas().get(chat_id)
+        if p is None:
+            raise HTTPException(404, f"no hay una persona {chat_id}")
+        item = recuperacion.item_de(p, estado.ahora(), secuencias=secuencias)
+        if item is None or item.estado in (recuperacion.NO_CONTACTAR, recuperacion.NO_INTERESADO,
+                                           recuperacion.RECUPERADO, recuperacion.CADUCADO):
+            raise HTTPException(409, "a esta persona no corresponde escribirle ahora")
+        clave = plantilla or item.plantilla or "consulta-antigua"
+        if clave not in plantillas:
+            raise HTTPException(422, f"no hay una plantilla {clave}")
+        texto = recuperacion.redactar(plantillas[clave]["texto"],
+                                      recuperacion.variables(p, item.oportunidad, estado.ahora().date()))
+        conn = estado.conectar()
+        try:
+            RecontactoRepository(conn).preparar(chat_id, item.oportunidad.job_id if item.oportunidad else None,
+                                                clave, item.secuencia, item.paso, texto, estado.ahora())
+        finally:
+            conn.close()
+        return _volver(request, f"/recuperacion#p-{chat_id}")
+
+    def _fijar_perdida(job_id: str | None) -> None:
+        """Al escribirle, el pedido viejo queda cerrado de verdad.
+
+        Un perdido por silencio se recalcula desde el ultimo mensaje: el
+        nuestro lo "reabria" y la bandeja proponia otro seguimiento encima.
+        Se anota "no respondio" (lo que paso), justo antes del mensaje.
+        """
+        if not job_id or job_id not in estado.resultado.fletes:
+            return
+        ev, _ = estado.resultado.fletes[job_id]
+        conn = estado.conectar()
+        try:
+            perdida = perdida_de(ev, ActionRepository(conn).for_job(job_id))
+            if perdida is not None and not perdida.decidida:
+                ActionRepository(conn).add(
+                    job_id, PERDIDO, estado.ahora() - timedelta(seconds=1), "estiba",
+                    json.dumps({"motivo": perdida.codigo, "etiqueta": perdida.etiqueta,
+                                "nota": "fijado al volver a escribirle"}, ensure_ascii=False))
+        finally:
+            conn.close()
+
+    def _recontacto(recontacto_id: int):
+        conn = estado.conectar()
+        try:
+            r = RecontactoRepository(conn).get(recontacto_id)
+        finally:
+            conn.close()
+        if r is None or r["estado"] != "preparado":
+            raise HTTPException(409, "ese mensaje ya no está para mandar")
+        p = _personas().get(r["chat_id"])
+        # Se vuelve a mirar al momento de mandar: entre preparar y mandar
+        # pudo pedir que no le escriban, o contestar, o contratar.
+        if p is None or p.no_contactar or p.no_interesado or p.fuera:
+            raise HTTPException(409, "esta persona no quiere que le escriban")
+        return r, p
+
+    @app.post("/recontactos/{recontacto_id}/enviar", include_in_schema=False)
+    def enviar_recontacto(request: Request, recontacto_id: int, texto: str = Form(...)):
+        r, p = _recontacto(recontacto_id)
+        if estado.whatsapp is None:
+            raise HTTPException(409, "WhatsApp no está conectado: copialo y mandalo vos")
+        if not recuperacion.REGLAS.en_horario(estado.ahora()):
+            raise HTTPException(409, "fuera de horario: se manda entre las 9 y las 20")
+        texto = texto.strip()
+        if not texto:
+            raise HTTPException(422, "el mensaje está vacío")
+        _fijar_perdida(r["job_id"])
+        conn = estado.conectar()
+        try:
+            try:
+                enviado = estado.whatsapp.cliente.enviar_texto(r["chat_id"], texto)
+            except ErrorWaha as e:
+                raise HTTPException(502, f"no salió: {e}") from e
+            RecontactoRepository(conn).decidir(recontacto_id, "enviado", estado.ahora(), texto,
+                                               message_id=str((enviado or {}).get("id") or "") or None)
+        finally:
+            conn.close()
+        estado.sincronizar()
+        return _volver(request, "/recuperacion")
+
+    @app.post("/recontactos/{recontacto_id}/copiado", include_in_schema=False)
+    def copiado_recontacto(request: Request, recontacto_id: int, texto: str = Form(...)):
+        """Lo mandaste vos desde el celular (copiado o abierto en WhatsApp)."""
+        r, p = _recontacto(recontacto_id)
+        _fijar_perdida(r["job_id"])
+        conn = estado.conectar()
+        try:
+            RecontactoRepository(conn).decidir(recontacto_id, "copiado", estado.ahora(), texto.strip() or None)
+        finally:
+            conn.close()
+        estado.sincronizar()
+        return _volver(request, "/recuperacion")
+
+    @app.post("/recontactos/{recontacto_id}/descartar", include_in_schema=False)
+    def descartar_recontacto(request: Request, recontacto_id: int):
+        conn = estado.conectar()
+        try:
+            try:
+                RecontactoRepository(conn).decidir(recontacto_id, "descartado", estado.ahora())
+            except KeyError as e:
+                raise HTTPException(409, str(e)) from e
+        finally:
+            conn.close()
+        return _volver(request, "/recuperacion")
 
     @app.get("/clientes/{chat_id}", response_class=HTMLResponse, include_in_schema=False)
     def pagina_persona(request: Request, chat_id: str):

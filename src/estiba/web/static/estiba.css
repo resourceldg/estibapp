@@ -1969,3 +1969,38 @@ details.leer > p { margin: 6px 0 0; font-size: 13px; line-height: 1.5; color: va
 .filtros-personas { display: flex; flex-wrap: wrap; }
 .filtro-etiquetas .etiqueta { padding: 3px 10px; text-decoration: none; color: var(--tinta-2); }
 .filtro-etiquetas .etiqueta.activa { background: var(--acento); color: #fff; }
+
+/* -------------------------------------------------------- recuperacion */
+.filtros-cola { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+.filtros-cola select { min-height: 38px; padding: 0 10px; border: 1.5px solid var(--linea-2); border-radius: 10px; background: var(--superficie); color: var(--tinta); font: inherit; }
+.cola { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 12px; }
+.cola-item { background: var(--superficie); border: 1px solid var(--linea); border-radius: var(--radio); padding: 14px 16px; border-left: 4px solid var(--linea-2); }
+.cola-item.estado-respondio { border-left-color: var(--ok); }
+.cola-item.estado-mensaje-preparado { border-left-color: var(--acento); }
+.cola-item.estado-pendiente { border-left-color: var(--info); }
+.cola-cab { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.cola-quien a { color: var(--tinta); text-decoration: none; font-size: 16px; }
+.cola-quien a:hover { text-decoration: underline; }
+.cola-sub { display: block; font-size: 13px; color: var(--tenue); }
+.cola-puntaje { flex: none; min-width: 42px; padding: 4px 8px; border-radius: 10px; text-align: center; font-weight: 800; background: var(--superficie-3); cursor: help; }
+.cola-datos { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 8px 0 0; font-size: 13px; color: var(--tinta-2); }
+.chip-motivo { padding: 1px 8px; border-radius: 999px; background: var(--mal-fondo); color: var(--mal); font-weight: 650; }
+.cola-porque > summary, .cola-mas > summary { font-size: 12px; color: var(--tenue); }
+.cola-mensaje textarea { width: 100%; margin-top: 10px; padding: 10px; border: 1.5px solid var(--linea-2); border-radius: 10px; background: var(--superficie-2); color: var(--tinta); font: inherit; resize: vertical; }
+.cola-acciones { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.cola-acciones form { margin: 0; }
+.cola-acciones select { min-height: 40px; padding: 0 10px; border: 1.5px solid var(--linea-2); border-radius: 10px; background: var(--superficie); color: var(--tinta); font: inherit; }
+@media (min-width: 1100px) {
+  .contenido:has(.cola) { max-width: 980px; }
+  .contenido:has(.cola) .encabezado { max-width: none; }
+}
+.plantillas-form { display: grid; gap: 14px; }
+.plantillas-form .panel + .panel { margin-top: 0; }
+.secuencia { border: 0; padding: 0; margin: 12px 0 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.secuencia legend { font-weight: 700; margin-bottom: 6px; }
+.secuencia legend small { color: var(--tenue); font-weight: 500; }
+.paso { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 10px; background: var(--superficie-2); font-size: 13px; }
+.paso input, .paso select, .plantilla input, .plantilla textarea { padding: 6px 8px; border: 1.5px solid var(--linea-2); border-radius: 8px; background: var(--superficie); color: var(--tinta); font: inherit; }
+.plantilla { display: grid; gap: 6px; margin-top: 12px; }
+.plantilla label { display: grid; gap: 3px; font-size: 13px; color: var(--tinta-2); }
+.plantilla textarea { width: 100%; resize: vertical; }

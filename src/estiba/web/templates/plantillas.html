@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icono %}
+{% block contenido %}
+{# Los textos y los tiempos de la recuperacion, editables. Lo de fabrica
+   queda debajo: si se borra un texto vuelve al original. Sin descuentos
+   automaticos: un texto no promete lo que no decidiste. #}
+<a class="volver" href="/recuperacion">{{ icono("volver") }}Recuperación</a>
+<div class="encabezado">
+  <h1>Plantillas y secuencias</h1>
+  <p class="bajada">Los mensajes que Estiba prepara para volver a escribirle a alguien, y cuándo. Variables:
+    {% for v in variables %}<code>{{ "{{" }}{{ v }}{{ "}}" }}</code>{% if not loop.last %} {% endif %}{% endfor %}. Si un dato no está, se saca sin dejar huecos.</p>
+</div>
+
+<form method="post" action="/recuperacion/plantillas" class="plantillas-form">
+  <section class="panel">
+    <h2>Secuencias</h2>
+    <p class="ayuda">Cada secuencia arranca según por qué se perdió el flete (o desde el último flete, para un cliente anterior) y manda como mucho un mensaje por paso. Se corta sola si la persona responde, contrata o pide que no le escriban.</p>
+    {% for clave, s in secuencias.items() %}
+    <fieldset class="secuencia">
+      <legend>{{ s.nombre }}{% if s.motivos %} <small>· {{ s.motivos|join(", ") }}</small>{% endif %}</legend>
+      {% for dias, pl in s.pasos %}
+      <div class="paso">
+        <label>Día <input name="s-{{ clave }}-{{ loop.index0 }}-dias" value="{{ dias }}" inputmode="numeric" size="4"></label>
+        <select name="s-{{ clave }}-{{ loop.index0 }}-plantilla" aria-label="Plantilla">
+          {% for c, p in plantillas.items() %}<option value="{{ c }}"{% if c == pl %} selected{% endif %}>{{ p.nombre }}</option>{% endfor %}
+        </select>
+      </div>
+      {% endfor %}
+    </fieldset>
+    {% endfor %}
+    <p class="nota">Reglas fijas contra el spam: hasta {{ reglas.max_por_persona }} mensajes por persona cada {{ reglas.ventana.days }} días, al menos {{ reglas.intervalo.days }} días entre uno y otro, entre las {{ reglas.desde_hora }} y las {{ reglas.hasta_hora }} h. Nunca a quien marcaste "no contactar".</p>
+  </section>
+
+  <section class="panel">
+    <h2>Plantillas</h2>
+    {% for clave, p in plantillas.items() %}
+    <div class="plantilla">
+      <label>Nombre <input name="p-{{ clave }}-nombre" value="{{ p.nombre }}"></label>
+      <label>Texto <textarea name="p-{{ clave }}-texto" rows="3">{{ p.texto }}</textarea></label>
+    </div>
+    {% endfor %}
+    <details class="plantilla">
+      <summary>Agregar una plantilla</summary>
+      <label>Clave <input name="nueva-clave" placeholder="temporada-verano"></label>
+      <label>Nombre <input name="nueva-nombre"></label>
+      <label>Texto <textarea name="nueva-texto" rows="3"></textarea></label>
+    </details>
+  </section>
+  <button class="btn primario" type="submit">Guardar</button>
+</form>
+{% endblock %}
