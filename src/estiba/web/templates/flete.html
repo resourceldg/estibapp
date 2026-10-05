@@ -307,8 +307,38 @@
         {% endfor %}
       </div>
     </fieldset>
-    <input id="nota-perdido" name="nota" placeholder="Algo más, si hace falta" autocomplete="off">
+    <div class="perder-extra">
+      <label>Comentario <input id="nota-perdido" name="nota" placeholder="Le pasé $85.000 y tenía otra de $65.000" autocomplete="off"></label>
+      <label>Precio de la competencia <span class="opcional">si lo sabés</span>
+        <span class="entrada"><span class="unidad">$</span><input name="competencia" inputmode="numeric" autocomplete="off"></span></label>
+    </div>
     <button class="btn fantasma peligro" type="submit">Dar por perdido</button>
+  </form>
+</details>
+{% elif f.estado == "cancelado" %}
+{# Perdido, por una persona o por el silencio: el motivo se puede anotar o
+   corregir despues ("no respondio" y a la semana se supo que consiguio otro).
+   No cambia el estado: es memoria para la proxima vez. #}
+<details class="panel perder" id="motivo"{% if not perdida or not perdida.codigo %} open{% endif %}>
+  <summary>{{ icono("cruz") }}{% if perdida and perdida.etiqueta %}Perdido: {{ perdida.etiqueta }}{% if perdida.nota %} · {{ perdida.nota }}{% endif %}{% else %}¿Por qué se perdió?{% endif %}</summary>
+  <form method="post" action="/fletes/{{ f.job_id }}/motivo">
+    <fieldset class="motivos-grupo">
+      <legend>Motivo <span class="opcional">sirve para saber si conviene volver a escribirle</span></legend>
+      <div class="motivos">
+        {% for valor, etiqueta in motivos %}
+        <label class="motivo">
+          <input type="radio" name="motivo" value="{{ valor }}"{% if (perdida and perdida.codigo == valor) or (not (perdida and perdida.codigo) and loop.first) %} checked{% endif %}>
+          <span>{{ etiqueta }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </fieldset>
+    <div class="perder-extra">
+      <label>Comentario <input name="nota" value="{{ perdida.nota if perdida and perdida.nota else '' }}" autocomplete="off"></label>
+      <label>Precio de la competencia <span class="opcional">si lo sabés</span>
+        <span class="entrada"><span class="unidad">$</span><input name="competencia" value="{{ perdida.competencia if perdida and perdida.competencia else '' }}" inputmode="numeric" autocomplete="off"></span></label>
+    </div>
+    <button class="btn secundario" type="submit">Guardar motivo</button>
   </form>
 </details>
 {% endif %}

@@ -1909,3 +1909,7 @@ details.leer > p { margin: 6px 0 0; font-size: 13px; line-height: 1.5; color: va
   .grilla td.soltar-aca > a { background: color-mix(in srgb, var(--info) 20%, var(--superficie)); border: 1px dashed var(--info); }
   .grilla td.guardando > a { opacity: .5; }
 }
+.perder-extra { display: grid; gap: 8px; margin: 10px 0; }
+.perder-extra label { display: grid; gap: 4px; font-size: 13px; color: var(--tinta-2); }
+.perder-extra input { min-height: 40px; padding: 0 10px; border: 1.5px solid var(--linea-2); border-radius: 10px; background: var(--superficie); color: var(--tinta); font: inherit; width: 100%; }
+@media (min-width: 560px) { .perder-extra { grid-template-columns: 2fr 1fr; } }

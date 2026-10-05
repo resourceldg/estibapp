@@ -59,7 +59,15 @@ class Embudo:
 
 
 def motivo_corto(motivo: str | None) -> str:
+    """El motivo, para contarlo. Lo que eligio una persona va con su etiqueta;
+    lo que dedujo el silencio, como "Dejó de responder"."""
     m = (motivo or "").lower()
+    if m.startswith("dado por perdido: "):
+        from estiba.jobs.engine import MOTIVOS_PERDIDA
+
+        etiqueta = motivo.split(": ", 2)[1]
+        if etiqueta in {e for _, e in MOTIVOS_PERDIDA}:
+            return etiqueta
     if "sin respuesta" in m:
         return "Dejó de responder"
     if "canceló" in m:

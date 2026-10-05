@@ -676,7 +676,9 @@ class TestPlata:
         conn = connect(db)
         perdidos = [a for a in self._acciones(conn, job) if a.tipo == "perdido"]
         conn.close()
-        assert perdidos and perdidos[0].nota == "Por precio"
+        from estiba.jobs.engine import motivo_de_nota
+
+        assert perdidos and motivo_de_nota(perdidos[0].nota)[:2] == ("precio", "Precio alto")
 
     def test_un_precio_escrito_como_sea_se_entiende(self, cliente, db):
         from decimal import Decimal

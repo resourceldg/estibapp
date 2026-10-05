@@ -91,17 +91,56 @@ CONFIRMADO = "confirmado"
 #: Las que cierran un flete. Son las unicas que se pueden anular.
 CIERRES = (REALIZADO, PERDIDO)
 
-#: Por que no se concreto. Se elige de la lista, no se escribe.
+#: Por que no se concreto. Se elige de la lista, no se escribe. El codigo es
+#: estable (los numeros se cuentan por el); la etiqueta se puede cambiar.
 MOTIVOS_PERDIDA = [
-    ("precio", "Por precio"),
+    ("precio", "Precio alto"),
+    ("otro-flete", "Consiguió otro fletero"),
     ("no-respondio", "No respondió"),
-    ("otro-flete", "Consiguió otro"),
-    ("fecha", "Por la fecha"),
-    ("zona", "Fuera de zona"),
-    ("cancelo", "Canceló"),
-    ("consultaba", "Solo consultaba"),
+    ("fecha", "Cambió de fecha"),
+    ("cancelo", "Canceló la mudanza o el flete"),
+    ("zona", "Distancia"),
+    ("sin-lugar", "No había disponibilidad"),
+    ("vehiculo", "Vehículo no adecuado"),
+    ("horario", "Horario incompatible"),
+    ("desistio", "Desistió"),
+    ("tarde", "El presupuesto salió tarde"),
+    ("consultaba", "Solo consultaba precios"),
     ("otro", "Otro"),
 ]
+#: Como se guardaba antes (la etiqueta como texto): se sigue leyendo.
+_ETIQUETAS_VIEJAS = {
+    "Por precio": "precio", "Consiguió otro": "otro-flete", "No respondió": "no-respondio",
+    "Por la fecha": "fecha", "Fuera de zona": "zona", "Canceló": "cancelo",
+    "Solo consultaba": "consultaba", "Otro": "otro",
+}
+
+#: Anotar (o corregir) por que se perdio un flete ya perdido, sin cambiar
+#: su estado. Sirve para los perdidos por silencio: nadie lo decidio, pero
+#: despues se supo que "consiguio otro".
+MOTIVO = "motivo"
+
+
+def motivo_de_nota(nota: str | None) -> tuple[str | None, str | None, str | None, str | None]:
+    """(codigo, etiqueta, comentario, precio de la competencia) de la nota de un perdido.
+
+    Nota nueva: JSON. Nota vieja: "Etiqueta" o "Etiqueta: comentario".
+    """
+    import json
+
+    if not nota:
+        return None, None, None, None
+    try:
+        d = json.loads(nota)
+        if isinstance(d, dict):
+            return d.get("motivo"), d.get("etiqueta"), d.get("nota"), d.get("competencia")
+    except ValueError:
+        pass
+    etiqueta, _, resto = nota.partition(": ")
+    codigo = _ETIQUETAS_VIEJAS.get(etiqueta) or dict((e, c) for c, e in MOTIVOS_PERDIDA).get(etiqueta)
+    if codigo is None:
+        return None, None, nota, None   # texto libre: un comentario sin motivo de la lista
+    return codigo, etiqueta, resto or None, None
 
 
 @dataclass(frozen=True)
@@ -200,7 +239,9 @@ class JobEngine:
             elif a.tipo == REALIZADO and estado not in _CERRADOS:
                 mover(JobState.DONE, a.at, "marcado como realizado", None)
             elif a.tipo == PERDIDO and estado not in _CERRADOS:
-                causa = "dado por perdido" + (f": {a.nota}" if a.nota else "")
+                _, etiqueta, comentario, _ = motivo_de_nota(a.nota)
+                detalle = ": ".join(x for x in (etiqueta, comentario) if x)
+                causa = "dado por perdido" + (f": {detalle}" if detalle else "")
                 mover(JobState.CANCELLED, a.at, causa, None)
 
         for i, m in enumerate(mensajes):

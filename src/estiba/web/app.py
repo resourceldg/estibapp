@@ -71,6 +71,7 @@ from estiba.economia.cuentas import Actividad
 from estiba.economia.cuentas import cuentas as cuentas_economia
 from estiba.economia.config import Camioneta, Credito, Disponibilidad, Fondo, a_json
 from estiba.bandeja.avisos import merece_aviso
+from estiba.crm.perdida import perdida_de
 from estiba.web import economia_vista as EV
 from estiba.formato import pesos, telefono
 from estiba.jobs import aprendido, episodios
@@ -78,6 +79,7 @@ from estiba.jobs.engine import (
     AJUSTADO,
     CONFIRMADO,
     COTIZADO,
+    MOTIVO,
     MOTIVOS_PERDIDA,
     PERDIDO,
     REALIZADO,
@@ -886,6 +888,11 @@ def create_app(
         finally:
             conn4.close()
         cobrado = cierres[-1].monto if ev_flete.job.state is JobState.DONE and cierres else None
+        conn5 = estado.conectar()
+        try:
+            perdida = perdida_de(ev_flete, ActionRepository(conn5).for_job(job_id))
+        finally:
+            conn5.close()
         cot = P.cotizacion(ev_flete.presupuesto,
                            ev_flete.job.quoted_price.value if ev_flete.job.quoted_price else None, cobrado,
                            job=ev_flete.job, confirmado=ev_flete.precio_confirmado,
@@ -898,6 +905,7 @@ def create_app(
                 canales=registro.CANALES,
                 plazos=PLAZOS, dudosa=bool(clase and clase.pide_decision),
                 motivos=MOTIVOS_PERDIDA,
+                perdida=perdida,
                 clase=guardada["clase"] if guardada else None,
                 sugerido=sugerido,
                 pistas=pistas,
@@ -2099,6 +2107,8 @@ def create_app(
             ANULADO: ev.job.state in (JobState.DONE, JobState.CANCELLED),
             # Confirmar a mano: lo cotizado que el cliente acepto por otro lado.
             CONFIRMADO: ev.job.state in (JobState.QUOTED, JobState.WAITING_CUSTOMER),
+            # Anotar por que se perdio: solo sobre algo perdido.
+            MOTIVO: ev.job.state is JobState.CANCELLED,
         }[tipo]
         if not permitido:
             if tipo == ANULADO:
@@ -2268,14 +2278,29 @@ def create_app(
         _accion(job_id, AJUSTADO, json.dumps({"fecha": fecha or None, "hora": hora or None}), valor)
         return _volver(request, f"/fletes/{job_id}")
 
-    @app.post("/fletes/{job_id}/perdido", include_in_schema=False)
-    def perdido_form(request: Request, job_id: str, motivo: str = Form(""), nota: str = Form("")):
-        """El motivo se elige de la lista: sirve para los numeros despues."""
+    def _nota_perdida(motivo: str, nota: str, competencia: str) -> str | None:
+        """El motivo de una perdida, con codigo estable. Ver docs/recuperacion.md."""
         etiquetas = dict(MOTIVOS_PERDIDA)
-        texto = etiquetas.get(motivo, "")
-        if nota.strip():
-            texto = f"{texto}: {nota.strip()}" if texto else nota.strip()
-        _accion(job_id, PERDIDO, texto)
+        if motivo and motivo not in etiquetas:
+            raise HTTPException(422, f"motivo desconocido: {motivo}")
+        datos = {"motivo": motivo or None, "etiqueta": etiquetas.get(motivo),
+                 "nota": nota.strip() or None,
+                 "competencia": str(_monto(competencia)) if competencia.strip() and _monto(competencia) else None}
+        return json.dumps(datos, ensure_ascii=False) if any(datos.values()) else None
+
+    @app.post("/fletes/{job_id}/perdido", include_in_schema=False)
+    def perdido_form(request: Request, job_id: str, motivo: str = Form(""), nota: str = Form(""),
+                     competencia: str = Form("")):
+        """El motivo se elige de la lista: sirve para los numeros y para saber si
+        vale la pena volver a escribirle."""
+        _accion(job_id, PERDIDO, _nota_perdida(motivo, nota, competencia))
+        return _volver(request, f"/fletes/{job_id}")
+
+    @app.post("/fletes/{job_id}/motivo", include_in_schema=False)
+    def motivo_form(request: Request, job_id: str, motivo: str = Form(...), nota: str = Form(""),
+                    competencia: str = Form("")):
+        """Anotar o corregir por que se perdio, sin cambiar el estado. Vale el ultimo."""
+        _accion(job_id, MOTIVO, _nota_perdida(motivo, nota, competencia))
         return _volver(request, f"/fletes/{job_id}")
 
     @app.post("/fletes/{job_id}/reabrir", include_in_schema=False)
