@@ -152,6 +152,20 @@ class TestUbicar:
         assert mapa.ubicar("calle que no existe 123") is None
 
 
+class TestFactorDeCalles:
+    def test_la_ciudad_pide_mas_vuelta_que_la_ruta(self):
+        from estiba.finanzas.precio import factor_tramo
+
+        assert factor_tramo(1) == 1.45 and factor_tramo(40) == 1.22
+        assert 1.22 < factor_tramo(9) < 1.45
+
+
+class TestAlturaEnElLimite:
+    def test_un_numero_redondo_entre_dos_cuadras(self, mapa):
+        # Alberti tiene 2300-2399; "Alberti 2400" no esta en ninguna cuadra justa.
+        assert mapa.ubicar("Alberti 2400").precision == ALTURA
+
+
 class TestLocalidadesYZona:
     """Fallas reales del 1 al 4/10: "Miramar" caia en una calle de Santa Clara,
     "mardel" en una calle de otra ciudad y un texto mal leido en Lanus (980 km)."""
@@ -230,9 +244,10 @@ class TestPrecio:
         assert concepto.startswith("Camioneta: ")
         km = int(concepto.split(": ")[1].split(" km")[0])
         # Santa Clara -> Alberti -> Catamarca -> Santa Clara, con las vueltas de las calles.
-        recta = (km_entre(BASE, (-38.008, -57.5502)) + km_entre((-38.008, -57.5502), (-37.9927, -57.5485))
-                 + km_entre((-37.9927, -57.5485), BASE))
-        assert abs(km - recta * 1.3) < 2
+        # Ida y vuelta son tramos de ruta (x1,22); el del medio, de ciudad (x1,45).
+        ida, medio, vuelta = (km_entre(BASE, (-38.008, -57.5502)), km_entre((-38.008, -57.5502), (-37.9927, -57.5485)),
+                              km_entre((-37.9927, -57.5485), BASE))
+        assert abs(km - (ida * 1.22 + medio * 1.45 + vuelta * 1.22)) < 2
         assert p.completo and not p.supuestos
 
     def test_mas_lejos_sale_mas(self, precio):

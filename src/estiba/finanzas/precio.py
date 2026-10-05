@@ -44,6 +44,29 @@ HORAS_POR_PISO = Decimal("0.25")
 BASE_DEFAULT = {"texto": "Sebastián Gaboto 423, Santa Clara del Mar", "lat": -37.866678, "lon": -57.518770}
 
 
+#: Cuanto mas se anda por calle que en linea recta, segun el largo del tramo.
+#: Medido el 5/10/2026 contra OSRM (OpenStreetMap) en 55 pares de puntos
+#: publicos de la zona: dentro de Mar del Plata la cuadricula pide 1,3 a
+#: 1,45; por ruta (Santa Clara-Mar del Plata, Miramar, Balcarce) 1,06 a 1,17.
+#: Un solo 1,3 erraba 11,5 % en promedio. Con 1,45 en ciudad y 1,22 en ruta
+#: erra 9 % y no cobra de menos en promedio (los caminos de campo en
+#: diagonal, como Batan-Miramar, piden mas y tiran para arriba). Lo que se
+#: configure en "factor de calles" escala esta curva (1,3 la deja como esta).
+FACTOR_CORTO, FACTOR_LARGO = 1.45, 1.22
+CORTO_KM, LARGO_KM = 3.0, 15.0
+FACTOR_REFERENCIA = Decimal("1.3")
+
+
+def factor_tramo(recta_km: float) -> float:
+    """1,45 en un tramo de 3 km o menos, 1,22 desde 15 km, en linea entre medio."""
+    if recta_km <= CORTO_KM:
+        return FACTOR_CORTO
+    if recta_km >= LARGO_KM:
+        return FACTOR_LARGO
+    t = (recta_km - CORTO_KM) / (LARGO_KM - CORTO_KM)
+    return FACTOR_CORTO + (FACTOR_LARGO - FACTOR_CORTO) * t
+
+
 class PrecioPorObjetivos:
     """Un PricingEngine: misma interfaz, `estimate(job) -> Presupuesto`."""
 
@@ -180,11 +203,11 @@ class PrecioPorObjetivos:
             "carga": km_entre(desde.punto, hasta.punto),
             "vuelta": km_entre(hasta.punto, base),
         }
-        linea_recta = sum(tramos.values())
-        km = (Decimal(str(linea_recta)) * c.factor_calles).quantize(Decimal(1), ROUND_HALF_UP)
+        escala = c.factor_calles / FACTOR_REFERENCIA
+        por_calle = {k: Decimal(str(v * factor_tramo(v))) * escala for k, v in tramos.items()}
+        km = sum(por_calle.values(), Decimal(0)).quantize(Decimal(1), ROUND_HALF_UP)
         # Por tramo, para saber cuantos km se andan sin carga (ida y vuelta).
-        p.detalle["tramos"] = {k: (Decimal(str(v)) * c.factor_calles).quantize(Decimal("0.1"), ROUND_HALF_UP)
-                               for k, v in tramos.items()}
+        p.detalle["tramos"] = {k: v.quantize(Decimal("0.1"), ROUND_HALF_UP) for k, v in por_calle.items()}
         # Para encadenar fletes del mismo dia: donde empieza y donde termina.
         p.detalle["puntos"] = {"origen": desde.punto, "destino": hasta.punto}
         paradas = [

@@ -54,6 +54,23 @@ LUGARES = {
     "mar chiquita": ("Mar Chiquita", -37.746, -57.426),
 }
 
+#: El centro de las ciudades donde mas se trabaja: la plaza principal. El
+#: promedio de todas las calles caia hasta 3,5 km afuera (Mar del Plata se
+#: estira hacia el oeste y el promedio se va con ella).
+CENTROS = {
+    "Mar del Plata": (-38.0007, -57.5458),
+    "Santa Clara del Mar": (-37.8360, -57.5050),
+    "Miramar": (-38.2717, -57.8392),
+    "Pinamar": (-37.1094, -56.8616),
+    "Villa Gesell": (-37.2630, -56.9730),
+    "Balcarce": (-37.8462, -58.2556),
+}
+
+#: Si nadie tiene esa altura justa, la cuadra mas cercana dentro de este
+#: margen: el INDEC numera 2401-2499 y 2501-2599, y "Juramento 2500" (la
+#: esquina, lo mas comun de escribir) caia en el hueco y perdia la altura.
+MARGEN_ALTURA = 60
+
 #: Una ciudad de una sola palabra le gana a la calle que se llama igual solo
 #: si queda cerca: "Miramar" es la ciudad, pero "Alberti" sin mas es la
 #: calle de Mar del Plata y no el pueblo a 400 km.
@@ -284,6 +301,8 @@ class Mapa:
     def _centro(self, localidad: str) -> tuple[float, float] | None:
         if not hasattr(self, "_centros"):
             self._centros: dict[str, tuple[float, float] | None] = {}
+        if localidad in CENTROS:
+            return CENTROS[localidad]
         if localidad not in self._centros:
             f = self.conn.execute(
                 "SELECT AVG(json_extract(geometria, '$[0][1]')), AVG(json_extract(geometria, '$[0][0]')) "
@@ -336,6 +355,11 @@ class Mapa:
     def _altura(self, calles, altura: int, ciudad, pista) -> Ubicacion | None:
         filas = self._cuadras(calles, "AND desde <= ? AND hasta >= ? AND hasta > 0", (altura, altura))
         f = self._mejor(filas, lambda f: calles[f["clave"]], _inicio, ciudad, pista)
+        if f is None:
+            cerca = self._cuadras(calles, "AND hasta > 0 AND desde <= ? AND hasta >= ?",
+                                  (altura + MARGEN_ALTURA, altura - MARGEN_ALTURA))
+            f = self._mejor(cerca, lambda f: (calles[f["clave"]], min(abs(f["desde"] - altura), abs(f["hasta"] - altura))),
+                            _inicio, ciudad, pista)
         if f is None:
             return None
         puntos = json.loads(f["geometria"])
