@@ -81,7 +81,9 @@ _PATRONES: list[tuple[Intencion, re.Pattern]] = [
         # afuera porque el patron pedia el sustantivo pegado al verbo.
         r"|(?<!no\s)(?:necesito|tengo\s+que(?:\s+hacer)?|queria|quiero|hay\s+que)\s+"
         r"(?:mudar|mudarme|mover|llevar|trasladar|transportar|retirar"
-        r"|(?:un|otro|un\s+par\s+de)\s+flete|(?:una|otra)\s+mudanza))"
+        r"|(?:un|otro|un\s+par\s+de)\s+flete|(?:una|otra)\s+mudanza)"
+        # "Tengo unos bultos para llevar": el cliente que vuelve por otra cosa.
+        r"|\btengo\s+(?:un|una|unos|unas|\d+|dos|tres)\s+\w+(?:\s+\w+)?\s+para\s+(?:llevar|trasladar|mover))"
     )),
 ]
 

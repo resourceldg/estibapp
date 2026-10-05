@@ -115,6 +115,9 @@ class TestIntencion:
     def test_manana_te_confirmo_sigue_siendo_posponer(self):
         assert intencion("mañana te confirmo")[0] is Intencion.POSPONE
 
+    def test_tengo_algo_para_llevar_es_una_consulta(self):
+        assert intencion("Tengo unos bultos para llevar")[0] is Intencion.CONSULTA
+
     def test_dale_gracias_solo_es_cortesia(self):
         assert intencion("Dale gracias") is None
 
@@ -129,7 +132,6 @@ class TestIntencion:
 
 
 class TestLugares:
-    @pytest.mark.xfail(strict=True, reason="P1: 'la/las' al principio de una calle se toma como pronombre")
     @pytest.mark.parametrize("texto,origen,destino", [
         ("De la rioja y Alberti a luis varese 1979", "la rioja y Alberti", "luis varese 1979"),
         ("necesito un flete de Frávega a las dalias", "Frávega", "las dalias"),
@@ -137,12 +139,10 @@ class TestLugares:
     def test_calles_con_articulo(self, texto, origen, destino):
         assert _lugares(texto) == {"origin": origen, "destination": destino}
 
-    @pytest.mark.xfail(strict=True, reason="P2: 'Ortiz de Zárate y Edison' queda cortado en 'Ortiz'")
     def test_calle_con_de_en_el_nombre(self):
         assert _lugares("Necesito traer dos freezer desde Miramar a Ortiz de Zárate y Edison zona puerto")[
             "destination"].startswith("Ortiz de Zárate")
 
-    @pytest.mark.xfail(strict=True, reason="P2: direccion con altura sin 'al' en un mensaje suelto")
     @pytest.mark.parametrize("texto", ["Hipólito Yrigoyen 3751", "Araoz 2619", "Y vamos a Catamarca 1185"])
     def test_direccion_suelta_con_altura(self, texto):
         assert reglas.lugares(texto)
@@ -154,38 +154,31 @@ class TestLugares:
 
 
 class TestCosasPisosFechas:
-    @pytest.mark.xfail(strict=True, reason="P2: 'alacenas de cocina' agrega una cocina que no existe")
     def test_cocina_como_adjetivo(self):
         assert "cocina" not in _items("Son alacenas de cocina")
 
-    @pytest.mark.xfail(strict=True, reason="P2: errores de tipeo frecuentes (frezer, friser)")
     @pytest.mark.parametrize("texto", ["Necesito traer dos frezer", "Tengo q llevar un friser"])
     def test_freezer_mal_escrito(self, texto):
         assert any("freezer" in i for i in _items(texto))
 
-    @pytest.mark.xfail(strict=True, reason="P2: 'es planta baja' y 'escalera 1 piso' sin decir 'ascensor'")
     @pytest.mark.parametrize("texto", ["Es planta baja", "De dónde van tengo escalera 1 piso y el otro ascensor"])
     def test_pisos_sin_ascensor_explicito(self, texto):
         assert reglas.pisos(texto)
 
-    @pytest.mark.xfail(strict=True, reason="P2: una calle con nombre de fecha se lee como fecha")
     @pytest.mark.parametrize("texto", ["Desde Hipólito Yrigoyen y Quintana hasta Catamarca y 11 de setiembre",
                                        "está afuera el carro, Castelli y 14 de julio"])
     def test_calle_fecha_no_es_fecha(self, texto):
         assert not [h for h in fechas.fechas(texto, AHORA) if h.campo == "when"]
 
-    @pytest.mark.xfail(strict=True, reason="P2: 'tipo 9 / 9:30' es una hora, no el 9 de septiembre")
     def test_hora_con_barra_no_es_fecha(self):
         assert not [h for h in fechas.fechas("el Lunes por casualidad tipo 9 / 9 : 30 podremos?", AHORA)
                     if h.campo == "when" and h.valor.month == 9 and h.valor.day == 9]
 
-    @pytest.mark.xfail(strict=True, reason="P2: '6 cajas' y '10 cajas' se pisan en vez de sumarse")
     def test_cantidades_del_mismo_objeto_en_un_mensaje(self):
         assert "16 cajas" in _items("6 cajas de plástico grandes y unas 10 cajas de carton")
 
 
 class TestClasificacion:
-    @pytest.mark.xfail(strict=True, reason="P1: el nombre 'tipo usuario' gana sobre el boton del anuncio y una consulta real")
     def test_lead_del_anuncio_con_nombre_raro_no_es_spam(self):
         from estiba.conversation.clasificacion import Clase, clasificar
         from estiba.core.models import Conversation, Message, MessageKind
@@ -238,3 +231,23 @@ class TestSilencio:
                                                 text="https://algun.link/documento.pdf")])
         r = sincronizar(conn, JobEngine(), datetime(2026, 10, 5))
         assert not r.fletes and not r.leads
+
+
+class TestQueNoSeaLugar:
+    """Regresiones que aparecieron al corregir: frases que parecian rutas."""
+
+    @pytest.mark.parametrize("texto", [
+        "Me acabo de cruzar a la encargada y mañana no trabaja por el feriado",
+        "compartimos la estructura de planificación a las materias del segundo cuatrimestre",
+        "Tengo que llevar del centro de corrientes entre el Uripe a Tonal unos tirantes de aluminio hasta el barrio",
+    ])
+    def test_frases_que_no_son_rutas(self, texto):
+        assert "destination" not in _lugares(texto)
+
+    def test_placa_suelta_no_es_un_objeto(self):
+        assert _items("le dieron el dinero en placa") == []
+        assert _items("Son 3 placas de durlock") == ["3 placas de durlock"]
+
+    @pytest.mark.parametrize("texto", ["son 1500", "tengo 2000", "dni 30123456"])
+    def test_numeros_que_no_son_direcciones(self, texto):
+        assert reglas.lugares(texto) == []

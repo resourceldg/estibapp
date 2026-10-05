@@ -70,7 +70,9 @@ _HS = re.compile(r"\b(\d{1,2})(?:[:.](\d{2}))?\s*(?:hs|hrs|horas|h)\b")
 #: ("12 de octubre y Garcia Lorca", "25 de mayo al 1400", "9 de julio 3200")
 #: o si se la nombra como calle ("la avenida 12 de octubre").
 _SIGUE_CALLE = re.compile(r"^\s+(?:y|e|al|entre|esquina|esq)\b|^\s+\d{2,5}\b")
-_ANTES_CALLE = re.compile(r"\b(?:calle|avenida|av|diagonal|pasaje)\s*$")
+#: Tambien la segunda calle de una esquina: "Catamarca y 11 de setiembre",
+#: "Castelli y 14 de julio" (auditoria: salian fechas en 2027).
+_ANTES_CALLE = re.compile(r"\b(?:calle|avenida|av|diagonal|pasaje|y|e|esquina|esq|entre)\s*$")
 
 
 def es_calle(p: str, m: re.Match) -> bool:
@@ -117,7 +119,11 @@ def fechas(texto: str, enviado: datetime) -> list[Hallazgo]:
             continue
         if (dia := _dia_del_mes(ref, int(m.group(1)), MESES[m.group(2)])) is not None:
             return [_fecha(dia, texto, m, 0.9)]
-    if m := _BARRA.search(p):
+    m = _BARRA.search(p)
+    # "tipo 9 / 9:30" es una hora ("las 9 o 9 y media"), no el 9 de septiembre.
+    if m and (re.match(r"\s*:\s*\d", p[m.end():]) or re.search(r"\b(?:tipo|a\s+las|las)\s*$", p[: m.start()])):
+        m = None
+    if m:
         if 1 <= int(m.group(2)) <= 12:
             if m.group(3):
                 # Con el año dicho no se adivina: "21/08/26" es 2026, aunque

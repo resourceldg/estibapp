@@ -55,9 +55,12 @@ _DE_A = re.compile(rf"\b(?:de|desde)\s+{_LUGAR}\s+(?:a|hasta|para)\s+{_LUGAR}\b"
 _NUEVO_DESTINO = re.compile(rf"\b(?:es|ahora|mejor|seria|va)\s+(?:a|para|hasta)\s+{_LUGAR}\b")
 _NUEVO_ORIGEN = re.compile(rf"\b(?:sale|salgo|retiran?|buscan?|es)\s+(?:de|desde|en)\s+{_LUGAR}\b")
 # Lugares que no estan en la lista: se aceptan con duda si vienen con mayuscula.
+#: Los nombres pueden llevar "de", "del" o "y" en el medio: "Ortiz de Zárate y
+#: Edison", "Mar del Plata". Antes se cortaba en "Ortiz".
+_NOMBRE_PROPIO = r"[A-ZÁÉÍÓÚÑ][\wáéíóúñ]*(?:\s+(?:(?:de|del|y)\s+)?[A-ZÁÉÍÓÚÑ][\wáéíóúñ]*)*"
 _DE_A_LIBRE = re.compile(
-    r"\b(?:de|desde)\s+([A-ZÁÉÍÓÚÑ][\wáéíóúñ]*(?:\s+[A-ZÁÉÍÓÚÑ][\wáéíóúñ]*)*)"
-    r"\s+(?:a|hasta|para)\s+([A-ZÁÉÍÓÚÑ][\wáéíóúñ]*(?:\s+[A-ZÁÉÍÓÚÑ][\wáéíóúñ]*)*)"
+    rf"\b(?:de|desde)\s+({_NOMBRE_PROPIO})"
+    rf"\s+(?:a|hasta|para)\s+({_NOMBRE_PROPIO})"
 )
 
 
@@ -69,7 +72,12 @@ _DIAS_Y_MESES = re.compile(
     r"noviembre|diciembre|manana|hoy|ayer|ahora|aca|alla|ahi)\b"
 )
 _SOLO_HORA = re.compile(r"^\d{1,2}(?:[:.]\d{2})?\s*(?:hs?|horas?|am|pm)?$")
-_PRONOMBRES = re.compile(r"^(?:los|las|el|la|mi|tu|su|vos|nos|ellos|eso|esto|ahi)\b")
+#: Pronombres, no lugares. Un articulo solo es pronombre si sigue un
+#: posesivo ("de los tuyos"): "La Rioja", "Las Dalias" o "El Alfar" son calles
+#: y barrios, y antes se descartaban (auditoria: dos pedidos sin origen ni destino).
+_PRONOMBRES = re.compile(
+    r"^(?:mi|tu|su|vos|nos|ellos|eso|esto|ahi"
+    r"|(?:los|las|el|la)\s+(?:tuy|mi|su|nuestr|otr|dema|que\b|cual)\w*)\b")
 #: Palabras que aparecen en "de X a Y" sin que X sea un lugar: "de nuevo a
 #: casa de mi mama", "de vuelta a la obra".
 _NO_LUGAR = re.compile(r"^(?:nuevo|nueva|vuelta|paso|ultima|una|un|otro|otra|donde|adonde|cuando|como)\b")
@@ -87,6 +95,11 @@ _DE_A_SUELTO = re.compile(
 )
 
 
+#: Palabras que dicen que es una frase y no una direccion.
+_FRASE = re.compile(r"\b(?:no|que|porque|pero|manana|hoy|ayer|cuando|si|tambien|despues|trabaja\w*|tengo|tiene)\b")
+_INFINITIVO = re.compile(r"^[a-z]{3,}(?:ar|er|ir)$")
+
+
 def _parece_lugar(texto: str) -> bool:
     """Si eso puede ser una direccion o una esquina, y no otra cosa.
 
@@ -97,6 +110,18 @@ def _parece_lugar(texto: str) -> bool:
     if len(limpio) < 3 or _SOLO_HORA.match(limpio):
         return False
     if _DIAS_Y_MESES.match(limpio) or _PRONOMBRES.match(limpio) or _NO_LUGAR.match(limpio):
+        return False
+    palabras_ = limpio.split()
+    # Una frase no es un lugar: "de cruzar a la encargada y mañana no trabaja".
+    if _FRASE.search(limpio) or (len(palabras_) == 1 and _INFINITIVO.match(limpio)):
+        return False
+    # Lo que nombra una cosa que se lleva no es un lugar: "a Tonal unos
+    # tirantes de aluminio hasta" (un audio real) era el destino.
+    if any(w in _FORMA for w in palabras_):
+        return False
+    # Con articulo adelante ("la rioja y alberti", "las dalias") solo si es
+    # corto o es una esquina: "las materias del segundo cuatrimestre" no.
+    if palabras_[0] in ("la", "las", "el", "los") and len(palabras_) > 3 and " y " not in f" {limpio} ":
         return False
     # Al menos una palabra de verdad: "9 y 17" no es una esquina.
     return any(len(t) >= 3 and t.isalpha() for t in re.split(r"[^\wáéíóúñ]+", limpio))
@@ -133,7 +158,7 @@ def lugares(texto: str) -> list[Hallazgo]:
                 Hallazgo("origin", origen, 0.55, m.group(0), duda),
                 Hallazgo("destination", destino, 0.55, m.group(0), duda),
             ]
-    return _direcciones_sueltas(texto)
+    return _direccion_sola(texto) or _direcciones_sueltas(texto)
 
 
 #: "Garcia Lorca al 1140", "García Lorca, al 1140": una calle con su altura,
@@ -152,6 +177,42 @@ _HACIA_ACA = re.compile(r"\b(?:a|hasta|para)\s+(?:aca|mi\s+casa|casa|lo\s+de)\b|
 #: no pisa un lugar dicho con mas claridad (ver `extractor._resolver`):
 #: "Aguirre al 500" despues de "de Villa Crespo a Caballito" precisa, no cambia.
 CONFIANZA_SUELTA = 0.5
+
+
+#: Un mensaje que es solo una direccion: "Hipólito Yrigoyen 3751", "Araoz
+#: 2619", "Y vamos a Catamarca 1185", "El Alberti 2359 entre santa fe y
+#: corrientes". Antes hacia falta el "al" y se perdian (auditoria: 5 casos).
+_SOLO_DIRECCION = re.compile(
+    r"^\W*(?P<a>(?:y\s+)?(?:vamos|vamos\s+a|va|van|a|hasta|para)\s+(?:a\s+)?)?(?:el|la|en|es\s+en|calle)?\s*"
+    r"(?P<calle>[a-záéíóúñ][\wáéíóúñ.]*(?:\s+[a-záéíóúñ][\wáéíóúñ.]*){0,3})\s+(?P<num>\d{3,5})"
+    r"(?P<resto>\s+entre\s+.+)?\W*$", re.I)
+#: Con esta confianza sale una direccion con altura: mas que una esquina
+#: dicha suelta (0,55), menos que un "de Palermo a Belgrano" (0,9).
+CONFIANZA_ALTURA = 0.6
+
+
+#: Palabras con las que no empieza el nombre de una calle: "son 1500" es un
+#: precio, "tengo 2000" otra cosa, "dni 30123" un documento.
+_NO_ES_CALLE = {
+    "son", "es", "sale", "salen", "cuesta", "tengo", "hay", "total", "precio", "pague", "pago", "cobro", "seria",
+    "serian", "mas", "menos", "unos", "unas", "como", "cerca", "peso", "pesos", "codigo", "dni", "cuit",
+    "numero", "nro", "tel", "telefono", "piso", "depto", "dpto", "km", "kilometros", "metros", "cuadras", "dias",
+    "horas", "llego", "llegamos", "salgo", "salimos", "hace", "tipo", "aprox", "son", "quedan", "queda", "esta",
+}
+
+
+def _direccion_sola(texto: str) -> list[Hallazgo]:
+    m = _SOLO_DIRECCION.match(texto.strip())
+    if not m or len(texto) > 90:
+        return []
+    calle = m.group("calle").strip()
+    if not _parece_lugar(calle) or re.search(r"\d", calle) or _DIAS_Y_MESES.match(plano(calle)):
+        return []
+    if plano(calle).split()[0] in _NO_ES_CALLE or re.search(r"\bal$", plano(calle)):
+        return []   # "Aguirre al 500" lo lee la regla de siempre
+    campo = "destination" if m.group("a") else "origin"
+    return [Hallazgo(campo, f"{calle} {m.group('num')}", CONFIANZA_ALTURA, m.group(0).strip(),
+                     "dirección suelta: conviene confirmarla")]
 
 
 def _direcciones_sueltas(texto: str) -> list[Hallazgo]:
@@ -211,7 +272,7 @@ _MUEBLES = [
     ("heladera", "heladeras", []),
     ("lavarropas", "lavarropas", ["lavarropa"]),
     ("secarropas", "secarropas", []),
-    ("freezer", "freezers", []),
+    ("freezer", "freezers", ["frezer", "frezers", "friser", "frisers", "frizer", "frizers"]),
     ("microondas", "microondas", []),
     ("televisor", "televisores", ["tele", "teles", "tv"]),
     ("sillon", "sillones", ["sofa", "sofas"]),
@@ -219,6 +280,9 @@ _MUEBLES = [
     ("colchon", "colchones", []),
     ("sommier", "sommiers", []),
     ("placard", "placares", ["placards", "ropero", "roperos"]),
+    # "mesa de luz" va antes que "mesa": se busca primero lo mas largo.
+    ("mesa de luz", "mesas de luz", ["mesita de luz", "mesitas de luz"]),
+    ("mesita", "mesitas", []),
     ("mesa", "mesas", []),
     ("silla", "sillas", []),
     ("escritorio", "escritorios", []),
@@ -237,6 +301,15 @@ _MUEBLES = [
     ("ventana", "ventanas", []),
     ("termotanque", "termotanques", []),
     ("bulto", "bultos", []),
+    # Auditoria de octubre 2026: cosas reales que no se reconocian.
+    ("mueble", "muebles", []),
+    ("valija", "valijas", []),
+    ("bolsa", "bolsas", []),
+    ("tabla", "tablas", []),
+    ("biombo", "biombos", []),
+    ("placa de durlock", "placas de durlock", ["durlock"]),
+    ("tirante", "tirantes", []),
+    ("herramienta", "herramientas", []),
 ]
 _FORMA = {}
 for singular, plural, otras in _MUEBLES:
@@ -262,21 +335,47 @@ def leer_item(texto: str) -> Item | None:
     return Item(singular, plural, cantidad, en_plural)
 
 
+#: "cama no", "sin la cama", "no es una cama": lo que se saca de la lista.
+def _negada(p: str, forma: str) -> bool:
+    f = re.escape(forma)
+    return bool(re.search(rf"\b{f}\s+no\b|\bsin\s+(?:el\s+|la\s+|los\s+|las\s+)?{f}\b"
+                          rf"|\bno\s+(?:es|era|son|eran|va|van)\s+(?:un\s+|una\s+|el\s+|la\s+)?{f}\b", p))
+
+
 def items(texto: str) -> list[Hallazgo]:
+    """Las cosas que se llevan. Lo negado ("cama no") sale aparte para restarse."""
     p = plano(texto)
     encontrados: dict[str, Item] = {}
+    negados: set[str] = set()
     citas = []
     for m in _MUEBLE.finditer(p):
         singular, plural, en_plural = _FORMA[m.group(2)]
+        # "alacenas de cocina": la cocina describe a la alacena, no es otra cosa.
+        antes = p[: m.start()]
+        if re.search(r"\b(\w+)\s+(?:de|del)\s+$", antes) and \
+                re.search(r"\b(\w+)\s+(?:de|del)\s+$", antes).group(1) in _FORMA:
+            continue
+        if _negada(p, m.group(2)):
+            negados.add(singular)
+            continue
         cantidad = a_numero(m.group(1)) if m.group(1) else None
         previo = encontrados.get(singular)
         if previo is not None and cantidad is None:
             continue
+        if previo is not None and previo.cantidad and cantidad and previo.cantidad > 1 and cantidad > 1:
+            cantidad += previo.cantidad   # "6 cajas de plastico ... 10 cajas de carton": 16
+        elif previo is not None and previo.cantidad and cantidad:
+            cantidad = max(cantidad, previo.cantidad)   # "una mesa, una mesa": la repite, no son dos
         encontrados[singular] = Item(singular, plural, cantidad, en_plural)
         citas.append(cita(texto, m))
-    if not encontrados:
-        return []
-    return [Hallazgo("items", list(encontrados.values()), 0.8, " ... ".join(citas))]
+    salida = []
+    for n in negados:
+        encontrados.pop(n, None)
+    if encontrados:
+        salida.append(Hallazgo("items", list(encontrados.values()), 0.8, " ... ".join(citas)))
+    if negados:
+        salida.append(Hallazgo("items_no", sorted(negados), 0.8, ", ".join(sorted(negados))))
+    return salida
 
 
 # --------------------------------------------------------------------------
@@ -315,6 +414,14 @@ def pisos(texto: str) -> list[Hallazgo]:
         return [Hallazgo("floors_no_lift", valor, 0.85, texto[inicio:fin].strip())]
     if m := _CON_ASCENSOR.search(p):
         return [Hallazgo("floors_no_lift", 0, 0.8, cita(texto, m))]
+    # "Es planta baja": cero pisos por escalera. "Tengo escalera, 1 piso":
+    # uno. Antes hacia falta nombrar el ascensor (auditoria: 3 casos).
+    if m := re.search(r"\b(?:planta\s+baja|pb)\b", p):
+        return [Hallazgo("floors_no_lift", 0, 0.8, cita(texto, m))]
+    if (e := re.search(r"\bescaleras?\b", p)) and (piso := _PISO.search(p)) and not piso.group(4):
+        valor = _ORDINALES[piso.group(3)] if piso.group(3) else int(piso.group(1) or piso.group(2))
+        inicio, fin = min(piso.start(), e.start()), max(piso.end(), e.end())
+        return [Hallazgo("floors_no_lift", valor, 0.75, texto[inicio:fin].strip())]
     return []
 
 

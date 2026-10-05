@@ -283,7 +283,13 @@ def clasificar(conv: Conversation, ex: Extraccion, nombre: str | None = None) ->
     # Como se llama: un usuario no es una persona, y una publicidad de
     # transporte tambien nombra el oficio.
     liso = plano(nombre or "")
-    if liso and (_NOMBRE_COMERCIAL.search(liso) or _ES_HANDLE.match(liso)):
+    # Pero no si llego por el boton del anuncio o pidio un flete concreto: un
+    # cliente real del anuncio (un sommier) quedo en spam porque su contacto
+    # se llamaba "ideaspublicom518" (auditoria de octubre 2026).
+    primero = conv.text_of(de_ellos[0]) if de_ellos else ""
+    pidio = _DESDE_PUBLI.search(plano(primero or "")) or any(
+        i.intencion is Intencion.CONSULTA for i in ex.intenciones)
+    if liso and (_NOMBRE_COMERCIAL.search(liso) or _ES_HANDLE.match(liso)) and not pidio:
         return Clasificacion(Clase.SPAM, f"el contacto se llama “{nombre}”")
     if liso and _NOMBRE_DE_CONFIANZA.search(liso):
         return Clasificacion(Clase.PRIVADO, f"lo tenés guardado como “{nombre}”")

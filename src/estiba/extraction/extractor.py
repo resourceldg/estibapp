@@ -137,6 +137,12 @@ class SlotExtractor:
         cosas: dict[str, reglas.Item] = {}
         ultimo_items: Candidato | None = None
         for c in ex.candidatos:
+            if c.campo == "items_no":
+                # "cama no, una mesa": lo negado sale de la lista, aunque se
+                # haya dicho en otro mensaje.
+                for nombre in c.slot.value:
+                    cosas.pop(nombre, None)
+                continue
             if c.campo == "items":
                 # Las cosas se suman entre mensajes; una cantidad nueva
                 # reemplaza a la vieja ("unas cajas" -> "como quince cajas").
@@ -148,8 +154,8 @@ class SlotExtractor:
             else:
                 previo = ex.ganadores.get(c.campo)
                 if (c.campo in ("origin", "destination") and previo is not None
-                        and c.slot.confidence <= reglas.CONFIANZA_SUELTA < previo.slot.confidence):
-                    continue  # una direccion suelta no pisa una dicha claramente
+                        and c.slot.confidence <= reglas.CONFIANZA_ALTURA < previo.slot.confidence):
+                    continue  # una direccion suelta no pisa una dicha claramente (si una esquina)
                 ex.ganadores[c.campo] = c
 
         if ultimo_items is not None:
