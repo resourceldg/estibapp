@@ -379,7 +379,8 @@ def vista_mes(m, economico, prioridades_texto: dict[str, str], cat=None) -> dict
         ("Por cada 100 km", plata(por_100), "resultado real por 100 km de camioneta"),
         ("Km", km(m.km), f"{_pct(m.deadhead)} sin carga" if m.deadhead is not None else "sin tramos"),
         ("Fletes", str(len(m.fletes)),
-         f"ticket {plata(m.ticket)} · {_pct(m.recurrentes)} de clientes que vuelven" if m.fletes else ""),
+         f"ticket {plata(m.ticket)} · {_pct(m.recurrentes)} de los fletes, de clientes que repiten"
+         if m.fletes else ""),
     ]
     graficos = {
         "escalera": G.escalera([(x.nombre, float(x.monto)) for x in m.escalones], float(m.disponible),

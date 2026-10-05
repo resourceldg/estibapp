@@ -67,8 +67,8 @@
 <a class="panel enlace-clientes" href="/clientes">
   <span class="enlace-ico">{{ icono("clientes") }}</span>
   <span>
-    <strong>{{ n.clientes }} {{ "cliente" if n.clientes == 1 else "clientes" }}</strong>
-    <span class="sub">{% if n.recurrentes == 1 %}1 volvió a pedir{% elif n.recurrentes %}{{ n.recurrentes }} volvieron a pedir{% else %}todavía ninguno volvió a pedir{% endif %}</span>
+    <strong>{{ n.clientes }} {{ "persona consultó" if n.clientes == 1 else "personas consultaron" }}</strong>
+    <span class="sub">{{ n.contrataron }} te {{ "contrató" if n.contrataron == 1 else "contrataron" }} · {% if n.recurrentes == 1 %}1 volvió a contratarte{% elif n.recurrentes %}{{ n.recurrentes }} volvieron a contratarte{% else %}todavía nadie volvió a contratarte{% endif %}</span>
   </span>
   {{ icono("flecha") }}
 </a>

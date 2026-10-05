@@ -18,7 +18,7 @@
         <div class="fila-sub">{% if c.nombre %}{{ c.telefono }} · {% endif %}{{ c.ultimo_ruta }} · {{ c.ultimo }}</div>
         <div class="fila-meta">
           {{ chip(c.ultimo_estado, c.tono) }}
-          {% if c.fletes > 1 %}<span class="insignia">{{ c.fletes }} fletes</span>{% endif %}
+          {% if c.realizados > 1 %}<span class="insignia">volvió a contratarte · {{ c.realizados }} fletes</span>{% elif c.fletes > 1 %}<span class="insignia tenue">{{ c.fletes }} pedidos</span>{% endif %}
         </div>
       </div>
       <div class="fila-precio">

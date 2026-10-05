@@ -755,6 +755,7 @@ class Numeros:
     motivos: list[BarraMotivo]
     clientes: int
     recurrentes: int
+    contrataron: int = 0
 
 
 def _duracion(d: timedelta | None) -> str:
@@ -792,7 +793,7 @@ def numeros(e) -> Numeros:
     ]
     mayor = max((n for _, n in e.motivos), default=0)
     motivos = [BarraMotivo(m, n, 100 * n / mayor if mayor else 0) for m, n in e.motivos]
-    return Numeros(consultas, kpis, embudo, e.perdidos, motivos, e.clientes, e.recurrentes)
+    return Numeros(consultas, kpis, embudo, e.perdidos, motivos, e.clientes, e.recurrentes, e.contrataron)
 
 
 # --------------------------------------------------------------------------

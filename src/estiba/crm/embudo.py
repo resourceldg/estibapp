@@ -49,7 +49,11 @@ class Embudo:
     comprometido: Decimal = Decimal(0)    # confirmados que todavia no se hicieron
     ticket_promedio: Decimal | None = None
     respuesta_mediana: timedelta | None = None
+    #: Personas distintas que consultaron en el periodo (no todas compraron).
     clientes: int = 0
+    #: De esas, cuantas tienen al menos un flete hecho.
+    contrataron: int = 0
+    #: Cuantas te contrataron dos veces o mas (con toda la historia).
     recurrentes: int = 0
     desvio_precio: float | None = None    # cotizado vs sugerido, promedio
 
@@ -96,9 +100,17 @@ def calcular(leads: list[LeadInfo], hasta: datetime, desde: datetime | None = No
     if respuestas:
         e.respuesta_mediana = timedelta(seconds=statistics.median(r.total_seconds() for r in respuestas))
 
-    por_cliente = Counter(l.chat_id for l in leads)  # recurrencia: con toda la historia
-    e.clientes = len({l.chat_id for l in del_periodo})
-    e.recurrentes = sum(1 for c in {l.chat_id for l in del_periodo} if por_cliente[c] > 1)
+    # Volver a contratar es tener dos fletes hechos o mas. Contar chats con
+    # mas de un pedido daba de mas (decia 39 sobre 39): Estiba parte una
+    # charla larga en varios pedidos, y alguien que escribio dos veces sin
+    # comprar nunca "volvio". Con toda la historia: el primero puede ser de
+    # otro mes.
+    personas = {l.chat_id for l in del_periodo}
+    e.clientes = len(personas)
+    e.contrataron = sum(1 for c in personas
+                        if any(l.chat_id == c and l.etapa is Stage.DONE for l in del_periodo))
+    hechos_de = Counter(l.chat_id for l in leads if l.etapa is Stage.DONE)
+    e.recurrentes = sum(1 for c in personas if hechos_de[c] >= 2)
 
     desvios = [float((l.cotizado - l.sugerido) / l.sugerido) for l in del_periodo if l.cotizado and l.sugerido]
     if desvios:

@@ -302,7 +302,8 @@ class TestEmbudo:
         ]
         assert e.perdidos == 1 and e.motivos == [("Lo diste por perdido", 1)]
         assert e.comprometido == Decimal(48000 + 45000 + 70000)
-        assert (e.clientes, e.recurrentes) == (4, 1)
+        # Escribio dos veces pero ningun flete esta hecho: no "volvio a contratar".
+        assert (e.clientes, e.contrataron, e.recurrentes) == (4, 0, 0)
 
     def test_el_periodo_filtra_por_fecha_de_la_consulta(self, conn):
         r = sincronizar(conn, JobEngine(), JUEVES_18)
@@ -395,8 +396,17 @@ class TestPantallas:
 
     def test_numeros(self, cliente):
         html = cliente.get("/numeros?periodo=todo").text
-        assert "De 5 consultas" in html and "1 volvió a pedir" in html
+        assert "De 5 consultas" in html and "5 personas consultaron" not in html
+        assert "todavía nadie volvió a contratarte" in html
         assert cliente.get("/numeros?periodo=siempre").status_code == 422
+
+    def test_volver_a_contratar_son_dos_fletes_hechos(self, cliente):
+        cliente.post(f"/fletes/{VUELVE}:job/realizado")
+        html = cliente.get("/numeros?periodo=todo").text
+        # Hizo uno y volvio a escribir: todavia no te contrato dos veces.
+        assert "1 te contrató" in html and "todavía nadie volvió a contratarte" in html
+        cliente.post(f"/fletes/{VUELVE}:job2/realizado")
+        assert "1 volvió a contratarte" in cliente.get("/numeros?periodo=todo").text
 
     def test_ics(self, cliente):
         url = cliente.get("/api/agenda").json()["url_ics"]
