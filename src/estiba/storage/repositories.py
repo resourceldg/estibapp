@@ -1158,3 +1158,32 @@ class MensajeCrudoRepository:
     def get(self, message_id: str) -> dict | None:
         f = self.conn.execute("SELECT payload FROM mensajes_crudos WHERE message_id = ?", (message_id,)).fetchone()
         return json.loads(f["payload"]) if f else None
+
+
+class InterpretacionRepository:
+    """Que entendio Estiba de cada pedido, una fila por cambio. Ver migracion 030."""
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self.conn = conn
+
+    def guardar_si_cambio(self, job_id: str, chat_id: str, contenido: dict, reglas: str, ahora: datetime,
+                          latencia_ms: int | None = None) -> bool:
+        import hashlib
+        import uuid
+
+        texto = json.dumps(contenido, ensure_ascii=False, sort_keys=True, default=str)
+        huella = hashlib.sha256(f"{reglas}|{texto}".encode()).hexdigest()[:16]
+        ultima = self.conn.execute(
+            "SELECT huella FROM interpretaciones WHERE job_id = ? ORDER BY id DESC LIMIT 1", (job_id,)).fetchone()
+        if ultima is not None and ultima["huella"] == huella:
+            return False
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO interpretaciones (trace_id, job_id, chat_id, reglas, at, huella, contenido, latencia_ms) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (uuid.uuid4().hex[:12], job_id, chat_id, reglas, _a_texto(ahora), huella, texto, latencia_ms))
+        return True
+
+    def de(self, job_id: str) -> list[dict]:
+        return [{**dict(f), "contenido": json.loads(f["contenido"])} for f in self.conn.execute(
+            "SELECT * FROM interpretaciones WHERE job_id = ? ORDER BY id", (job_id,))]

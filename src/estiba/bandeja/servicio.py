@@ -12,6 +12,7 @@ correrlo dos veces seguidas no cambia nada.
 from __future__ import annotations
 
 import sqlite3
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -25,11 +26,13 @@ from estiba.economia import cargar as eco
 from estiba.economia import cotizar
 from estiba.economia.pedido import Cliente, evaluar
 from estiba.economia.pedido import Evaluacion as EvaluacionPedido
+from estiba.extraction import REGLAS_VERSION
 from estiba.extraction.texto import plano
 from estiba.crm.leads import LeadInfo, lead_de
 from estiba.jobs.engine import AGENDADO, Evaluacion, JobEngine
 from estiba.jobs.episodios import episodios
 from estiba.storage.repositories import (
+    InterpretacionRepository,
     ActionRepository,
     CRMRepository,
     ClaseRepository,
@@ -56,6 +59,32 @@ class Resultado:
     evaluaciones: dict[str, EvaluacionPedido] = field(default_factory=dict)
 
 
+def _traza(ev, conv) -> dict:
+    """Lo que se entendio de un pedido y de donde salio, para guardarlo si cambia.
+
+    La latencia no entra en la huella: solo cambia si cambia lo entendido.
+    """
+    def slot(s):
+        if s is None:
+            return None
+        v = s.value
+        v = [str(x) for x in v] if isinstance(v, list) else (v.isoformat() if hasattr(v, "isoformat") else
+                                                               (str(v) if v is not None else None))
+        return {"valor": v, "confianza": s.confidence, "mensaje": s.evidence.message_id,
+                "cita": s.evidence.quote, "metodo": s.evidence.method.value}
+
+    campos = ("origin", "destination", "items", "when", "hour", "daypart", "floors_no_lift", "helpers",
+              "quoted_price")
+    return {
+        "mensajes": [m.id for m in conv.messages],
+        "campos": {c: slot(getattr(ev.job, c, None)) for c in campos},
+        "intenciones": [[i.message_id, i.intencion.value, i.cita] for i in ev.extraccion.intenciones],
+        "estado": ev.job.state.value,
+        "eventos": [[e.hacia.value, e.at.isoformat(), e.causa] for e in ev.eventos],
+        "dudas": ev.extraccion.dudas,
+    }
+
+
 def sincronizar(conn: sqlite3.Connection, engine: JobEngine, ahora: datetime, espejo=None) -> Resultado:
     store = ConversationStore(conn)
     jobs = JobRepository(conn)
@@ -67,6 +96,7 @@ def sincronizar(conn: sqlite3.Connection, engine: JobEngine, ahora: datetime, es
     clases = ClaseRepository(conn)
     estimaciones = EstimacionRepository(conn)
     cortes = CorteRepository(conn)
+    interpretaciones = InterpretacionRepository(conn)
     guardadas = clases.todas()
     # El precio depende de los costos y la base, que se editan en la app.
     engine.pricing.preparar(conn)
@@ -118,8 +148,12 @@ def sincronizar(conn: sqlite3.Connection, engine: JobEngine, ahora: datetime, es
             if not any(m.from_customer and m.sent_at <= ahora for m in ep.conversacion.messages):
                 agenda.cancelar_de(ep.job_id)
                 continue
+            inicio = time.perf_counter()
             ev = engine.evaluar(ep.conversacion, ahora, acciones.for_job(ep.job_id))
             ev.job.id = ep.job_id
+            interpretaciones.guardar_si_cambio(
+                ep.job_id, chat_id, _traza(ev, ep.conversacion), REGLAS_VERSION, ahora,
+                int((time.perf_counter() - inicio) * 1000))
 
             # Confirmado y con fecha: va a la agenda, y eso lo pasa a agendado.
             if ev.job.state is JobState.CONFIRMED and not acciones.has(ep.job_id, AGENDADO):

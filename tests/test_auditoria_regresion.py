@@ -272,3 +272,23 @@ class TestProyeccionesVigentes:
         fila = conn.execute("SELECT vigente FROM jobs WHERE conversation_id = ?", (chat,)).fetchone()
         assert fila is not None and fila["vigente"] == 0
         assert conn.execute("SELECT COUNT(*) FROM jobs WHERE vigente = 1").fetchone()[0] > 0
+
+
+class TestTraza:
+    def test_se_guarda_cuando_cambia_lo_entendido(self, tmp_path):
+        from estiba.adapters.fixtures import FixtureMessageSource
+        from estiba.bandeja.servicio import sincronizar
+        from estiba.conversation.store import ConversationStore
+        from estiba.jobs.engine import JobEngine
+        from estiba.storage.db import connect
+        from estiba.storage.repositories import InterpretacionRepository
+
+        conn = connect(tmp_path / "x.db")
+        ConversationStore(conn).ingest(list(FixtureMessageSource().poll()))
+        ahora = datetime(2026, 9, 18, 12)
+        sincronizar(conn, JobEngine(), ahora)
+        n = conn.execute("SELECT COUNT(*) FROM interpretaciones").fetchone()[0]
+        sincronizar(conn, JobEngine(), ahora)   # nada cambio: no se repite
+        assert conn.execute("SELECT COUNT(*) FROM interpretaciones").fetchone()[0] == n > 0
+        traza = InterpretacionRepository(conn).de("5491155556666:job")[-1]
+        assert traza["reglas"] and traza["contenido"]["campos"]["origin"]["mensaje"]

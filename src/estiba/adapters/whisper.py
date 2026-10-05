@@ -18,9 +18,14 @@ from estiba.core.models import Transcript
 
 #: Vocabulario del oficio. Ayuda a Whisper con palabras que en espanol
 #: rioplatense suenan parecido a otras mas comunes.
+#: Con las localidades de la costa y los muebles que mas se nombran: la
+#: auditoria de octubre 2026 encontro "bayut" por baul, "somniar" por
+#: sommier, "full truck" por food truck y calles irreconocibles.
 PROMPT_FLETES = (
-    "Flete, mudanza, heladera, lavarropas, placard, sillon, colchon, "
-    "ascensor, ayudantes, tercer piso, cajas."
+    "Flete, fletero, mudanza, heladera, lavarropas, freezer, placard, ropero, sillón, colchón, sommier, "
+    "cama, mesa, sillas, cajonera, alacena, baúl, ascensor, ayudante, planta baja, tercer piso, cajas. "
+    "Mar del Plata, Santa Clara del Mar, Camet, Batán, Miramar, Mar de Cobo, Mar Chiquita, Pinamar, "
+    "Ostende, Villa Gesell, Mar Azul, San Clemente."
 )
 
 
