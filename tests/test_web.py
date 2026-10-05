@@ -159,7 +159,9 @@ class TestBandeja:
     def test_lo_que_ya_no_hace_falta_queda_reemplazado(self, db):
         conn = connect(db)
         sincronizar(conn, JobEngine(), JUEVES_18)
-        sincronizar(conn, JobEngine(), LUNES_21)  # el seguimiento de Flores ya no va: se perdio
+        # El seguimiento de Flores ya no va: dijo "mañana te confirmo" y a las
+        # dos semanas se dio por perdido.
+        sincronizar(conn, JobEngine(), datetime(2026, 9, 30, 12))
         estados = dict(conn.execute("SELECT chat_id, status FROM drafts").fetchall())
         assert estados["5491155556666"] == "reemplazado"
 

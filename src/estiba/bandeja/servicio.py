@@ -112,6 +112,12 @@ def sincronizar(conn: sqlite3.Connection, engine: JobEngine, ahora: datetime, es
         for n, ep in enumerate(todos, start=1):
             if not any(m.sent_at <= ahora for m in ep.conversacion.messages):
                 continue
+            # Sin un solo mensaje del cliente no hay consulta: un link, un PDF
+            # o un contacto que mandaste vos no es una oportunidad, y antes
+            # terminaba en el embudo como "perdida por silencio".
+            if not any(m.from_customer and m.sent_at <= ahora for m in ep.conversacion.messages):
+                agenda.cancelar_de(ep.job_id)
+                continue
             ev = engine.evaluar(ep.conversacion, ahora, acciones.for_job(ep.job_id))
             ev.job.id = ep.job_id
 

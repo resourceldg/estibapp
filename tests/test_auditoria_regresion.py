@@ -199,3 +199,42 @@ class TestClasificacion:
         ])
         cl = clasificar(conv, SlotExtractor().extract(conv), "ideaspublicom518")
         assert cl.clase is not Clase.SPAM
+
+
+class TestSilencio:
+    def _conv(self, *lineas):
+        from estiba.core.models import Conversation, Message, MessageKind
+
+        t = datetime(2026, 9, 29, 18, 0)
+        return Conversation("549", [Message(f"m{i}", "549", c, t.replace(minute=i), MessageKind.TEXT, text=x)
+                                    for i, (c, x) in enumerate(lineas)])
+
+    def test_quien_dijo_te_aviso_tiene_dos_semanas(self):
+        from estiba.core.models import JobState
+        from estiba.jobs.engine import JobEngine
+
+        conv = self._conv((True, "necesito llevar una heladera de Alberti a Colon"), (False, "te sale 40"),
+                          (True, "Le digo a mi hija y te aviso"))
+        assert JobEngine().evaluar(conv, datetime(2026, 10, 5)).job.state is not JobState.CANCELLED
+        assert JobEngine().evaluar(conv, datetime(2026, 10, 14)).job.state is JobState.CANCELLED
+
+    def test_el_motivo_del_silencio_no_cambia_cada_dia(self):
+        from estiba.jobs.engine import JobEngine
+
+        conv = self._conv((True, "necesito llevar una heladera de Alberti a Colon"), (False, "te sale 40"))
+        a = JobEngine().evaluar(conv, datetime(2026, 10, 5)).eventos[-1].causa
+        b = JobEngine().evaluar(conv, datetime(2026, 10, 20)).eventos[-1].causa
+        assert a == b == "4 días sin respuesta del cliente"
+
+    def test_sin_mensajes_del_cliente_no_hay_oportunidad(self, tmp_path):
+        from estiba.bandeja.servicio import sincronizar
+        from estiba.conversation.store import ConversationStore
+        from estiba.core.models import Message, MessageKind
+        from estiba.jobs.engine import JobEngine
+        from estiba.storage.db import connect
+
+        conn = connect(tmp_path / "x.db")
+        ConversationStore(conn).ingest([Message("x1", "549", False, datetime(2026, 9, 1), MessageKind.TEXT,
+                                                text="https://algun.link/documento.pdf")])
+        r = sincronizar(conn, JobEngine(), datetime(2026, 10, 5))
+        assert not r.fletes and not r.leads

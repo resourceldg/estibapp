@@ -84,11 +84,14 @@ class TestFixtures:
         assert antes.job.state is JobState.WAITING_CUSTOMER
         assert any("seguimiento" in a for a in antes.alertas)
 
-        despues = JobEngine().evaluar(conv, LUNES_21)
+        # Dijo "mañana te confirmo": a los cuatro dias sigue esperando, no se
+        # pierde. Recien a las dos semanas (ver Politica.espera_pospuesto).
+        assert JobEngine().evaluar(conv, LUNES_21).job.state is JobState.WAITING_CUSTOMER
+        despues = JobEngine().evaluar(conv, datetime(2026, 9, 30, 12))
         assert despues.job.state is JobState.CANCELLED
         cancelacion = despues.eventos[-1]
-        assert "sin respuesta" in cancelacion.causa
-        assert cancelacion.at == datetime(2026, 9, 19, 19, 33)  # 4 dias despues del ultimo mensaje
+        assert cancelacion.causa == "14 días sin respuesta del cliente"
+        assert cancelacion.at == datetime(2026, 9, 29, 19, 33)  # 14 dias despues del ultimo mensaje
 
     def test_la_aceptacion_con_fecha_dudosa_no_confirma_hasta_que_se_aclara(self):
         ev = JobEngine().evaluar(_fixture("03-cambio-de-destino.json"), LUNES_21)
@@ -266,7 +269,7 @@ class TestPreguntas:
         assert "¿Sería el martes 22/09?" in ev.preguntas
 
     def test_un_flete_cerrado_no_tiene_preguntas(self):
-        assert JobEngine().evaluar(_fixture("02-manana-te-confirmo.json"), LUNES_21).preguntas == []
+        assert JobEngine().evaluar(_fixture("02-manana-te-confirmo.json"), datetime(2026, 9, 30, 12)).preguntas == []
 
 
 # --------------------------------------------------------------------------
@@ -309,6 +312,6 @@ class TestCli:
         assert "¿Para qué día lo necesitás?" in salida
         assert "hacer seguimiento" in salida
 
-        main(["--db", db, "jobs", "5491155556666", "--ahora", "2026-09-21T12:00", "--tarifa", str(tarifa)])
+        main(["--db", db, "jobs", "5491155556666", "--ahora", "2026-09-30T12:00", "--tarifa", str(tarifa)])
         assert "CANCELADO" in capsys.readouterr().out
         assert JobRepository(connect(db)).state("5491155556666:job") is JobState.CANCELLED

@@ -46,6 +46,10 @@ class Politica:
     seguimiento: timedelta = timedelta(days=2)
     #: Sin respuesta despues de esto: el flete se da por perdido.
     abandono: timedelta = timedelta(days=4)
+    #: Si lo ultimo que dijo el cliente fue "te aviso" (posponer), se le da
+    #: mas tiempo: el que espera que le depositen o que su hija confirme no
+    #: se perdio a los cuatro dias. Paso de verdad (ver audit/AUDIT_REPORT.md).
+    espera_pospuesto: timedelta = timedelta(days=14)
     #: Por debajo de esta confianza, un dato obligatorio no alcanza para confirmar.
     confianza_minima: float = 0.6
 
@@ -282,17 +286,23 @@ class JobEngine:
 
         ultimo = mensajes[-1]
         silencio = ahora - ultimo.sent_at
-        dias = silencio.days
+        # Lo ultimo que dijo el cliente: si fue "te aviso", se espera mas.
+        suyos = [m for m in mensajes if m.from_customer]
+        ultima_suya = next((x.intencion for x in ex.intenciones if suyos and x.message_id == suyos[-1].id), None)
+        pospuso = ultima_suya is Intencion.POSPONE or estado is JobState.WAITING_CUSTOMER
+        plazo = self.politica.espera_pospuesto if pospuso else self.politica.abandono
         if estado in (*_ABIERTOS, JobState.DRAFT):
             if ultimo.from_customer and estado is not JobState.WAITING_CUSTOMER:
                 cuando = "recién" if silencio < timedelta(minutes=1) else f"hace {_hace(silencio)}"
                 alertas.append(f"te escribió {cuando} y espera respuesta")
-            elif silencio >= self.politica.abandono:
+            elif silencio >= plazo:
                 por_silencio = True
+                # La causa dice el plazo que se cumplio, no los dias de hoy:
+                # antes cambiaba todos los dias ("4 dias", "5 dias"...).
                 mover(
                     JobState.CANCELLED,
-                    ultimo.sent_at + self.politica.abandono,
-                    f"{_plural(dias, 'día')} sin respuesta del cliente",
+                    ultimo.sent_at + plazo,
+                    f"{_plural(plazo.days, 'día')} sin respuesta del cliente",
                     ultimo.id,
                 )
             elif silencio >= self.politica.seguimiento:
