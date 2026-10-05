@@ -202,6 +202,18 @@ def sincronizar(conn: sqlite3.Connection, engine: JobEngine, ahora: datetime, es
             clases.guardar_inferida(chat_id, clase.value, "ya hizo un flete", ahora)
             r.clases[chat_id] = Clasificacion(clase, "ya hizo un flete")
 
+    # Lo que ya no sale de ninguna conversacion queda marcado, no borrado:
+    # tiene historia (borradores, eventos) que no se toca.
+    vigentes = list(r.fletes)
+    with conn:
+        conn.execute("UPDATE jobs SET vigente = 0")
+        conn.execute("UPDATE leads SET vigente = 0")
+        for i in range(0, len(vigentes), 500):
+            parte = vigentes[i:i + 500]
+            marcas = ",".join("?" * len(parte))
+            conn.execute(f"UPDATE jobs SET vigente = 1 WHERE id IN ({marcas})", parte)
+            conn.execute(f"UPDATE leads SET vigente = 1 WHERE id IN ({marcas})", parte)
+
     if espejo is not None:
         try:
             for evento, cancelado in agenda.sin_reflejar():

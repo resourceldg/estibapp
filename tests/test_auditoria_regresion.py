@@ -251,3 +251,24 @@ class TestQueNoSeaLugar:
     @pytest.mark.parametrize("texto", ["son 1500", "tengo 2000", "dni 30123456"])
     def test_numeros_que_no_son_direcciones(self, texto):
         assert reglas.lugares(texto) == []
+
+
+class TestProyeccionesVigentes:
+    def test_lo_que_deja_de_salir_queda_marcado_y_no_se_borra(self, tmp_path):
+        from estiba.adapters.fixtures import FixtureMessageSource
+        from estiba.bandeja.servicio import sincronizar
+        from estiba.conversation.store import ConversationStore
+        from estiba.jobs.engine import JobEngine
+        from estiba.storage.db import connect
+        from estiba.storage.repositories import ClaseRepository
+
+        conn = connect(tmp_path / "x.db")
+        ConversationStore(conn).ingest(list(FixtureMessageSource().poll()))
+        ahora = datetime(2026, 9, 18, 12)
+        sincronizar(conn, JobEngine(), ahora)
+        chat = "5491155556666"
+        ClaseRepository(conn).corregir(chat, "privado", ahora)
+        sincronizar(conn, JobEngine(), ahora)
+        fila = conn.execute("SELECT vigente FROM jobs WHERE conversation_id = ?", (chat,)).fetchone()
+        assert fila is not None and fila["vigente"] == 0
+        assert conn.execute("SELECT COUNT(*) FROM jobs WHERE vigente = 1").fetchone()[0] > 0

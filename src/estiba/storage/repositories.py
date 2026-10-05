@@ -289,7 +289,7 @@ class JobRepository:
         )
 
     def by_state(self) -> dict[JobState, int]:
-        filas = self.conn.execute("SELECT state, COUNT(*) AS n FROM jobs GROUP BY state")
+        filas = self.conn.execute("SELECT state, COUNT(*) AS n FROM jobs WHERE vigente = 1 GROUP BY state")
         return {JobState(f["state"]): f["n"] for f in filas}
 
 
@@ -663,6 +663,7 @@ class PanelRepository:
             # persona era "Dami" en la bandeja y "5492235550002" aca.
             "  COALESCE(c.display_name, c.wa_name, j.conversation_id) AS quien "
             "FROM jobs j LEFT JOIN contacts c ON c.id = j.conversation_id "
+            "WHERE j.vigente = 1 "
             "ORDER BY j.created_at DESC"
         )
         return [dict(f) for f in filas if f["sugerido"] or f["cotizado"] or f["cobrado"]]
