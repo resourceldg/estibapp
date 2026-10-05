@@ -1056,3 +1056,73 @@ class ReparacionRepository:
     def movimientos(self, fondo: str) -> list[tuple[date, Decimal]]:
         return [(date.fromisoformat(f["fecha"]), Decimal(f["monto"])) for f in self.conn.execute(
             "SELECT fecha, monto FROM fondo_movimientos WHERE fondo = ? ORDER BY fecha, id", (fondo,))]
+
+
+class ContactoEventoRepository:
+    """Lo que se decide sobre una persona. Solo se agrega. Ver migracion 026."""
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self.conn = conn
+
+    def add(self, chat_id: str, tipo: str, ahora: datetime, valor: str | None = None,
+            nota: str | None = None, actor: str = "humano") -> int:
+        with self.conn:
+            cur = self.conn.execute(
+                "INSERT INTO contacto_eventos (chat_id, tipo, valor, nota, at, actor) VALUES (?, ?, ?, ?, ?, ?)",
+                (chat_id, tipo, valor, (nota or "").strip() or None, _a_texto(ahora), actor))
+        return cur.lastrowid
+
+    def de(self, chat_id: str) -> list[sqlite3.Row]:
+        return list(self.conn.execute(
+            "SELECT * FROM contacto_eventos WHERE chat_id = ? ORDER BY at, id", (chat_id,)))
+
+    def todos(self) -> dict[str, list[sqlite3.Row]]:
+        salida: dict[str, list[sqlite3.Row]] = {}
+        for f in self.conn.execute("SELECT * FROM contacto_eventos ORDER BY at, id"):
+            salida.setdefault(f["chat_id"], []).append(f)
+        return salida
+
+
+class RecontactoRepository:
+    """Mensajes de recuperacion: preparado -> enviado / copiado / descartado. Ver migracion 026."""
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self.conn = conn
+
+    def preparar(self, chat_id: str, job_id: str | None, plantilla: str, secuencia: str | None,
+                 paso: int | None, texto: str, ahora: datetime) -> int:
+        """Uno por persona: si ya hay uno preparado, se reemplaza el texto en vez de duplicarlo."""
+        with self.conn:
+            previo = self.conn.execute(
+                "SELECT id FROM recontactos WHERE chat_id = ? AND estado = 'preparado'", (chat_id,)).fetchone()
+            if previo:
+                self.conn.execute(
+                    "UPDATE recontactos SET job_id = ?, plantilla = ?, secuencia = ?, paso = ?, texto = ? WHERE id = ?",
+                    (job_id, plantilla, secuencia, paso, texto, previo["id"]))
+                return previo["id"]
+            cur = self.conn.execute(
+                "INSERT INTO recontactos (chat_id, job_id, plantilla, secuencia, paso, texto, creado) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (chat_id, job_id, plantilla, secuencia, paso, texto, _a_texto(ahora)))
+        return cur.lastrowid
+
+    def get(self, recontacto_id: int) -> sqlite3.Row | None:
+        return self.conn.execute("SELECT * FROM recontactos WHERE id = ?", (recontacto_id,)).fetchone()
+
+    def decidir(self, recontacto_id: int, estado: str, ahora: datetime, texto: str | None = None,
+                message_id: str | None = None, error: str | None = None) -> None:
+        if estado not in ("enviado", "copiado", "descartado"):
+            raise ValueError(f"estado invalido: {estado}")
+        with self.conn:
+            cur = self.conn.execute(
+                "UPDATE recontactos SET estado = ?, decidido = ?, texto = COALESCE(?, texto), "
+                "message_id = ?, error = ? WHERE id = ? AND estado = 'preparado'",
+                (estado, _a_texto(ahora), texto, message_id, error, recontacto_id))
+        if cur.rowcount == 0:
+            raise KeyError(f"no hay un recontacto preparado {recontacto_id}")
+
+    def todos(self) -> dict[str, list[sqlite3.Row]]:
+        salida: dict[str, list[sqlite3.Row]] = {}
+        for f in self.conn.execute("SELECT * FROM recontactos ORDER BY creado, id"):
+            salida.setdefault(f["chat_id"], []).append(f)
+        return salida
