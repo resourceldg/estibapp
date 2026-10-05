@@ -94,11 +94,9 @@ class TestPrecio:
 
 
 class TestIntencion:
-    @pytest.mark.xfail(strict=True, reason="P1: 'te confirmo hoy a las 19' es confirmar, no posponer")
     def test_te_confirmo_con_hora_es_aceptar(self):
         assert intencion("Hola si te confirmo hoy a las 19 hs")[0] is Intencion.ACEPTA
 
-    @pytest.mark.xfail(strict=True, reason="P1: 'Ok/Dale' al principio gana sobre 'te aviso/te contacto luego'")
     @pytest.mark.parametrize("texto", [
         "Ok..te aviso en la semana",
         "Dale gracias. Es para fin de mes. Te contacto luego",
@@ -107,10 +105,18 @@ class TestIntencion:
     def test_ok_pero_te_aviso_es_posponer(self, texto):
         assert intencion(texto)[0] is Intencion.POSPONE
 
-    @pytest.mark.xfail(strict=True, reason="P1: 'Si' condicional (sin tilde) se lee como 'sí'")
     def test_si_condicional_no_es_aceptar(self):
         resultado = intencion("Si están enganchados con el food truck, todo bien jefe")
         assert resultado is None or resultado[0] is not Intencion.ACEPTA
+
+    def test_te_escribo_de_nuevo_es_una_consulta(self):
+        assert intencion("hola! te escribo de nuevo, ahora necesito llevar un lavarropas")[0] is Intencion.CONSULTA
+
+    def test_manana_te_confirmo_sigue_siendo_posponer(self):
+        assert intencion("mañana te confirmo")[0] is Intencion.POSPONE
+
+    def test_dale_gracias_solo_es_cortesia(self):
+        assert intencion("Dale gracias") is None
 
     def test_estoy_averiguando_te_confirmo_mas_tarde_es_posponer(self):
         assert intencion("Estoy averiguando precios te confirmo más tarde cuando hago la compra")[0] \
