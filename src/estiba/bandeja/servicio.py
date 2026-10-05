@@ -151,15 +151,17 @@ def sincronizar(conn: sqlite3.Connection, engine: JobEngine, ahora: datetime, es
             inicio = time.perf_counter()
             ev = engine.evaluar(ep.conversacion, ahora, acciones.for_job(ep.job_id))
             ev.job.id = ep.job_id
-            interpretaciones.guardar_si_cambio(
-                ep.job_id, chat_id, _traza(ev, ep.conversacion), REGLAS_VERSION, ahora,
-                int((time.perf_counter() - inicio) * 1000))
 
             # Confirmado y con fecha: va a la agenda, y eso lo pasa a agendado.
             if ev.job.state is JobState.CONFIRMED and not acciones.has(ep.job_id, AGENDADO):
                 acciones.add(ep.job_id, AGENDADO, ahora, actor="calendario")
                 ev = engine.evaluar(ep.conversacion, ahora, acciones.for_job(ep.job_id))
                 ev.job.id = ep.job_id
+            # Lo entendido, despues de agendar: si no, la proxima vez el estado
+            # "cambiaba" a agendado sin que nada nuevo hubiera pasado.
+            interpretaciones.guardar_si_cambio(
+                ep.job_id, chat_id, _traza(ev, ep.conversacion), REGLAS_VERSION, ahora,
+                int((time.perf_counter() - inicio) * 1000))
             # Sin fecha no hay nada que poner en el calendario. Un flete que
             # se arreglo por telefono y se hizo el mismo dia se cierra igual:
             # el calendario es una consecuencia, no un requisito.
