@@ -4,7 +4,7 @@
 <a class="volver" href="/numeros">{{ icono("volver") }}Números</a>
 <div class="encabezado">
   <h1>Clientes</h1>
-  <p class="bajada">Una persona, todas sus consultas. Tocá una para ver su historia, su reputación y qué se anotó.</p>
+  <p class="bajada">Una persona, todas sus consultas. Tocá una para ver su historia, su reputación y qué se anotó. Los que tiene sentido volver a contactar están en <a href="/recuperacion">Recuperación</a>.</p>
   <nav class="periodos filtros-personas" aria-label="Filtrar">
     {% for clave, etq in filtros %}<a href="?situacion={{ clave }}{% if etiqueta %}&etiqueta={{ etiqueta }}{% endif %}" {% if clave == situacion %}aria-current="true"{% endif %}>{{ etq }}</a>{% endfor %}
   </nav>
