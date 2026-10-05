@@ -1126,3 +1126,34 @@ class RecontactoRepository:
         for f in self.conn.execute("SELECT * FROM recontactos ORDER BY creado, id"):
             salida.setdefault(f["chat_id"], []).append(f)
         return salida
+
+
+class MensajeCrudoRepository:
+    """El payload original de cada mensaje, sin lo binario. Ver migracion 027."""
+
+    #: Mas largo que esto y sin espacios: una imagen o un archivo en base64.
+    LARGO_BINARIO = 1000
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self.conn = conn
+
+    @classmethod
+    def _limpio(cls, v):
+        if isinstance(v, dict):
+            return {k: cls._limpio(x) for k, x in v.items()}
+        if isinstance(v, list):
+            return [cls._limpio(x) for x in v]
+        if isinstance(v, str) and len(v) > cls.LARGO_BINARIO and " " not in v[:200]:
+            return f"<binario recortado: {len(v)} caracteres>"
+        return v
+
+    def guardar(self, message_id: str, chat_id: str, payload: dict, ahora: datetime) -> None:
+        with self.conn:
+            self.conn.execute(
+                "INSERT OR IGNORE INTO mensajes_crudos (message_id, chat_id, payload, recibido) VALUES (?, ?, ?, ?)",
+                (message_id, chat_id, json.dumps(self._limpio(payload), ensure_ascii=False, default=str),
+                 _a_texto(ahora)))
+
+    def get(self, message_id: str) -> dict | None:
+        f = self.conn.execute("SELECT payload FROM mensajes_crudos WHERE message_id = ?", (message_id,)).fetchone()
+        return json.loads(f["payload"]) if f else None

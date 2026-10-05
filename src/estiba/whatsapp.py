@@ -51,6 +51,13 @@ class Envio:
     error: str | None = None
 
 
+def _guardar_crudo(conn: sqlite3.Connection, mensaje: Message, payload: dict) -> None:
+    """El mensaje tal como llego, sin lo binario: lo que hoy no se interpreta se puede leer despues."""
+    from estiba.storage.repositories import MensajeCrudoRepository
+
+    MensajeCrudoRepository(conn).guardar(mensaje.id, mensaje.chat_id, payload, datetime.now())
+
+
 class WhatsApp:
     def __init__(self, cliente: WahaClient) -> None:
         self.cliente = cliente
@@ -62,9 +69,11 @@ class WhatsApp:
         """Un evento de webhook. Devuelve el mensaje si era uno nuevo de una charla."""
         if evento.get("event") not in EVENTOS_DE_MENSAJE:
             return None
-        mensaje = ingresar(self.cliente, evento.get("payload") or {})
+        payload = evento.get("payload") or {}
+        mensaje = ingresar(self.cliente, payload)
         if mensaje is None:
             return None
+        _guardar_crudo(conn, mensaje, payload)
         nuevos = ConversationStore(conn).ingest([mensaje])
         return mensaje if nuevos else None
 
@@ -76,8 +85,10 @@ class WhatsApp:
             jid = chat["id"] if isinstance(chat["id"], str) else chat["id"].get("_serialized", "")
             if not es_persona(jid):
                 continue
-            mensajes = [m for p in self.cliente.mensajes(jid, desde) if (m := ingresar(self.cliente, p))]
-            nuevos += store.ingest(mensajes)
+            pares = [(m, p) for p in self.cliente.mensajes(jid, desde) if (m := ingresar(self.cliente, p))]
+            for m, p in pares:
+                _guardar_crudo(conn, m, p)
+            nuevos += store.ingest([m for m, _ in pares])
             self._guardar_nombre(conn, jid, chat.get("name"))
         return nuevos
 
@@ -109,7 +120,10 @@ class WhatsApp:
             if not es_persona(jid):
                 continue
             chats += 1
-            mensajes = [m for p in self.cliente.mensajes(jid, desde) if (m := ingresar(self.cliente, p))]
+            pares = [(m, p) for p in self.cliente.mensajes(jid, desde) if (m := ingresar(self.cliente, p))]
+            for m, p in pares:
+                _guardar_crudo(conn, m, p)
+            mensajes = [m for m, _ in pares]
             ya = store.mensajes.existentes([m.id for m in mensajes])
             traidos += [m for m in mensajes if m.id not in ya]
             nuevos += store.ingest(mensajes)

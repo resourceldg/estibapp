@@ -200,6 +200,36 @@ class TestNormalizar:
         assert m.kind is MessageKind.TEXT and m.text == "esta es la heladera"
 
 
+class TestLoQueNoEsTexto:
+    """Antes, ubicaciones, contactos y fotos quedaban como "otro" vacio. Ver audit/AUDIT_REPORT.md."""
+
+    def test_una_ubicacion_queda_como_texto_con_coordenadas(self):
+        m = normalizar(mensaje(body="", location={"latitude": -38.0123, "longitude": -57.5678,
+                                                 "description": "Araoz 2619"}))
+        assert m.kind is MessageKind.TEXT and m.text == "📍 Ubicación: Araoz 2619 (-38.012300, -57.567800)"
+
+    def test_un_contacto_queda_como_texto(self):
+        tarjeta = "BEGIN:VCARD\nVERSION:3.0\nFN:Agustin Tecnica\nTEL;waid=549:+54 9 223 524-0000\nEND:VCARD"
+        m = normalizar(mensaje(body=tarjeta))
+        assert m.text == "👤 Contacto: Agustin Tecnica +54 9 223 524-0000"
+
+    def test_la_miniatura_en_base64_no_es_texto(self):
+        m = normalizar(mensaje(hasMedia=True, body="/9j/4AAQSkZJRgABAQAAAQABAAD" + "A" * 400,
+                               media={"mimetype": "image/jpeg"}))
+        assert m.kind is MessageKind.IMAGE and m.text is None
+
+    def test_el_original_se_guarda_sin_lo_binario(self, tmp_path):
+        from estiba.storage.db import connect
+        from estiba.storage.repositories import MensajeCrudoRepository
+
+        conn = connect(tmp_path / "x.db")
+        payload = mensaje(body="/9j/" + "A" * 5000, location={"latitude": 1, "longitude": 2})
+        MensajeCrudoRepository(conn).guardar("m1", "549", payload, datetime(2026, 10, 5))
+        guardado = MensajeCrudoRepository(conn).get("m1")
+        assert guardado["location"] == {"latitude": 1, "longitude": 2}
+        assert guardado["body"].startswith("<binario recortado")
+
+
 class TestFirma:
     def test_contra_un_webhook_firmado_por_waha(self):
         vector = json.loads((DATOS / "waha_webhook_firmado.json").read_text())

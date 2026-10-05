@@ -108,6 +108,35 @@ def jid_de(chat_id: str) -> str:
 # --------------------------------------------------------------------------
 
 
+#: Una miniatura o un archivo en base64 que vino en el cuerpo del mensaje.
+_ES_BASE64 = re.compile(r"^(?:/9j/|iVBOR|R0lGOD|UklGR)|^[A-Za-z0-9+/=]{300,}$")
+
+
+def _ubicacion(payload: dict) -> str | None:
+    """"📍 Ubicación: Araoz 2619 (-38.0123, -57.5678)" si el mensaje es una ubicacion."""
+    loc = payload.get("location") or {}
+    lat = loc.get("latitude") if isinstance(loc, dict) else None
+    lon = loc.get("longitude") if isinstance(loc, dict) else None
+    if lat is None or lon is None:
+        return None
+    nombre = " ".join(str(x) for x in (loc.get("name"), loc.get("address"), loc.get("description")) if x).strip()
+    return f"📍 Ubicación: {nombre + ' ' if nombre else ''}({float(lat):.6f}, {float(lon):.6f})"
+
+
+def _contacto(payload: dict) -> str | None:
+    """"👤 Contacto: Agustin Tecnica +54 9 223 ..." si el mensaje es una tarjeta de contacto."""
+    tarjetas = payload.get("vCards") or []
+    if not tarjetas:
+        texto = payload.get("body") or ""
+        tarjetas = [texto] if texto.startswith("BEGIN:VCARD") else []
+    partes = []
+    for v in tarjetas:
+        nombre = re.search(r"^FN:(.+)$", str(v), re.M)
+        tel = re.search(r"TEL[^:]*:(.+)$", str(v), re.M)
+        partes.append(" ".join(x.group(1).strip() for x in (nombre, tel) if x))
+    return f"👤 Contacto: {', '.join(p for p in partes if p)}" if any(partes) else None
+
+
 def normalizar(payload: dict, resolver_lid=None, media_path: str | None = None) -> Message | None:
     """Un WAMessage de WAHA a un Message. None si no es una charla con una persona.
 
@@ -134,13 +163,27 @@ def normalizar(payload: dict, resolver_lid=None, media_path: str | None = None) 
         chat_id = resolver_lid(jid)
 
     texto = payload.get("body") or None
+    # Una foto puede traer en "body" la miniatura en base64: no es texto, y
+    # el extractor la leia como si el cliente la hubiera escrito.
+    if texto and _ES_BASE64.match(texto):
+        texto = None
     mime = ((payload.get("media") or {}).get("mimetype") or "").lower()
-    if not payload.get("hasMedia"):
+    lugar = _ubicacion(payload)
+    contacto = _contacto(payload)
+    if lugar:
+        # La ubicacion que manda el cliente es la direccion mas exacta que hay:
+        # antes quedaba como "otro" vacio y se perdia.
+        kind, texto = MessageKind.TEXT, lugar
+    elif contacto:
+        kind, texto = MessageKind.TEXT, contacto
+    elif not payload.get("hasMedia"):
         kind = MessageKind.TEXT if texto else MessageKind.OTHER
     elif mime.startswith("audio/") and media_path:
         kind, texto = MessageKind.AUDIO, None
     elif texto:
-        kind = MessageKind.TEXT
+        kind = MessageKind.TEXT    # foto o archivo con epigrafe: cuenta el epigrafe
+    elif mime.startswith("image/"):
+        kind = MessageKind.IMAGE   # una foto sin texto: se ve que mando una foto
     else:
         kind = MessageKind.OTHER
 
