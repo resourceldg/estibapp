@@ -30,7 +30,34 @@ from dataclasses import dataclass
 from estiba.mapa.nombres import palabras, para_mostrar, plano
 
 #: Precision, de mejor a peor. Cambia cuanto se le cree al numero de km.
-ALTURA, ESQUINA, CALLE = "altura", "esquina", "calle"
+ALTURA, ESQUINA, CALLE, LOCALIDAD = "altura", "esquina", "calle", "localidad"
+
+#: Como la gente nombra las ciudades y no como las nombra el INDEC.
+ALIAS = {
+    "mardel": "Mar del Plata", "mdp": "Mar del Plata", "mdq": "Mar del Plata", "la feliz": "Mar del Plata",
+    "santa clara": "Santa Clara del Mar", "gesell": "Villa Gesell", "madariaga": "General Juan Madariaga",
+    "necochea": "Necochea ? Quequén", "quequen": "Necochea ? Quequén", "san clemente": "San Clemente del Tuyú",
+    "mar de ajo": "Mar del Tuyú - Mar de Ajó - San Bernardo", "san bernardo": "Mar del Tuyú - Mar de Ajó - San Bernardo",
+}
+
+#: Lugares de la Costa que el INDEC no tiene como localidad (son parte de
+#: otra) y que se nombran solos en un chat: "llevo una cama a Mar Azul".
+#: Centros aproximados: alcanzan para los km de un flete, no para llegar.
+LUGARES = {
+    "mar azul": ("Mar Azul", -37.338, -57.026),
+    "mar de las pampas": ("Mar de las Pampas", -37.326, -57.022),
+    "ostende": ("Ostende", -37.135, -56.880),
+    "carilo": ("Cariló", -37.163, -56.903),
+    "valeria del mar": ("Valeria del Mar", -37.146, -56.888),
+    "batan": ("Batán", -38.006, -57.711),
+    "santa teresita": ("Santa Teresita", -36.540, -56.700),
+    "mar chiquita": ("Mar Chiquita", -37.746, -57.426),
+}
+
+#: Una ciudad de una sola palabra le gana a la calle que se llama igual solo
+#: si queda cerca: "Miramar" es la ciudad, pero "Alberti" sin mas es la
+#: calle de Mar del Plata y no el pueblo a 400 km.
+LOCAL_KM = 150.0
 
 
 @dataclass(frozen=True)
@@ -40,6 +67,8 @@ class Ubicacion:
     precision: str
     #: Como lo encontro, para mostrarlo: "CATAMARCA 1185, Mar del Plata".
     como: str
+    #: La localidad del INDEC donde cayo, si se sabe.
+    localidad: str | None = None
 
     @property
     def punto(self) -> tuple[float, float]:
@@ -62,6 +91,8 @@ def km_entre(a: tuple[float, float], b: tuple[float, float]) -> float:
 _PISO = re.compile(r"\s+\d{1,2}\s*[°º]\s*[a-z]?\b.*$|\s*\b(?:piso|dpto|depto|dto|departamento|timbre)\b.*$", re.I)
 _RUIDO = re.compile(r"\b(?:mas\s*o\s*menos|masomenos|aprox\w*|al\s+lado|cerca\s+de)\b", re.I)
 _ENTRE = re.compile(r"\s+entre\s+(.+?)\s+y\s+(.+)$", re.I)
+#: "corrientes entre el uripe": un "entre" sin las dos calles no dice nada mas.
+_ENTRE_SUELTO = re.compile(r"\s+entre\s+.*$", re.I)
 _ESQUINA = re.compile(r"\s+(?:y|e|esq\.?|esquina)\s+", re.I)
 _ALTURA = re.compile(r"^(.*?[^\d\s].*?)\s+(?:n[°º]?\s*)?(\d{1,5})$", re.I)
 
@@ -87,6 +118,7 @@ def leer(texto: str, ciudades: dict[str, str] | None = None) -> Direccion | None
         if a := _ALTURA.match(principal):
             return Direccion(a.group(1).strip(), int(a.group(2)), ciudad=ciudad)
         return Direccion(principal, otra=m.group(1).strip(), ciudad=ciudad)
+    t = _ENTRE_SUELTO.sub("", t).strip() or t
     partes = _ESQUINA.split(t, maxsplit=1)
     if len(partes) == 2 and all(palabras(p) for p in partes):
         return Direccion(partes[0].strip(), otra=partes[1].strip(), ciudad=ciudad)
@@ -193,9 +225,11 @@ class Mapa:
         for c in comunes:
             salida.setdefault(c, CONTIENE)
         # La calle tiene menos palabras que lo escrito: "sebastian gaboto" -> "gaboto".
+        # Pero no menos de la mitad: en "tonal unos tirantes de aluminio" no
+        # hay ninguna calle, aunque alguna palabra suelta coincida con una.
         for p in conjunto:
             for c in self._por_palabra.get(p, set()):
-                if set(c.split()) <= conjunto:
+                if set(c.split()) <= conjunto and 2 * len(c.split()) >= len(conjunto):
                     salida.setdefault(c, CONTENIDO)
         if tipeo:
             salida = {c: max(n, TIPEO) for c, n in salida.items()}
@@ -204,10 +238,60 @@ class Mapa:
     # -- buscar -----------------------------------------------------------
 
     def ubicar(self, texto: str, ciudad: str | None = None) -> Ubicacion | None:
-        """`ciudad` es una pista (la del telefono): manda la que diga el texto."""
+        """`ciudad` es una pista (la del telefono): manda la que diga el texto.
+
+        Sin una ciudad escrita, solo vale lo que cae en la zona: un nombre
+        parecido a 400 km no es "un flete largo", es un error del mapa, y
+        un error asi convertia una mudanza en Mar del Plata en 980 km.
+        Mejor "no lo encontre" y el promedio, dicho, que un numero inventado.
+        """
         d = leer(texto, self.ciudades)
         if d is None:
             return None
+        if lugar := self._localidad(d):
+            return lugar
+        u = self._ubicar(d, ciudad)
+        pista = self.ciudades.get(plano(ciudad)) if ciudad else None
+        # Fuera de la zona solo si lo dice el texto o es la ciudad del cliente
+        # (un 2262 que pide "Rivadavia 1250" esta en Necochea).
+        if u is not None and d.ciudad is None and not self._en_zona(u) and (pista is None or u.localidad != pista):
+            return None
+        return u
+
+    def _localidad(self, d: Direccion) -> Ubicacion | None:
+        """El texto entero es una ciudad o un lugar: "Miramar", "mar del plata", "mardel"."""
+        if d.altura or d.otra:
+            return None
+        nombre = plano(d.calle)
+        if nombre in LUGARES:
+            visible, lat, lon = LUGARES[nombre]
+            return Ubicacion(lat, lon, LOCALIDAD, f"{visible} (el centro)")
+        loc = ALIAS.get(nombre) or self.ciudades.get(nombre)
+        if loc is None and len(nombre.split()) >= 2:
+            # "san clemente" -> "San Clemente del Tuyú": el principio de un nombre largo.
+            loc = next((v for k, v in sorted(self.ciudades.items()) if k.startswith(nombre + " ")), None)
+        if loc is None:
+            return None
+        punto = self._centro(loc)
+        if punto is None:
+            return None
+        u = Ubicacion(punto[0], punto[1], LOCALIDAD, f"{loc.replace(' ? ', ' - ')} (el centro)", loc)
+        if len(nombre.split()) == 1 and nombre not in ALIAS and self.base is not None \
+                and km_entre(self.base, u.punto) > LOCAL_KM:
+            return None  # "Alberti" sin mas: la calle de aca, no el pueblo de alla
+        return u
+
+    def _centro(self, localidad: str) -> tuple[float, float] | None:
+        if not hasattr(self, "_centros"):
+            self._centros: dict[str, tuple[float, float] | None] = {}
+        if localidad not in self._centros:
+            f = self.conn.execute(
+                "SELECT AVG(json_extract(geometria, '$[0][1]')), AVG(json_extract(geometria, '$[0][0]')) "
+                "FROM cuadras WHERE localidad = ?", (localidad,)).fetchone()
+            self._centros[localidad] = (f[0], f[1]) if f and f[0] is not None else None
+        return self._centros[localidad]
+
+    def _ubicar(self, d: Direccion, ciudad: str | None) -> Ubicacion | None:
         pista = None
         if d.ciudad is None and ciudad:
             pista = self.ciudades.get(plano(ciudad))
@@ -257,7 +341,7 @@ class Mapa:
         puntos = json.loads(f["geometria"])
         fraccion = (altura - f["desde"]) / (f["hasta"] - f["desde"]) if f["hasta"] > f["desde"] else 0.5
         lon, lat = _a_lo_largo(puntos, fraccion)
-        return Ubicacion(lat, lon, ALTURA, f"{para_mostrar(f['nombre'])} {altura}, {f['localidad']}")
+        return Ubicacion(lat, lon, ALTURA, f"{para_mostrar(f['nombre'])} {altura}, {f['localidad']}", f["localidad"])
 
     def _esquina(self, calles, otras, ciudad, pista) -> Ubicacion | None:
         """Una sola consulta con todas las candidatas: hay cientos de "Funes"
@@ -281,7 +365,7 @@ class Mapa:
         if f is None:
             return None
         return Ubicacion(f["lat"], f["lon"], ESQUINA,
-                         f"{f['a'].upper()} y {f['b'].upper()}, {f['localidad'] or ''}".rstrip(", "))
+                         f"{f['a'].upper()} y {f['b'].upper()}, {f['localidad'] or ''}".rstrip(", "), f["localidad"])
 
     def _calle(self, calles, ciudad, pista) -> Ubicacion | None:
         filas = self._cuadras(calles)
@@ -294,7 +378,8 @@ class Mapa:
         puntos = [p for f in mismas for p in json.loads(f["geometria"])]
         lon = sum(p[0] for p in puntos) / len(puntos)
         lat = sum(p[1] for p in puntos) / len(puntos)
-        return Ubicacion(lat, lon, CALLE, f"{para_mostrar(elegida['nombre'])}, {elegida['localidad']} (sin altura)")
+        return Ubicacion(lat, lon, CALLE, f"{para_mostrar(elegida['nombre'])}, {elegida['localidad']} (sin altura)",
+                         elegida["localidad"])
 
 
 def _inicio(fila) -> tuple[float, float]:

@@ -70,6 +70,7 @@ from estiba.economia import reparaciones
 from estiba.economia.cuentas import Actividad
 from estiba.economia.cuentas import cuentas as cuentas_economia
 from estiba.economia.config import Camioneta, Credito, Disponibilidad, Fondo, a_json
+from estiba.bandeja.avisos import merece_aviso
 from estiba.web import economia_vista as EV
 from estiba.formato import pesos, telefono
 from estiba.jobs import aprendido, episodios
@@ -165,20 +166,26 @@ class Estado:
     recuperacion: dict | None = None
     #: Avisos en el escritorio (None: no se avisa, como en los tests).
     avisos: object | None = None
+    #: Una sincronizacion por vez. Entran desde el webhook (en segundo plano,
+    #: una por mensaje), el repaso de WhatsApp, el boton y los formularios:
+    #: dos a la vez escribian la misma agenda y los mismos borradores, y la
+    #: conexion del mapa no se puede usar desde dos hilos al mismo tiempo.
+    candado: threading.RLock = field(default_factory=threading.RLock, repr=False)
 
     def conectar(self):
         return connect(self.db)
 
     def sincronizar(self) -> None:
-        conn = self.conectar()
-        try:
-            ahora = self.ahora()
-            self.resultado = sincronizar(conn, self.engine, ahora, self.espejo)
-            self.sincronizado_at = ahora
-            if self.avisos is not None:
-                self._avisar_fechas(conn)
-        finally:
-            conn.close()
+        with self.candado:
+            conn = self.conectar()
+            try:
+                ahora = self.ahora()
+                self.resultado = sincronizar(conn, self.engine, ahora, self.espejo)
+                self.sincronizado_at = ahora
+                if self.avisos is not None:
+                    self._avisar_fechas(conn)
+            finally:
+                conn.close()
 
     def _avisar_fechas(self, conn) -> None:
         """Una fecha que aparecio o se movio en la agenda, avisada en el momento."""
@@ -2536,6 +2543,14 @@ def create_app(
         if estado.avisos is None or mensaje is None or not mensaje.from_customer:
             return
         if mensaje.chat_id in estado.resultado.fuera:
+            return
+        conn = estado.conectar()
+        try:
+            anteriores = ConversationStore(conn).get(mensaje.chat_id).messages
+        finally:
+            conn.close()
+        # Uno por turno del cliente, y nada si ya estas en esa charla.
+        if not merece_aviso(mensaje, anteriores):
             return
         nombre = _nombres().get(mensaje.chat_id) or telefono(mensaje.chat_id)
         texto = mensaje.text or ("🎤 Audio" if mensaje.kind.value == "audio" else "Mandó un archivo")

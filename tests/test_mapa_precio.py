@@ -20,7 +20,7 @@ from estiba.finanzas.pronostico import Historia, pronosticar, wilson
 from estiba.mapa.caracteristicas import ciudad_del_telefono
 from estiba.mapa.datos import conectar, descargar
 from estiba.mapa.nombres import clave
-from estiba.mapa.ubicar import ALTURA, CALLE, ESQUINA, Mapa, km_entre, leer
+from estiba.mapa.ubicar import ALTURA, CALLE, ESQUINA, LOCALIDAD, Mapa, km_entre, leer
 
 D = Decimal
 BASE = (-37.866678, -57.518770)  # Santa Clara del Mar
@@ -62,6 +62,12 @@ CUADRAS = [
     _cuadra("RIVADAVIA", "06357", "Mar del Plata", 1200, 1299, [[-57.545, -38.000], [-57.546, -38.001]]),
     _cuadra("SEBASTIAN GABOTO", "06518", "Santa Clara del Mar", 400, 499,
             [[-57.5187, -37.8666], [-57.5190, -37.8670]]),
+    # Una calle de Santa Clara que se llama como una ciudad de la costa.
+    _cuadra("MIRAMAR", "06518", "Santa Clara del Mar", 1, 99, [[-57.505, -37.840], [-57.506, -37.841]]),
+    # Y la ciudad de Miramar, con sus calles.
+    _cuadra("C 9", "06315", "Miramar", 1000, 1099, [[-57.840, -38.270], [-57.841, -38.271]]),
+    # Una calle que solo esta lejos, en La Plata.
+    _cuadra("ALVEAR", "06441", "La Plata", 100, 199, [[-57.950, -34.920], [-57.951, -34.921]]),
     # De otra provincia: no entra.
     _cuadra("CATAMARCA", "14014", "Cordoba", 1100, 1199, [[-64.1, -31.4], [-64.2, -31.5]], provincia="14"),
 ]
@@ -76,7 +82,7 @@ ESQUINAS = [
 def mapa(tmp_path):
     conn = conectar(tmp_path / "mapa.db")
     cargadas = descargar(conn, fuente=lambda archivo: CUADRAS if archivo.startswith("cuadras") else ESQUINAS)
-    assert cargadas == {"cuadras": 7, "esquinas": 2}      # la de Cordoba quedo afuera
+    assert cargadas == {"cuadras": 10, "esquinas": 2}      # la de Cordoba quedo afuera
     return Mapa(conn, BASE)
 
 
@@ -144,6 +150,39 @@ class TestUbicar:
 
     def test_lo_que_no_esta_no_se_inventa(self, mapa):
         assert mapa.ubicar("calle que no existe 123") is None
+
+
+class TestLocalidadesYZona:
+    """Fallas reales del 1 al 4/10: "Miramar" caia en una calle de Santa Clara,
+    "mardel" en una calle de otra ciudad y un texto mal leido en Lanus (980 km)."""
+
+    def test_el_nombre_de_una_ciudad_es_la_ciudad_y_no_la_calle(self, mapa):
+        u = mapa.ubicar("Miramar")
+        assert u.precision == LOCALIDAD and u.localidad == "Miramar"
+
+    def test_como_la_nombra_la_gente(self, mapa):
+        assert mapa.ubicar("mardel").localidad == "Mar del Plata"
+        assert mapa.ubicar("mar del plata").precision == LOCALIDAD
+
+    def test_lugares_que_el_indec_no_tiene_como_localidad(self, mapa):
+        u = mapa.ubicar("Mar Azul")
+        assert u.precision == LOCALIDAD and "Mar Azul" in u.como
+
+    def test_con_altura_es_la_calle(self, mapa):
+        assert mapa.ubicar("Miramar 50").localidad == "Santa Clara del Mar"
+
+    def test_lejos_y_sin_ciudad_no_se_acepta(self, mapa):
+        assert mapa.ubicar("Alvear 150") is None
+        assert mapa.ubicar("Alvear 150, La Plata").localidad == "La Plata"
+
+    def test_la_ciudad_del_cliente_si_vale_aunque_quede_lejos(self, mapa):
+        assert mapa.ubicar("Rivadavia 1250", "Necochea").localidad == "Necochea"
+
+    def test_un_texto_largo_no_es_una_calle_corta(self, mapa):
+        assert mapa.ubicar("tonal unos tirantes de chile hasta") is None
+
+    def test_un_entre_suelto_no_rompe_la_calle(self, mapa):
+        assert mapa.ubicar("chile entre la playa").precision == CALLE
 
 
 class TestTelefono:

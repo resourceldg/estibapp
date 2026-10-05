@@ -19,6 +19,7 @@ que el mapa no encontro, una cosa de tamano desconocido) queda escrito.
 from __future__ import annotations
 
 import sqlite3
+import threading
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
@@ -26,7 +27,7 @@ from estiba.core.models import FreightJob
 from estiba.finanzas.costos import Costos
 from estiba.jobs.pricing import CATEGORIAS, Presupuesto
 from estiba.mapa.caracteristicas import ciudad_del_telefono
-from estiba.mapa.ubicar import CALLE, Mapa, Ubicacion, km_entre
+from estiba.mapa.ubicar import CALLE, LOCALIDAD, Mapa, Ubicacion, km_entre
 from estiba.extraction.reglas import leer_item
 
 #: Horas de mas por cada cosa, segun su tamano. Una heladera se ata, se
@@ -52,6 +53,9 @@ class PrecioPorObjetivos:
         self.base = BASE_DEFAULT
         self._mapa: Mapa | None = None
         self._conn_mapa: sqlite3.Connection | None = None
+        # La conexion del mapa es una sola y se comparte entre hilos: sqlite
+        # no admite dos consultas a la vez sobre la misma conexion.
+        self._candado = threading.RLock()
 
     def preparar(self, conn: sqlite3.Connection) -> None:
         """Lee costos y base antes de cada sincronizacion: se editan en la app."""
@@ -71,17 +75,21 @@ class PrecioPorObjetivos:
     @property
     def mapa(self) -> Mapa | None:
         """El mapa se abre una vez: cargar los nombres de la provincia tarda."""
-        if self._mapa is None and self.ruta_mapa and self.ruta_mapa.is_file():
-            self._conn_mapa = sqlite3.connect(self.ruta_mapa, check_same_thread=False)
-            self._conn_mapa.row_factory = sqlite3.Row
-            self._mapa = Mapa(self._conn_mapa, self.punto_base)
-        return self._mapa
+        with self._candado:
+            if self._mapa is None and self.ruta_mapa and self.ruta_mapa.is_file():
+                self._conn_mapa = sqlite3.connect(self.ruta_mapa, check_same_thread=False)
+                self._conn_mapa.row_factory = sqlite3.Row
+                self._mapa = Mapa(self._conn_mapa, self.punto_base)
+            return self._mapa
 
     # ------------------------------------------------------------------
 
     def ubicar(self, texto: str, chat_id: str) -> Ubicacion | None:
         mapa = self.mapa
-        return mapa.ubicar(texto, ciudad_del_telefono(chat_id)) if mapa else None
+        if mapa is None:
+            return None
+        with self._candado:
+            return mapa.ubicar(texto, ciudad_del_telefono(chat_id))
 
     def estimate(self, job: FreightJob) -> Presupuesto | None:
         """None solo si no se sabe nada del flete. Con algo, se estima y se
@@ -164,6 +172,8 @@ class PrecioPorObjetivos:
         for texto, u in ((job.origin.value, desde), (job.destination.value, hasta)):
             if u.precision == CALLE:
                 p.supuestos.append(f"'{texto}' no tiene altura: tomé {u.como}.")
+            elif u.precision == LOCALIDAD:
+                p.supuestos.append(f"'{texto}' es una ciudad, sin dirección: tomé {u.como}.")
         base = self.punto_base
         tramos = {
             "ida": km_entre(base, desde.punto),
@@ -179,8 +189,8 @@ class PrecioPorObjetivos:
         p.detalle["puntos"] = {"origen": desde.punto, "destino": hasta.punto}
         paradas = [
             ("Casa", True),
-            (desde.como.split(",")[0], desde.precision != CALLE),
-            (hasta.como.split(",")[0], hasta.precision != CALLE),
+            (desde.como.split(",")[0], desde.precision not in (CALLE, LOCALIDAD)),
+            (hasta.como.split(",")[0], hasta.precision not in (CALLE, LOCALIDAD)),
             ("Casa", True),
         ]
         return km, f"de casa a {desde.como.split(',')[0]}, a {hasta.como.split(',')[0]} y vuelta", paradas
