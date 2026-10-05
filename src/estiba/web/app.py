@@ -76,6 +76,7 @@ from estiba.formato import pesos, telefono
 from estiba.jobs import aprendido, episodios
 from estiba.jobs.engine import (
     AJUSTADO,
+    CONFIRMADO,
     COTIZADO,
     MOTIVOS_PERDIDA,
     PERDIDO,
@@ -629,14 +630,21 @@ def create_app(
             ("cerrados", "Pasados y perdidos", cerrados),
         ]
 
-    def _agenda(request: Request, mes: str | None = None) -> P.Agenda:
+    def _agenda(request: Request, mes: str | None = None, dia: str | None = None) -> P.Agenda:
         conn = estado.conectar()
         try:
             cal = LocalCalendar(conn)
             eventos = cal.eventos(incluir_cancelados=False)
             url = str(request.base_url).rstrip("/") + f"/calendario/{cal.token()}.ics"
+            comodo = int(eco.economia(conn, estado.ahora().date()).disponibilidad.fletes_dia_comodo) or 2
         finally:
             conn.close()
+        seleccion = None
+        if dia:
+            try:
+                seleccion = date.fromisoformat(dia)
+            except ValueError:
+                seleccion = None
         # "2026-10" en la URL: un mes escrito de cualquier otra forma se
         # ignora y se muestra el de hoy, que es lo que se queria ver.
         mirando = None
@@ -649,7 +657,7 @@ def create_app(
             # diciembre del 9999 el "mes siguiente" no existe y la pagina caia.
             if mirando is not None and abs(mirando.year - estado.ahora().year) > 10:
                 mirando = None
-        return P.agenda(eventos, _fletes(), estado.ahora(), url, mirando)
+        return P.agenda(eventos, _fletes(), estado.ahora(), url, mirando, seleccion, comodo)
 
     def _embudo(periodo: str) -> tuple[embudo.Embudo, P.Numeros]:
         ahora = estado.ahora()
@@ -757,10 +765,56 @@ def create_app(
         return EV.frase_mes(m)
 
     @app.get("/agenda", response_class=HTMLResponse, include_in_schema=False)
-    def pagina_agenda(request: Request, mes: str | None = None):
+    def pagina_agenda(request: Request, mes: str | None = None, dia: str | None = None):
         return templates.TemplateResponse(
-            request, "agenda.html", _contexto(request, a=_agenda(request, mes), titulo="Agenda")
+            request, "agenda.html", _contexto(request, a=_agenda(request, mes, dia), titulo="Agenda")
         )
+
+    @app.get("/agenda/dia/{iso}", response_class=HTMLResponse, include_in_schema=False)
+    def agenda_dia(request: Request, iso: str):
+        """El panel de un dia, para cambiarlo sin recargar la pagina."""
+        try:
+            date.fromisoformat(iso)
+        except ValueError as e:
+            raise HTTPException(422, "la fecha no se entiende") from e
+        a = _agenda(request, iso[:7], iso)
+        return templates.TemplateResponse(request, "_agenda_dia.html", _contexto(request, a=a))
+
+    @app.post("/fletes/{job_id}/confirmar", include_in_schema=False)
+    def confirmar_form(request: Request, job_id: str):
+        """El cliente acepto por otro lado: queda confirmado y se agenda."""
+        _accion(job_id, CONFIRMADO, "desde la agenda")
+        return _volver(request, "/agenda")
+
+    @app.post("/agenda/mover", include_in_schema=False)
+    def mover_form(request: Request, job_id: str = Form(...), fecha: str = Form(...), hora: str = Form("")):
+        """Cambiar el dia (o la hora) de un flete, arrastrandolo o desde el panel.
+
+        Es un ajuste como el de la cotizacion: le gana a lo que dijo el chat.
+        Se conserva lo que ya estaba decidido y no se toca: el precio
+        confirmado y, si no se manda hora, la hora que tenia.
+        """
+        try:
+            nueva = date.fromisoformat(fecha)
+        except ValueError as e:
+            raise HTTPException(422, "la fecha no se entiende") from e
+        if hora and not re.fullmatch(r"\d{1,2}:\d{2}", hora):
+            raise HTTPException(422, "la hora no se entiende")
+        if job_id not in estado.resultado.fletes:
+            raise HTTPException(404, f"no hay un flete {job_id}")
+        ev, _ = estado.resultado.fletes[job_id]
+        if not hora and ev.job.hour:
+            hora = f"{ev.job.hour.value:%H:%M}"
+        conn = estado.conectar()
+        try:
+            previos = [a for a in ActionRepository(conn).for_job(job_id) if a.tipo == AJUSTADO]
+        finally:
+            conn.close()
+        monto = previos[-1].monto if previos else None
+        _accion(job_id, AJUSTADO, json.dumps({"fecha": nueva.isoformat(), "hora": hora or None}), monto)
+        if request.headers.get("HX-Request"):
+            return Response(headers={"HX-Redirect": f"/agenda?mes={nueva:%Y-%m}&dia={nueva.isoformat()}"})
+        return RedirectResponse(f"/agenda?mes={nueva:%Y-%m}&dia={nueva.isoformat()}", status_code=303)
 
     @app.get("/fletes", response_class=HTMLResponse, include_in_schema=False)
     def pagina_fletes(request: Request):
@@ -2043,6 +2097,8 @@ def create_app(
             AJUSTADO: ev.job.state is not JobState.DONE,
             # Anular es lo contrario: solo tiene sentido si esta cerrado.
             ANULADO: ev.job.state in (JobState.DONE, JobState.CANCELLED),
+            # Confirmar a mano: lo cotizado que el cliente acepto por otro lado.
+            CONFIRMADO: ev.job.state in (JobState.QUOTED, JobState.WAITING_CUSTOMER),
         }[tipo]
         if not permitido:
             if tipo == ANULADO:

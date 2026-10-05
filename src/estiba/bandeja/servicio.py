@@ -99,6 +99,11 @@ def sincronizar(conn: sqlite3.Connection, engine: JobEngine, ahora: datetime, es
             # de la bandeja. De aca en adelante no se la vuelve a mirar, asi
             # que si no se limpia ahora no se limpia nunca.
             borradores.cancelar_del_chat(chat_id, ahora)
+            # Y las fechas que se hubieran agendado: una charla privada con
+            # un "nos vemos el lunes a las 20" quedaba como flete sin
+            # confirmar en la agenda y en el calendario del celular.
+            for job_id in agenda.cancelar_del_chat(chat_id):
+                r.agenda.append((job_id, "cancelado"))
             continue
         todos = episodios(conv, engine, acciones.for_job, cortes.de(chat_id))
         primero = conv.text_of(conv.messages[0]) if conv.messages else ""

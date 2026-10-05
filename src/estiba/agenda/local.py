@@ -86,6 +86,16 @@ class LocalCalendar:
         self.cancel(fila["id"])
         return True
 
+    def cancelar_del_chat(self, chat_id: str) -> list[str]:
+        """Las fechas activas de una conversacion entera. Devuelve los job_id."""
+        filas = self.conn.execute(
+            "SELECT id, job_id FROM calendar_events WHERE status = 'activo' AND job_id LIKE ? ESCAPE '\\'",
+            (chat_id.replace("%", "\\%").replace("_", "\\_") + ":job%",),
+        ).fetchall()
+        for f in filas:
+            self.cancel(f["id"])
+        return [f["job_id"] for f in filas]
+
     def eventos(self, incluir_cancelados: bool = True) -> list[tuple[Evento, bool]]:
         filas = self.conn.execute(
             "SELECT * FROM calendar_events "

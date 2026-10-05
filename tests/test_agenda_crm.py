@@ -329,8 +329,39 @@ class TestPantallas:
     def test_agenda(self, cliente):
         html = cliente.get("/agenda").text
         assert "Para cerrar" in html and "Palermo → Belgrano" in html
-        assert html.index("Mañana") < html.index("Villa Crespo → Caballito") < html.index("Jueves")
+        lista = html[html.index('class="lo-que-viene"'):]
+        assert lista.index("Mañana") < lista.index("Villa Crespo → Caballito") < lista.index("Jueves")
         assert "webcal://" in html
+
+    def test_el_mes_muestra_cada_flete_adentro_de_su_dia(self, cliente):
+        html = cliente.get("/agenda").text
+        assert 'class="chip-flete' in html and 'hx-get="/agenda/dia/' in html
+
+    def test_un_dia_cualquiera_se_abre_en_el_panel(self, cliente):
+        html = cliente.get("/agenda/dia/2020-01-01").text
+        assert "Nada agendado este día" in html
+        assert cliente.get("/agenda/dia/no-es-fecha").status_code == 422
+
+    def test_mover_un_flete_de_dia(self, cliente):
+        job = f"{VUELVE}:job"
+        r = cliente.post("/agenda/mover", data={"job_id": job, "fecha": "2030-01-15"}, follow_redirects=False)
+        assert r.status_code == 303 and "dia=2030-01-15" in r.headers["location"]
+        assert "Palermo → Belgrano" in cliente.get("/agenda/dia/2030-01-15").text
+        # Ya no figura como pasado sin cerrar.
+        assert "Para cerrar" not in cliente.get("/agenda").text
+
+    def test_confirmar_a_mano_lo_cotizado(self, cliente):
+        fletes = cliente.get("/api/fletes").json()
+        cotizados = [f for fs in fletes.values() for f in fs if f["flete"]["estado"] in ("presupuestado", "esperando_cliente")] \
+            if isinstance(next(iter(fletes.values()), [None])[0], dict) and "flete" in next(iter(fletes.values()))[0] else \
+            [f for fs in fletes.values() for f in fs if f.get("estado") in ("presupuestado", "esperando_cliente")]
+        assert cotizados, "el fixture tiene que traer algun flete cotizado"
+        job = (cotizados[0].get("flete") or cotizados[0])["job_id"]
+        assert cliente.post(f"/fletes/{job}/confirmar").status_code in (200, 303)
+        estado = cliente.get(f"/api/fletes/{job}").json()["flete"]["estado"]
+        assert estado in ("confirmado", "agendado")
+        # Y no se confirma dos veces.
+        assert cliente.post(f"/fletes/{job}/confirmar").status_code == 409
 
     def test_marcar_realizado_cierra_y_factura(self, cliente):
         r = cliente.post(f"/fletes/{VUELVE}:job/realizado", headers={"HX-Request": "true"})
@@ -673,3 +704,22 @@ class TestElMesComoGrilla:
     def test_enero_y_diciembre_no_rompen_el_año(self):
         assert self._mes(cual=date(2026, 1, 15)).anterior == "2025-12"
         assert self._mes(cual=date(2026, 12, 15)).siguiente == "2027-01"
+
+
+class TestFechasDeChatsPrivados:
+    def test_al_salir_del_circuito_se_cancelan_sus_fechas(self, tmp_path):
+        from datetime import datetime
+
+        from estiba.agenda.local import LocalCalendar
+        from estiba.storage.db import connect
+
+        conn = connect(tmp_path / "x.db")
+        conn.execute("INSERT INTO calendar_events (id, job_id, starts_at, all_day, approximate, title, description, "
+                     "tentative, updated_at) VALUES ('a', '549111:job', '2026-10-05T20:00', 0, 0, 't', 'd', 1, 'x')")
+        conn.execute("INSERT INTO calendar_events (id, job_id, starts_at, all_day, approximate, title, description, "
+                     "tentative, updated_at) VALUES ('b', '549111_9:job', '2026-10-05T20:00', 0, 0, 't', 'd', 1, 'x')")
+        conn.commit()
+        cal = LocalCalendar(conn, reloj=lambda: datetime(2026, 10, 5))
+        assert cal.cancelar_del_chat("549111") == ["549111:job"]
+        activos = [e.job_id for e, cancelado in cal.eventos() if not cancelado]
+        assert activos == ["549111_9:job"]   # el guion bajo no es comodin

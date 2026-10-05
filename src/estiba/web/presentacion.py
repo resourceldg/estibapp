@@ -512,6 +512,17 @@ class ItemAgenda:
     #: La fecha se habló pero el cliente no la cerró. Esta en la agenda
     #: para no perderla, no porque este vendida.
     tentativo: bool = False
+    #: Para las acciones desde la agenda.
+    estado: str = ""
+    dia_iso: str = ""
+    hora_input: str = ""   # "14:30" para precargar el campo; "" si no hay hora
+    puede_confirmar: bool = False
+    puede_cerrar: bool = False
+    pasado: bool = False
+
+    @property
+    def hora_corta(self) -> str:
+        return "" if self.hora == "Sin hora" else self.hora
 
 
 @dataclass
@@ -536,6 +547,10 @@ class CeldaMes:
     #: Cuantos fletes cerrados y cuantas fechas que nadie confirmo.
     confirmados: int
     tentativos: int
+    #: Los fletes del dia, para dibujarlos adentro de la celda en la compu.
+    items: list = field(default_factory=list)
+    #: Cuanto se lleno el dia contra tu ritmo comodo (1.0 = lleno).
+    carga: float = 0.0
 
     @property
     def total(self) -> int:
@@ -576,6 +591,10 @@ class Agenda:
     url_ics: str
     url_webcal: str
     mes: Mes | None = None
+    #: El dia abierto en el panel (cualquiera, tambien uno pasado).
+    seleccionado: DiaAgenda | None = None
+    #: Tus fletes por dia comodos: con eso se dibuja cuanto se lleno cada dia.
+    capacidad: int = 2
 
 
 #: La semana empieza el lunes, como el calendario de pared de cualquier casa.
@@ -585,7 +604,7 @@ MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
          "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
 
 
-def mes_de(eventos, cual: date, hoy: date) -> Mes:
+def mes_de(eventos, cual: date, hoy: date, items_por_dia: dict | None = None, capacidad: int = 2) -> Mes:
     """La grilla del mes, con cuantos fletes cae en cada dia.
 
     Una lista de dias dice que viene; una grilla dice donde estan los
@@ -618,6 +637,8 @@ def mes_de(eventos, cual: date, hoy: date) -> Mes:
             pasado=d < hoy,
             confirmados=sum(1 for t in marcas if not t),
             tentativos=sum(1 for t in marcas if t),
+            items=(items_por_dia or {}).get(d, []),
+            carga=min(1.0, len(marcas) / capacidad) if capacidad else 0.0,
         ))
         if len(semana) == 7:
             semanas.append(semana)
@@ -635,45 +656,66 @@ def mes_de(eventos, cual: date, hoy: date) -> Mes:
     )
 
 
+def _etiqueta_dia(dia: date, hoy: date) -> str:
+    if dia == hoy:
+        return "Hoy"
+    if dia == hoy + timedelta(days=1):
+        return "Mañana"
+    if dia == hoy - timedelta(days=1):
+        return "Ayer"
+    return nombre_dia(dia).capitalize()
+
+
 def agenda(eventos, fletes: dict[str, Flete], ahora: datetime, url_ics: str,
-           mirando: date | None = None) -> Agenda:
+           mirando: date | None = None, seleccion: date | None = None, capacidad: int = 2) -> Agenda:
+    """La agenda entera: el mes con los fletes adentro de cada dia, el dia
+    abierto en el panel (cualquiera, tambien uno que ya paso) y la lista de
+    lo que viene. Cada flete trae lo que se puede hacer con el desde aca."""
     hoy = ahora.date()
     para_cerrar: list[ItemAgenda] = []
     por_dia: dict[date, list[ItemAgenda]] = {}
+    todos: dict[date, list[ItemAgenda]] = {}
     for e, _cancelado in eventos:
         f = fletes.get(e.job_id)
         if f is None:
             continue
         dia = e.inicio if not isinstance(e.inicio, datetime) else e.inicio.date()
         if e.todo_el_dia:
-            hora = "Sin hora"
+            hora, hora_input = "Sin hora", ""
         else:
             hora = f"{'~' if e.aproximado else ''}{hora_legible(e.inicio.time())} h"
+            hora_input = f"{e.inicio:%H:%M}"
         item = ItemAgenda(
             job_id=e.job_id, hora=hora, aproximado=e.aproximado, ruta=f.ruta, cosas=f.cosas,
             precio=f.cotizado, precio_crudo=f.cotizado_crudo,
             quien=f.quien, estado_etiqueta=f.estado_etiqueta, tono=f.tono,
-            tentativo=e.tentativo,
+            tentativo=e.tentativo, estado=f.estado, dia_iso=dia.isoformat(), hora_input=hora_input,
+            puede_confirmar=e.tentativo and f.estado in (JobState.QUOTED.value, JobState.WAITING_CUSTOMER.value),
+            puede_cerrar=dia <= hoy and f.estado in (JobState.CONFIRMED.value, JobState.SCHEDULED.value),
+            pasado=dia < hoy,
         )
+        todos.setdefault(dia, []).append(item)
         if dia < hoy:
             if f.estado == JobState.SCHEDULED.value:
                 para_cerrar.append(item)
             continue
         por_dia.setdefault(dia, []).append(item)
 
-    dias = []
-    for dia in sorted(por_dia):
-        if dia == hoy:
-            etiqueta = "Hoy"
-        elif dia == hoy + timedelta(days=1):
-            etiqueta = "Mañana"
-        else:
-            etiqueta = nombre_dia(dia).capitalize()
-        dias.append(DiaAgenda(etiqueta, f"{dia:%d/%m}",
-                              sorted(por_dia[dia], key=lambda i: i.hora), dia.isoformat()))
+    orden = lambda i: (i.hora == "Sin hora", i.hora_input, i.quien)
+    for items in todos.values():
+        items.sort(key=orden)
+    dias = [DiaAgenda(_etiqueta_dia(dia, hoy), f"{dia:%d/%m}", sorted(por_dia[dia], key=orden), dia.isoformat())
+            for dia in sorted(por_dia)]
+    elegido = seleccion or hoy
+    seleccionado = DiaAgenda(_etiqueta_dia(elegido, hoy), f"{elegido:%d/%m}", todos.get(elegido, []),
+                             elegido.isoformat())
     webcal = "webcal://" + url_ics.split("://", 1)[1]
+    # El mes cuenta lo mismo que muestra: un evento sin flete (de una charla
+    # que ya no es de trabajo) era un punto que al tocarlo no tenia nada.
+    conocidos = [(e, c) for e, c in eventos if e.job_id in fletes]
     return Agenda(para_cerrar, dias, url_ics, webcal,
-                  mes=mes_de(eventos, mirando or hoy, hoy))
+                  mes=mes_de(conocidos, mirando or (seleccion or hoy), hoy, todos, capacidad),
+                  seleccionado=seleccionado, capacidad=capacidad)
 
 
 # --------------------------------------------------------------------------

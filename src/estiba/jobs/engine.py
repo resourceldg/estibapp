@@ -82,6 +82,12 @@ ANULADO = "anulado"
 #: ultimo: volver a ajustar reemplaza, no suma.
 AJUSTADO = "ajustado"
 
+#: El cliente acepto por otro lado (por telefono, en persona, o un "dale" que
+#: el chat no entendio) y el fletero lo confirma desde la agenda. Pasa a
+#: confirmado como si el cliente lo hubiera dicho en el chat, y despues la
+#: sincronizacion lo agenda igual que siempre.
+CONFIRMADO = "confirmado"
+
 #: Las que cierran un flete. Son las unicas que se pueden anular.
 CIERRES = (REALIZADO, PERDIDO)
 
@@ -189,6 +195,8 @@ class JobEngine:
         def aplicar(a: Accion) -> None:
             if a.tipo == AGENDADO and estado is JobState.CONFIRMED:
                 mover(JobState.SCHEDULED, a.at, "agendado en el calendario", None)
+            elif a.tipo == CONFIRMADO and estado in _ABIERTOS:
+                mover(JobState.CONFIRMED, a.at, "lo confirmaste vos", None)
             elif a.tipo == REALIZADO and estado not in _CERRADOS:
                 mover(JobState.DONE, a.at, "marcado como realizado", None)
             elif a.tipo == PERDIDO and estado not in _CERRADOS:

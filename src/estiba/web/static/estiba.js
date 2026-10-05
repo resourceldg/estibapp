@@ -301,3 +301,61 @@ if (matchMedia("(min-width: 1100px)").matches) {
     if (e.key === "Escape") document.querySelectorAll(".con-lateral .expandida").forEach(cerrar);
   });
 }
+
+// Agenda: el dia elegido se marca al cargar su panel (sin recargar), y en
+// la compu un flete se arrastra a otro dia para moverlo. Mover es un ajuste
+// como cualquier otro: no le manda nada al cliente.
+(() => {
+  const grilla = document.querySelector(".agenda-layout .grilla");
+  if (!grilla) return;
+
+  grilla.addEventListener("click", (e) => {
+    const td = e.target.closest("td[data-dia]");
+    if (!td) return;
+    grilla.querySelectorAll("td.elegido").forEach((x) => x.classList.remove("elegido"));
+    td.classList.add("elegido");
+  });
+
+  if (!matchMedia("(hover: hover) and (pointer: fine)").matches) return;
+  let arrastrando = null;
+  grilla.addEventListener("dragstart", (e) => {
+    const chip = e.target.closest(".chip-flete[draggable='true']");
+    if (!chip) return;
+    arrastrando = chip;
+    chip.classList.add("arrastrando");
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", chip.dataset.job);
+  });
+  grilla.addEventListener("dragend", () => {
+    arrastrando?.classList.remove("arrastrando");
+    arrastrando = null;
+    grilla.querySelectorAll(".soltar-aca").forEach((x) => x.classList.remove("soltar-aca"));
+  });
+  grilla.addEventListener("dragover", (e) => {
+    const td = e.target.closest("td[data-dia]");
+    if (!td || !arrastrando) return;
+    e.preventDefault();
+    grilla.querySelectorAll(".soltar-aca").forEach((x) => x !== td && x.classList.remove("soltar-aca"));
+    td.classList.add("soltar-aca");
+  });
+  grilla.addEventListener("drop", async (e) => {
+    const td = e.target.closest("td[data-dia]");
+    if (!td || !arrastrando) return;
+    e.preventDefault();
+    const job = e.dataTransfer.getData("text/plain");
+    const origen = arrastrando.closest("td[data-dia]")?.dataset.dia;
+    if (td.dataset.dia === origen) return;
+    const datos = new FormData();
+    datos.append("job_id", job);
+    datos.append("fecha", td.dataset.dia);
+    td.classList.add("guardando");
+    try {
+      const r = await fetch("/agenda/mover", { method: "POST", body: datos, headers: { "HX-Request": "true" } });
+      if (!r.ok) throw new Error(await r.text());
+      location.href = r.headers.get("HX-Redirect") || `/agenda?dia=${td.dataset.dia}`;
+    } catch (err) {
+      td.classList.remove("guardando");
+      alert("No se pudo mover el flete: " + (err.message || err));
+    }
+  });
+})();

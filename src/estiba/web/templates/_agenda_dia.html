@@ -1,0 +1,64 @@
+{% from "_macros.html" import icono %}
+{% from "_cerrar.html" import cerrar %}
+{# El panel de un dia. Se carga solo (htmx) al tocar un dia del mes, sin
+   recargar la pagina. Cada flete trae lo que se puede hacer con el ahi
+   mismo: cambiar el dia o la hora, confirmar lo que el cliente acepto por
+   otro lado, cerrarlo si ya se hizo. Nada de esto manda mensajes. #}
+{% set d = a.seleccionado %}
+<div class="dia-panel-cab">
+  <div>
+    <h2>{{ d.etiqueta }} <span class="dia-panel-fecha">{{ d.fecha }}</span></h2>
+    {% set n = d.items|length %}
+    <p class="dia-carga-texto">
+      {% if n == 0 %}Libre
+      {% else %}{{ n }} {{ "flete" if n == 1 else "fletes" }} · tu ritmo cómodo es {{ a.capacidad }}{% if n > a.capacidad %}, este día te pasás{% endif %}
+      {% endif %}
+    </p>
+  </div>
+</div>
+
+{% if d.items %}
+<ul class="dia-items">
+  {% for i in d.items %}
+  <li class="dia-item{% if i.tentativo %} tentativo{% endif %}" data-job="{{ i.job_id }}">
+    <div class="dia-item-cab">
+      <span class="dia-item-hora{% if i.aproximado %} aproximada{% endif %}">{{ i.hora }}</span>
+      {% if i.tentativo %}<span class="chip-tentativo">sin confirmar</span>{% else %}<span class="chip-confirmado">{{ i.estado_etiqueta }}</span>{% endif %}
+      {% if i.precio %}<span class="dia-item-precio num">{{ i.precio }}</span>{% endif %}
+    </div>
+    <a class="dia-item-quien" href="/fletes/{{ i.job_id }}">{{ i.quien }}</a>
+    <p class="dia-item-ruta">{{ i.ruta if "¿?" not in i.ruta else (i.ruta.replace("¿?", "sin dato") if i.ruta != "¿? → ¿?" else "Todavía sin origen ni destino") }}{% if i.cosas %}<small>{{ i.cosas }}</small>{% endif %}</p>
+
+    <div class="dia-acciones">
+      {% if i.puede_confirmar %}
+      <form method="post" action="/fletes/{{ i.job_id }}/confirmar">
+        <button class="btn primario chico" type="submit">{{ icono("check") }}<span>Confirmado</span></button>
+      </form>
+      {% elif i.tentativo and i.estado == "borrador" %}
+      <a class="btn secundario chico" href="/fletes/{{ i.job_id }}">Cotizar primero</a>
+      {% endif %}
+      {% if not i.pasado or i.puede_cerrar %}
+      <details class="mover">
+        <summary class="btn fantasma chico">{{ icono("agenda") }}<span>Cambiar día</span></summary>
+        <form method="post" action="/agenda/mover" class="mover-form">
+          <input type="hidden" name="job_id" value="{{ i.job_id }}">
+          <label>Día<input type="date" name="fecha" value="{{ i.dia_iso }}" required></label>
+          <label>Hora<input type="time" name="hora" value="{{ i.hora_input }}"></label>
+          <button class="btn secundario chico" type="submit">Guardar</button>
+        </form>
+      </details>
+      {% endif %}
+      <a class="btn fantasma chico" href="/fletes/{{ i.job_id }}">{{ icono("chat") }}<span>Abrir</span></a>
+    </div>
+    {% if i.puede_cerrar %}
+    <div class="dia-cerrar">{{ cerrar(i.job_id, i.precio_crudo, compacto=true) }}</div>
+    {% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<div class="dia-libre">
+  <p>Nada agendado este día.</p>
+  <p class="nota">Si alguien te pregunta "¿podés el {{ d.fecha }}?", está libre.</p>
+</div>
+{% endif %}
