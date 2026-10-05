@@ -59,7 +59,6 @@ class TestQueFunciona:
 
 
 class TestPrecio:
-    @pytest.mark.xfail(strict=True, reason="P0: numero de 2-3 cifras sin 'mil' ni $ (el formato mas usado)")
     @pytest.mark.parametrize("texto,valor", [
         ("te sale 40", 40000),
         ("hola te sale 80 si es planta baja", 80000),
@@ -68,7 +67,6 @@ class TestPrecio:
     def test_numero_pelado_despues_de_sale(self, texto, valor):
         assert _precio(texto) == valor
 
-    @pytest.mark.xfail(strict=True, reason="P0: el numero antes del verbo ('35 le sale', '25 mil sale')")
     @pytest.mark.parametrize("texto,valor", [("35 le sale", 35000), ("25 mil sale. Cuando lo llevamos?", 25000)])
     def test_numero_antes_del_verbo(self, texto, valor):
         assert _precio(texto) == valor
@@ -76,7 +74,14 @@ class TestPrecio:
     def test_el_ayudante_no_es_el_precio(self):
         assert _precio("15 mil sale el ayudante") is None
 
-    @pytest.mark.xfail(strict=True, reason="P1: con varias opciones toma la que tiene verbo, no la base")
+    @pytest.mark.parametrize("texto", ["salen 2 viajes", "son las 19 hs", "son 6 cuadras", "es 2026",
+                                       "necesito una seña de 10 mil", "llego en 20 minutos", "Mañana puedo 19hs"])
+    def test_lo_que_no_es_un_precio(self, texto):
+        assert _precio(texto) is None
+
+    def test_sin_ayudante_si_es_el_flete(self):
+        assert _precio("Genial, sin ayudante esta 35 mil el flete") == 35000
+
     def test_varias_opciones_toma_la_base(self):
         texto = ("Traslado puerta a puerta: $190.000. Si necesitás que yo ayude con la carga/descarga, "
                  "el valor sería $220.000.")
@@ -171,3 +176,20 @@ class TestCosasPisosFechas:
     @pytest.mark.xfail(strict=True, reason="P2: '6 cajas' y '10 cajas' se pisan en vez de sumarse")
     def test_cantidades_del_mismo_objeto_en_un_mensaje(self):
         assert "16 cajas" in _items("6 cajas de plástico grandes y unas 10 cajas de carton")
+
+
+class TestClasificacion:
+    @pytest.mark.xfail(strict=True, reason="P1: el nombre 'tipo usuario' gana sobre el boton del anuncio y una consulta real")
+    def test_lead_del_anuncio_con_nombre_raro_no_es_spam(self):
+        from estiba.conversation.clasificacion import Clase, clasificar
+        from estiba.core.models import Conversation, Message, MessageKind
+        from estiba.extraction.extractor import SlotExtractor
+
+        t = datetime(2026, 9, 22, 19, 50)
+        conv = Conversation("549223", [
+            Message("a", "549223", True, t, MessageKind.TEXT, text="¡Hola! Quiero más información"),
+            Message("b", "549223", True, t.replace(minute=54), MessageKind.TEXT,
+                    text="Tengo que llevar un sommier hasta San Lorenzo, cuánto me sale?"),
+        ])
+        cl = clasificar(conv, SlotExtractor().extract(conv), "ideaspublicom518")
+        assert cl.clase is not Clase.SPAM

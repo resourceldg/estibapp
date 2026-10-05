@@ -346,37 +346,58 @@ def ayudantes(texto: str) -> list[Hallazgo]:
 # Precio: solo lo dice el fletero
 # --------------------------------------------------------------------------
 
-#: Como se dice un precio de verdad. La lista corta de antes solo agarraba
-#: "sale 45 mil"; el fletero escribe "esta 35 mil el flete", "son 40 mil",
-#: "desde 35mil". El verbo va siempre antes del numero, a proposito: asi
-#: "15 mil sale el ayudante" no se lee como el precio del flete.
-_PRECIO = re.compile(
-    r"\b(?:sale|salen|seria|serian|cuesta|cuestan|cobro|cobrarian|precio|total"
-    r"|esta|estan|es|son|queda|quedan|desde|arranca|te\s+lo\s+dejo\s+en|te\s+hago)\b"
-    r"[^\d$]{0,12}(\$)?\s*(\d{1,3}(?:[.,]\d{3})+|\d+)\s*(mil|k|lucas)?\b"
-)
+#: Como se dice un precio de verdad. El fletero escribe en miles y casi
+#: nunca pone "mil": "te sale 40", "35 le sale", "25 mil sale", "esta 35 mil
+#: el flete", "$45.000". Antes solo se leia "verbo + numero con mil o $", y
+#: la mitad de los precios reales (11 de 23) quedaban afuera: esos pedidos
+#: figuraban como nunca cotizados. Ver audit/AUDIT_REPORT.md.
+_VERBO_PRECIO = (r"sale|salen|seria|serian|cuesta|cuestan|cobro|cobrarian|precio|total|valor|esta|estan|es|son"
+                 r"|queda|quedan|desde|arranca|te\s+lo\s+dejo\s+en|te\s+hago")
+_MONTO = r"(?P<signo>\$)?\s*(?P<numero>\d{1,3}(?:[.,]\d{3})+|\d+)\s*(?P<escala>mil|k|lucas|luca)?"
+#: Verbo y despues el numero: "te sale 40", "son 40 mil", "esta 35 mil el flete".
+_PRECIO = re.compile(rf"\b(?:{_VERBO_PRECIO})\b(?P<medio>[^\d$]{{0,12}}){_MONTO}\b")
+#: Numero y despues el verbo: "35 le sale", "25 mil sale".
+_PRECIO_ANTES = re.compile(rf"(?<![\d.,]){_MONTO}\s+(?:le\s+|te\s+)?(?:sale|salen|cuesta|queda)\b")
+#: "$190.000" suelto: con el signo no hace falta verbo.
+_CON_SIGNO = re.compile(r"(?P<signo>\$)\s*(?P<numero>\d{1,3}(?:[.,]\d{3})+|\d+)\s*(?P<escala>mil|k)?\b")
 
-#: Si el numero es lo que sale el ayudante, no es el precio del flete.
-_ES_DEL_AYUDANTE = re.compile(r"\bayudante")
+#: Lo que viene despues de un numero que no es un precio.
+_UNIDAD = re.compile(r"^\s*(?:viajes?|vueltas?|cuadras?|km|kilometros?|metros?|mts?|horas?|hs?\b|h\b|minutos?|min\b"
+                     r"|pisos?|dias?|personas?|fletes?|cajas?|bultos?|:|\.\d|de\s+la\s+(?:manana|tarde|noche))")
+#: Lo que esta cerca de un monto que no es el precio del flete.
+_NO_ES_EL_FLETE = re.compile(r"\b(?:ayudantes?|sena|adelanto|propina)\b")
 
 
-def precio(texto: str) -> list[Hallazgo]:
-    p = plano(texto)
-    m = _PRECIO.search(p)
-    if not m:
-        return []
-    signo, numero, escala = m.group(1), m.group(2), m.group(3)
-    # Un precio se escribe de una de tres formas: "$45.000", "45.000" o
-    # "45 mil". Un numero pelado de cuatro cifras es un año, un codigo o
-    # cualquier cosa: "es 2026" no es un precio de flete.
+def _monto(signo, numero, escala) -> int | None:
     if not (signo or escala or re.search(r"[.,]", numero)):
-        return []
+        # Numero pelado: en miles si tiene 2 o 3 cifras ("te sale 40").
+        n = int(numero)
+        return n * 1000 if 10 <= n <= 999 else None
     valor = int(re.sub(r"[.,]", "", numero))
     if escala:
         valor *= 1000
-    if valor < 1000:  # "salen 2 viajes" no es un precio
+    return valor if valor >= 1000 else None
+
+
+def precio(texto: str) -> list[Hallazgo]:
+    """El precio del flete que dice el fletero. Si da varias opciones, la primera (la base)."""
+    p = plano(texto)
+    candidatos = []
+    for patron in (_PRECIO, _PRECIO_ANTES, _CON_SIGNO):
+        for m in patron.finditer(p):
+            signo, numero, escala = m.group("signo"), m.group("numero"), m.group("escala")
+            if patron is _PRECIO and re.search(r"\b(?:las|la|a\s+las)\b", m.group("medio")):
+                continue  # "son las 19": una hora
+            if _UNIDAD.match(p[m.end():]):
+                continue  # "salen 2 viajes", "son 6 cuadras", "esta 20 minutos"
+            alrededor = p[max(0, m.start() - 25): m.end() + 25]
+            if _NO_ES_EL_FLETE.search(alrededor) and "flete" not in alrededor:
+                continue  # "15 mil sale el ayudante", "una seña de 10 mil"
+            valor = _monto(signo, numero, escala)
+            if valor is not None:
+                candidatos.append((m.start(), valor, m))
+    if not candidatos:
         return []
-    # "el ayudante son 15 mil" es un extra, no lo que sale el flete.
-    if _ES_DEL_AYUDANTE.search(p) and "flete" not in p:
-        return []
-    return [Hallazgo("quoted_price", valor, 0.95, cita(texto, m))]
+    inicio, valor, m = min(candidatos, key=lambda c: c[0])
+    pelado = not (m.group("signo") or m.group("escala") or re.search(r"[.,]", m.group("numero")))
+    return [Hallazgo("quoted_price", valor, 0.85 if pelado else 0.95, cita(texto, m))]
