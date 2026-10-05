@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icono %}
+{% block contenido %}
+{# La ficha 360: una persona y todo lo que paso con ella, en orden. Cada
+   consulta es una oportunidad aparte; perder una no la hace mala. La
+   reputacion dice por que da lo que da, y si la corregiste se ve la cuenta
+   y tu numero. Nada de lo que se anota aca se borra. #}
+<div class="encabezado ficha-cab">
+  <a class="volver-link" href="/clientes">{{ icono("volver") }}<span>Clientes</span></a>
+  <h1>{{ p.nombre or p.telefono }}</h1>
+  <p class="ficha-sub">
+    <span class="chip-situacion sit-{{ p.situacion|lower|replace(' ', '-') }}">{{ p.situacion }}</span>
+    {% if p.recuperado %}<span class="chip-situacion sit-recuperado">Recuperado</span>{% endif %}
+    {% if p.no_contactar %}<span class="chip-situacion sit-no">No contactar</span>{% endif %}
+    {% if p.no_interesado %}<span class="chip-situacion sit-no">No le interesa</span>{% endif %}
+    <span class="ficha-rep" title="Reputación">{{ rep.icono }} {{ rep.valor }}/100 · {{ rep.nivel }}</span>
+  </p>
+</div>
+
+<div class="ficha">
+<div class="ficha-principal">
+  <section class="kpis ficha-kpis" aria-label="Resumen">
+    <div class="kpi"><span class="kpi-etq">Consultas</span><span class="kpi-val num">{{ p.consultas }}</span></div>
+    <div class="kpi"><span class="kpi-etq">Presupuestados</span><span class="kpi-val num">{{ p.presupuestados }}</span></div>
+    <div class="kpi"><span class="kpi-etq">Completados</span><span class="kpi-val num">{{ p.completados }}</span></div>
+    <div class="kpi"><span class="kpi-etq">Perdidos</span><span class="kpi-val num">{{ p.perdidos }}</span></div>
+    <div class="kpi"><span class="kpi-etq">Cancelaciones</span><span class="kpi-val num">{{ p.cancelaciones }}</span></div>
+    <div class="kpi"><span class="kpi-etq">Facturado</span><span class="kpi-val num">{{ p.facturado|int|pesos }}</span></div>
+  </section>
+
+  <section class="panel">
+    <h2>Historial</h2>
+    <ol class="linea-tiempo">
+      {% for h in hitos %}
+      <li class="hito-{{ h.tipo }}">
+        <time>{{ h.at.strftime("%d/%m/%y") }}</time>
+        <span>{% if h.job_id %}<a href="/fletes/{{ h.job_id }}">{{ h.texto }}</a>{% else %}{{ h.texto }}{% endif %}</span>
+      </li>
+      {% endfor %}
+    </ol>
+  </section>
+</div>
+
+<aside class="ficha-lateral">
+  <section class="panel">
+    <h2>Reputación <span class="ficha-rep-num">{{ rep.icono }} {{ rep.valor }}/100</span></h2>
+    {% if rep.calculado is not none %}<p class="nota">La corregiste a mano{% if rep.nota_manual %} ("{{ rep.nota_manual }}"){% endif %}. La cuenta da {{ rep.calculado }}.</p>{% endif %}
+    <ul class="motivos-rep">
+      {% for signo, texto in rep.motivos %}<li class="signo-{{ 'mas' if signo == '+' else 'menos' if signo == '−' else 'neutro' }}"><b>{{ signo }}</b> {{ texto }}</li>{% endfor %}
+    </ul>
+    <div class="senales">
+      {% for tipo, texto in [("pago_ok", "Pagó bien"), ("pago_problema", "Problema de pago"), ("puntual", "Puntual"), ("impuntual", "Impuntual"), ("facil", "Fácil de coordinar"), ("dificil", "Difícil de coordinar")] %}
+      <form method="post" action="/clientes/{{ p.chat_id }}/evento"><input type="hidden" name="tipo" value="{{ tipo }}">
+        <button class="btn fantasma chico" type="submit">{{ texto }}{% if p.senales(tipo) %} · {{ p.senales(tipo) }}{% endif %}</button></form>
+      {% endfor %}
+    </div>
+    <details class="corregir">
+      <summary>Corregir a mano</summary>
+      <form method="post" action="/clientes/{{ p.chat_id }}/evento" class="form-linea">
+        <input type="hidden" name="tipo" value="reputacion">
+        <label>Puntaje<input name="valor" inputmode="numeric" value="{{ rep.valor }}" required></label>
+        <label>Por qué<input name="nota" autocomplete="off"></label>
+        <button class="btn secundario chico" type="submit">Guardar</button>
+      </form>
+    </details>
+  </section>
+
+  <section class="panel">
+    <h2>Datos</h2>
+    <dl class="ficha-datos">
+      <dt>Teléfono</dt><dd><a href="https://wa.me/{{ p.chat_id.split('@')[0] }}" target="_blank" rel="noopener">{{ p.telefono }}</a></dd>
+      <dt>Origen</dt><dd>{{ nombre_canal.get(p.origen, p.origen) }}</dd>
+      {% if p.primer_contacto %}<dt>Primer contacto</dt><dd>{{ p.primer_contacto.strftime("%d/%m/%Y") }}</dd>{% endif %}
+      {% if p.ultimo_contacto %}<dt>Último contacto</dt><dd>{{ p.ultimo_contacto.strftime("%d/%m/%Y") }}</dd>{% endif %}
+      {% if p.ultimo_flete %}<dt>Último flete</dt><dd>{{ p.ultimo_flete.strftime("%d/%m/%Y") }}</dd>{% endif %}
+      {% if p.programado %}<dt>Volver a escribirle</dt><dd>desde el {{ p.programado.strftime("%d/%m") }}</dd>{% endif %}
+    </dl>
+    <details class="corregir">
+      <summary>Corregir el origen</summary>
+      <form method="post" action="/clientes/{{ p.chat_id }}/evento" class="form-linea">
+        <input type="hidden" name="tipo" value="origen">
+        <select name="valor">{% for c, n in canales %}<option value="{{ c }}"{% if c == p.origen %} selected{% endif %}>{{ n }}</option>{% endfor %}</select>
+        <button class="btn secundario chico" type="submit">Guardar</button>
+      </form>
+    </details>
+  </section>
+
+  <section class="panel">
+    <h2>Etiquetas</h2>
+    <div class="etiquetas">
+      {% for e in p.etiquetas %}
+      <form method="post" action="/clientes/{{ p.chat_id }}/evento" class="etiqueta">
+        <input type="hidden" name="tipo" value="etiqueta-"><input type="hidden" name="valor" value="{{ e }}">
+        <span>{{ e|replace("_", " ") }}</span><button type="submit" aria-label="Sacar {{ e }}">×</button>
+      </form>
+      {% else %}<p class="nota">Ninguna todavía.</p>{% endfor %}
+    </div>
+    <form method="post" action="/clientes/{{ p.chat_id }}/evento" class="form-linea">
+      <input type="hidden" name="tipo" value="etiqueta+">
+      <input name="valor" list="etiquetas-sugeridas" placeholder="Agregar etiqueta" autocomplete="off" required>
+      <datalist id="etiquetas-sugeridas">{% for e in etiquetas %}<option value="{{ e }}">{% endfor %}</datalist>
+      <button class="btn secundario chico" type="submit">Agregar</button>
+    </form>
+  </section>
+
+  <section class="panel">
+    <h2>Notas</h2>
+    {% for n in p.notas|reverse %}<p class="nota-interna"><time>{{ n.at.strftime("%d/%m") }}</time> {{ n.nota }}</p>{% endfor %}
+    <form method="post" action="/clientes/{{ p.chat_id }}/evento" class="form-linea">
+      <input type="hidden" name="tipo" value="nota">
+      <input name="nota" placeholder="Algo para acordarse" autocomplete="off" required>
+      <button class="btn secundario chico" type="submit">Anotar</button>
+    </form>
+  </section>
+
+  <section class="panel">
+    <h2>Contacto</h2>
+    <form method="post" action="/clientes/{{ p.chat_id }}/evento" class="form-linea">
+      {% if p.no_contactar or p.no_interesado %}
+      <input type="hidden" name="tipo" value="contactar">
+      <button class="btn secundario chico" type="submit">Se puede volver a contactar</button>
+      {% else %}
+      <input type="hidden" name="tipo" value="no_contactar">
+      <input name="nota" placeholder="Por qué (opcional)" autocomplete="off">
+      <button class="btn fantasma peligro chico" type="submit">No contactar</button>
+      {% endif %}
+    </form>
+    <p class="nota">"No contactar" lo saca de toda recuperación y de cualquier mensaje preparado. Queda anotado cuándo y por qué.</p>
+  </section>
+</aside>
+</div>
+{% endblock %}

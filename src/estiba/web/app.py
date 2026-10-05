@@ -71,6 +71,7 @@ from estiba.economia.cuentas import Actividad
 from estiba.economia.cuentas import cuentas as cuentas_economia
 from estiba.economia.config import Camioneta, Credito, Disponibilidad, Fondo, a_json
 from estiba.bandeja.avisos import merece_aviso
+from estiba.crm import personas
 from estiba.crm.perdida import perdida_de
 from estiba.web import economia_vista as EV
 from estiba.formato import pesos, telefono
@@ -98,6 +99,8 @@ from estiba.storage.repositories import (
     EconomiaRepository,
     FleteRealRepository,
     ReparacionRepository,
+    ContactoEventoRepository,
+    RecontactoRepository,
     GastoRepository,
     PanelRepository,
     SettingsRepository,
@@ -671,6 +674,63 @@ def create_app(
         }[periodo]
         e = embudo.calcular(estado.resultado.leads, hasta=ahora, desde=desde)
         return e, P.numeros(e)
+
+    def _personas() -> dict[str, "personas.Persona"]:
+        """Cada persona con todas sus oportunidades, lo anotado y los recontactos.
+
+        Se arma de nuevo cada vez, como el resto: nada de esto se guarda ya
+        calculado. Ver docs/recuperacion.md.
+        """
+        conn = estado.conectar()
+        try:
+            acciones = ActionRepository(conn)
+            eventos = ContactoEventoRepository(conn).todos()
+            recontactos = RecontactoRepository(conn).todos()
+            vistos = _fletes()
+            nombres = _nombres()
+            salida: dict[str, personas.Persona] = {}
+            for lead in estado.resultado.leads:
+                par = estado.resultado.fletes.get(lead.job_id)
+                if par is None:
+                    continue
+                ev, conv = par
+                suyas = acciones.for_job(lead.job_id)
+                cierres = [a for a in sin_anuladas(suyas) if a.tipo == REALIZADO]
+                primero = conv.text_of(conv.messages[0]) if conv.messages else ""
+                f = vistos.get(lead.job_id)
+                o = personas.Oportunidad(
+                    job_id=lead.job_id, creado=lead.creado, etapa=lead.etapa, alcanzo=lead.alcanzo,
+                    historia=lead.historia, ruta=f.ruta if f else None, cosas=f.cosas if f else None,
+                    cotizado=lead.cotizado, cobrado=cierres[-1].monto if cierres else None,
+                    perdida=perdida_de(ev, suyas),
+                    por_anuncio=bool(_DESDE_PUBLI.search(plano(primero or ""))))
+                p = salida.get(conv.chat_id)
+                if p is None:
+                    mensajes = conv.messages
+                    suyos = [m for m in mensajes if m.from_customer]
+                    p = personas.Persona(
+                        chat_id=conv.chat_id, nombre=nombres.get(conv.chat_id), telefono=telefono(conv.chat_id),
+                        oportunidades=[],
+                        eventos=[personas.Evento(e["tipo"], datetime.fromisoformat(e["at"]), e["valor"], e["nota"])
+                                 for e in eventos.get(conv.chat_id, [])],
+                        recontactos=[personas.Recontacto(
+                            r["id"], r["plantilla"], r["secuencia"], r["paso"], r["texto"], r["estado"],
+                            datetime.fromisoformat(r["creado"]),
+                            datetime.fromisoformat(r["decidido"]) if r["decidido"] else None, r["job_id"])
+                            for r in recontactos.get(conv.chat_id, [])],
+                        ultimo_suyo=suyos[-1].sent_at if suyos else None,
+                        ultimo_contacto=mensajes[-1].sent_at if mensajes else None,
+                        primer_contacto=mensajes[0].sent_at if mensajes else None,
+                        mensajes_suyos=len(suyos),
+                        fuera=conv.chat_id in estado.resultado.fuera,
+                        canal_inferido="meta" if o.por_anuncio else "otro")
+                    salida[conv.chat_id] = p
+                p.oportunidades.append(o)
+            for p in salida.values():
+                p.oportunidades.sort(key=lambda o: o.creado)
+            return salida
+        finally:
+            conn.close()
 
     def _clientes() -> list[P.Cliente]:
         return P.clientes(estado.resultado.leads, _fletes(), _nombres(), estado.ahora())
@@ -2031,11 +2091,69 @@ def create_app(
             headers={"Content-Disposition": f'attachment; filename="{nombre}.csv"'},
         )
 
-    @app.get("/clientes", response_class=HTMLResponse, include_in_schema=False)
-    def pagina_clientes(request: Request):
+    @app.get("/clientes/{chat_id}", response_class=HTMLResponse, include_in_schema=False)
+    def pagina_persona(request: Request, chat_id: str):
+        """La ficha 360: todo lo que paso con una persona, en orden."""
+        p = _personas().get(chat_id)
+        if p is None:
+            raise HTTPException(404, f"no hay una persona {chat_id}")
         return templates.TemplateResponse(
-            request, "clientes.html", _contexto(request, clientes=_clientes(), titulo="Clientes")
-        )
+            request, "persona.html",
+            _contexto(request, p=p, rep=personas.reputacion(p), hitos=list(reversed(personas.historial(p))),
+                      etiquetas=sorted(set(personas.ETIQUETAS) - set(p.etiquetas)),
+                      canales=registro.CANALES, nombre_canal=dict(registro.CANALES),
+                      titulo=p.nombre or p.telefono))
+
+    @app.post("/clientes/{chat_id}/evento", include_in_schema=False)
+    def evento_persona(request: Request, chat_id: str, tipo: str = Form(...), valor: str = Form(""),
+                       nota: str = Form("")):
+        """Anotar algo sobre la persona. Se agrega al historial: nada se borra."""
+        if tipo not in personas.EVENTOS:
+            raise HTTPException(422, f"no se puede anotar {tipo}")
+        valor = valor.strip()
+        if tipo in ("etiqueta+", "etiqueta-"):
+            valor = re.sub(r"[^a-z0-9_]+", "_", plano(valor).lower()).strip("_")
+            if not valor:
+                raise HTTPException(422, "falta la etiqueta")
+        elif tipo == "reputacion" and not (valor.isdigit() and 0 <= int(valor) <= 100):
+            raise HTTPException(422, "la reputación va de 0 a 100")
+        elif tipo == "programado":
+            try:
+                date.fromisoformat(valor)
+            except ValueError as e:
+                raise HTTPException(422, "la fecha no se entiende") from e
+        elif tipo == "origen" and valor not in registro.CLAVES_CANAL:
+            raise HTTPException(422, f"origen desconocido: {valor}")
+        elif tipo == "nota" and not nota.strip():
+            raise HTTPException(422, "la nota está vacía")
+        if chat_id not in _personas():
+            raise HTTPException(404, f"no hay una persona {chat_id}")
+        conn = estado.conectar()
+        try:
+            ContactoEventoRepository(conn).add(chat_id, tipo, estado.ahora(), valor or None, nota)
+        finally:
+            conn.close()
+        return _volver(request, f"/clientes/{chat_id}")
+
+    FILTROS_PERSONA = [("todos", "Todos"), ("lead", "Nunca contrataron"), ("cliente", "Clientes"),
+                       ("recurrente", "Recurrentes"), ("recuperado", "Recuperados"), ("no-contactar", "No contactar")]
+
+    @app.get("/clientes", response_class=HTMLResponse, include_in_schema=False)
+    def pagina_clientes(request: Request, situacion: str = "todos", etiqueta: str = ""):
+        gente = _personas()
+        def pasa(p) -> bool:
+            if etiqueta and etiqueta not in p.etiquetas:
+                return False
+            return {"todos": True, "lead": p.situacion == personas.LEAD,
+                    "cliente": p.situacion != personas.LEAD, "recurrente": p.situacion == personas.RECURRENTE,
+                    "recuperado": p.recuperado, "no-contactar": p.no_contactar or p.no_interesado}.get(situacion, True)
+        lista = [c for c in _clientes() if c.chat_id in gente and pasa(gente[c.chat_id])]
+        todas = sorted({e for p in gente.values() for e in p.etiquetas})
+        return templates.TemplateResponse(
+            request, "clientes.html",
+            _contexto(request, clientes=lista, gente=gente, reputacion=personas.reputacion,
+                      filtros=FILTROS_PERSONA, situacion=situacion, etiqueta=etiqueta, etiquetas=todas,
+                      titulo="Clientes"))
 
     # ------------------------------------------------------------------
     # Acciones

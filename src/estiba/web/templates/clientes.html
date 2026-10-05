@@ -4,19 +4,32 @@
 <a class="volver" href="/numeros">{{ icono("volver") }}Números</a>
 <div class="encabezado">
   <h1>Clientes</h1>
-  <p class="bajada">Una persona, todos sus fletes. El nombre lo ponés vos desde el detalle de un flete.</p>
+  <p class="bajada">Una persona, todas sus consultas. Tocá una para ver su historia, su reputación y qué se anotó.</p>
+  <nav class="periodos filtros-personas" aria-label="Filtrar">
+    {% for clave, etq in filtros %}<a href="?situacion={{ clave }}{% if etiqueta %}&etiqueta={{ etiqueta }}{% endif %}" {% if clave == situacion %}aria-current="true"{% endif %}>{{ etq }}</a>{% endfor %}
+  </nav>
+  {% if etiquetas %}
+  <p class="etiquetas filtro-etiquetas">
+    {% for e in etiquetas %}<a class="etiqueta{% if e == etiqueta %} activa{% endif %}" href="?situacion={{ situacion }}{% if e != etiqueta %}&etiqueta={{ e }}{% endif %}">{{ e|replace("_", " ") }}</a>{% endfor %}
+  </p>
+  {% endif %}
 </div>
 
 {% if clientes %}
 <ul class="lista">
   {% for c in clientes %}
   <li>
-    <a class="fila cliente" href="/fletes/{{ c.ultimo_job_id }}">
+    {% set p = gente[c.chat_id] %}{% set r = reputacion(p) %}
+    <a class="fila cliente" href="/clientes/{{ c.chat_id }}">
       <span class="inicial" aria-hidden="true">{% if c.nombre %}{{ c.nombre[0]|upper }}{% else %}{{ icono("clientes") }}{% endif %}</span>
       <div class="fila-cuerpo">
         <div class="fila-ruta">{{ c.nombre or c.telefono }}</div>
         <div class="fila-sub">{% if c.nombre %}{{ c.telefono }} · {% endif %}{{ c.ultimo_ruta }} · {{ c.ultimo }}</div>
         <div class="fila-meta">
+          <span class="chip-situacion sit-{{ p.situacion|lower|replace(' ', '-') }}">{{ p.situacion }}</span>
+          {% if p.recuperado %}<span class="chip-situacion sit-recuperado">Recuperado</span>{% endif %}
+          {% if p.no_contactar or p.no_interesado %}<span class="chip-situacion sit-no">No contactar</span>{% endif %}
+          <span class="insignia" title="Reputación: {{ r.nivel }}">{{ r.icono }} {{ r.valor }}</span>
           {{ chip(c.ultimo_estado, c.tono) }}
           {% if c.realizados > 1 %}<span class="insignia">volvió a contratarte · {{ c.realizados }} fletes</span>{% elif c.fletes > 1 %}<span class="insignia tenue">{{ c.fletes }} pedidos</span>{% endif %}
         </div>
@@ -30,6 +43,6 @@
   {% endfor %}
 </ul>
 {% else %}
-<p class="nada">Todavía no hay clientes.</p>
+<p class="nada">Nadie con ese filtro.</p>
 {% endif %}
 {% endblock %}
