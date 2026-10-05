@@ -52,6 +52,10 @@ BASE_DEFAULT = {"texto": "Sebastián Gaboto 423, Santa Clara del Mar", "lat": -3
 #: erra 9 % y no cobra de menos en promedio (los caminos de campo en
 #: diagonal, como Batan-Miramar, piden mas y tiran para arriba). Lo que se
 #: configure en "factor de calles" escala esta curva (1,3 la deja como esta).
+#:
+#: Al norte de la laguna de Mar Chiquita (Pinamar, Gesell, Mar Azul) el
+#: fletero va por la Ruta 11 costera (lo confirmo el 5/10/2026). OSRM manda
+#: esos viajes por la 2 y la 74 y casi duplica los km: no se usa para eso.
 FACTOR_CORTO, FACTOR_LARGO = 1.45, 1.22
 CORTO_KM, LARGO_KM = 3.0, 15.0
 FACTOR_REFERENCIA = Decimal("1.3")
