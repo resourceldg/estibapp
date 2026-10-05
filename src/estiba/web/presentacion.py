@@ -852,6 +852,12 @@ def _al_dia(r: dict | None, ahora: datetime) -> tuple[str | None, bool]:
     cuando = hace(r["cuando"], ahora)
     if "error" in r:
         return f"No se pudo revisar ({cuando}): {r['error']}. Se reintenta solo.", True
+    if r.get("webhook_perdio"):
+        # Con la app abierta, lo que trae el repaso es lo que el webhook no
+        # trajo: los mensajes estan llegando hasta 10 minutos tarde.
+        return (f"Revisado {cuando}: {r['webhook_perdio']} {'mensaje llegó' if r['webhook_perdio'] == 1 else 'mensajes llegaron'} "
+                "solo por el repaso, con la app abierta. WhatsApp no le está avisando a Estiba al instante: "
+                "revisá la conexión (el webhook)."), True
     if not r["nuevos"]:
         return f"Revisado {cuando}: no se había perdido nada.", False
     n = r["nuevos"]

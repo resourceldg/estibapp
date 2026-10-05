@@ -171,6 +171,9 @@ class Estado:
     #: dos a la vez escribian la misma agenda y los mismos borradores, y la
     #: conexion del mapa no se puede usar desde dos hilos al mismo tiempo.
     candado: threading.RLock = field(default_factory=threading.RLock, repr=False)
+    #: Cuando llego el ultimo webhook de WAHA, y desde cuando corre la app.
+    ultimo_webhook: datetime | None = None
+    arranque: datetime = field(default_factory=datetime.now)
 
     def conectar(self):
         return connect(self.db)
@@ -252,6 +255,7 @@ def create_app(
     async def ciclo(_app: FastAPI):
         estado.sincronizar()
         estado.consultar_sesion()
+        _asegurar_webhook()
         # Ponerse al dia va aparte: con muchos chats y audios tarda, y la
         # app tiene que abrir ya. Lo recuperado aparece en cuanto llega.
         tareas = []
@@ -272,6 +276,7 @@ def create_app(
 
     async def _repasar() -> None:
         while True:
+            await run_in_threadpool(_asegurar_webhook)
             await run_in_threadpool(_ponerse_al_dia)
             await asyncio.sleep(repaso.total_seconds())
 
@@ -2535,7 +2540,42 @@ def create_app(
 
     app.state.recordatorios = _recordatorios
 
-    def _avisar_mensaje(mensaje) -> None:
+    def _asegurar_webhook() -> None:
+        """Que WAHA apunte a esta Estiba; si no, se corrige y queda en el log."""
+        if estado.whatsapp is None:
+            return
+        try:
+            vieja = estado.whatsapp.asegurar_webhook(_secreto_webhook())
+        except Exception as e:  # WAHA caido: se vuelve a mirar en el proximo repaso
+            log.warning("no se pudo revisar el webhook de WAHA: %s", e)
+            return
+        if vieja is not None:
+            log.warning("el webhook de WAHA apuntaba a %s: corregido a %s", vieja,
+                        estado.whatsapp.cliente.config.url_estiba)
+
+    def _avisar_traidos(mensajes) -> None:
+        """Lo que trajo el repaso, con la misma regla que el webhook: un aviso
+        por chat que lo merece, no un "N mensajes" que cuenta tambien los
+        tuyos y los privados."""
+        if estado.avisos is None:
+            return
+        avisar = []
+        for m in sorted(mensajes, key=lambda m: m.sent_at):
+            if m.from_customer and m.chat_id not in estado.resultado.fuera and m.chat_id not in [x.chat_id for x in avisar]:
+                conn = estado.conectar()
+                try:
+                    anteriores = ConversationStore(conn).get(m.chat_id).messages
+                finally:
+                    conn.close()
+                if merece_aviso(m, anteriores):
+                    avisar.append(m)
+        if len(avisar) == 1:
+            _avisar_mensaje(avisar[0], ya_decidido=True)
+        elif avisar:
+            nombres = [(_nombres().get(m.chat_id) or telefono(m.chat_id)) for m in avisar]
+            estado.avisos.avisar(f"Te escribieron {len(avisar)} clientes", ", ".join(nombres[:5]))
+
+    def _avisar_mensaje(mensaje, ya_decidido: bool = False) -> None:
         """Un mensaje nuevo de alguien que es (o puede ser) cliente.
 
         Lo privado y el spam no avisan: a eso no se contesta desde Estiba.
@@ -2550,7 +2590,7 @@ def create_app(
         finally:
             conn.close()
         # Uno por turno del cliente, y nada si ya estas en esa charla.
-        if not merece_aviso(mensaje, anteriores):
+        if not ya_decidido and not merece_aviso(mensaje, anteriores):
             return
         nombre = _nombres().get(mensaje.chat_id) or telefono(mensaje.chat_id)
         texto = mensaje.text or ("🎤 Audio" if mensaje.kind.value == "audio" else "Mandó un archivo")
@@ -2592,15 +2632,20 @@ def create_app(
             conn.close()
         if r is None:
             return
+        perdidos = 0
         if r.nuevos:
             log.info("recuperados %d mensajes de %d chats", r.nuevos, r.chats)
             _procesar()
-            if estado.avisos is not None:
-                estado.avisos.avisar(
-                    f"{r.nuevos} {'mensaje' if r.nuevos == 1 else 'mensajes'} mientras Estiba estaba cerrada",
-                    f"De {r.chats} {'chat' if r.chats == 1 else 'chats'}. Ya están en Hoy.")
+            _avisar_traidos(r.mensajes)
+            # Con la app abierta hace rato, lo que trae el repaso es lo que el
+            # webhook no trajo. Antes esto no se veia en ningun lado.
+            if cuando - estado.arranque > timedelta(minutes=15):
+                perdidos = sum(1 for m in r.mensajes if m.sent_at >= estado.arranque)
+                if perdidos:
+                    log.warning("%d mensajes llegaron solo por el repaso: el webhook no esta entregando", perdidos)
         # Se anota al final: "revisado" quiere decir que ya esta en la bandeja.
-        estado.recuperacion = {"cuando": cuando, "desde": r.desde, "chats": r.chats, "nuevos": r.nuevos}
+        estado.recuperacion = {"cuando": cuando, "desde": r.desde, "chats": r.chats, "nuevos": r.nuevos,
+                               "webhook_perdio": perdidos}
 
     @app.post("/whatsapp/al-dia", include_in_schema=False)
     def al_dia_form(request: Request, background: BackgroundTasks):
@@ -2618,6 +2663,7 @@ def create_app(
         if clave_hmac and not firma_valida(cuerpo, request.headers.get("X-Webhook-Hmac"), clave_hmac):
             raise HTTPException(401, "firma invalida")
         evento = await request.json()
+        estado.ultimo_webhook = estado.ahora()
         if evento.get("event") == "session.status":
             estado.sesion = (evento.get("payload") or {}).get("status", estado.sesion)
             return {"ok": True}

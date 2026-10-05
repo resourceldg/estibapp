@@ -64,3 +64,47 @@ class TestUnaSincronizacionPorVez:
         for h in hilos:
             h.join()
         assert maximo[0] == 1
+
+
+class TestWebhook:
+    def test_el_puerto_de_serve_manda(self, monkeypatch):
+        import os
+
+        from estiba.cli import _alinear_webhook
+
+        monkeypatch.setenv("ESTIBA_URL_PARA_WAHA", "http://host.docker.internal:8000")
+        _alinear_webhook(8001)
+        assert os.environ["ESTIBA_URL_PARA_WAHA"] == "http://host.docker.internal:8001"
+
+    def test_se_corrige_si_waha_apunta_a_otro_lado(self):
+        from estiba.whatsapp import WhatsApp
+
+        class Cliente:
+            puesta = None
+
+            def sesion(self):
+                return {"config": {"webhooks": [{"url": "http://h:8000/webhooks/waha/s"}]}}
+
+            def configuracion_sesion(self, secreto):
+                return {"webhooks": [{"url": f"http://h:8001/webhooks/waha/{secreto}"}]}
+
+            def conectar(self, secreto):
+                Cliente.puesta = secreto
+
+        w = WhatsApp(Cliente())
+        assert w.asegurar_webhook("s") == "http://h:8000/webhooks/waha/s" and Cliente.puesta == "s"
+
+    def test_si_ya_esta_bien_no_toca_nada(self):
+        from estiba.whatsapp import WhatsApp
+
+        class Cliente:
+            def sesion(self):
+                return {"config": {"webhooks": [{"url": "http://h:8001/webhooks/waha/s"}]}}
+
+            def configuracion_sesion(self, secreto):
+                return {"webhooks": [{"url": "http://h:8001/webhooks/waha/s"}]}
+
+            def conectar(self, secreto):
+                raise AssertionError("no tenia que reconfigurar")
+
+        assert WhatsApp(Cliente()).asegurar_webhook("s") is None

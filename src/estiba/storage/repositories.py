@@ -50,6 +50,15 @@ class MessageRepository:
         )
         return cur.rowcount == 1
 
+    def existentes(self, ids: list[str]) -> set[str]:
+        """De estos ids, los que ya estan guardados."""
+        salida: set[str] = set()
+        for i in range(0, len(ids), 500):
+            parte = ids[i:i + 500]
+            marcas = ",".join("?" * len(parte))
+            salida |= {f[0] for f in self.conn.execute(f"SELECT id FROM messages WHERE id IN ({marcas})", parte)}
+        return salida
+
     def save_many(self, mensajes: Iterable[Message]) -> int:
         """Guarda varios en una transaccion. Devuelve cuantos eran nuevos."""
         nuevos = 0

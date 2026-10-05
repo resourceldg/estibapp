@@ -304,6 +304,27 @@ REPASO = timedelta(minutes=10)
 _LOCALES = ("127.0.0.1", "localhost", "::1")
 
 
+def _alinear_webhook(puerto: int) -> None:
+    """WAHA tiene que llamar al puerto donde de verdad escucha Estiba.
+
+    El .env decia 8000 y `serve` escucha en 8001: mientras corrio una
+    instancia vieja en el 8000 anduvo, y cuando se apago cada mensaje fue a
+    una puerta cerrada durante dias. Manda el puerto de `serve`.
+    """
+    from urllib.parse import urlsplit, urlunsplit
+
+    url = os.environ.get("ESTIBA_URL_PARA_WAHA")
+    if not url:
+        return
+    partes = urlsplit(url)
+    if partes.port is None or partes.port == puerto:
+        return
+    nueva = urlunsplit(partes._replace(netloc=f"{partes.hostname}:{puerto}"))
+    print(f"ESTIBA_URL_PARA_WAHA decia el puerto {partes.port} y Estiba escucha en el {puerto}: "
+          f"WAHA va a llamar a {nueva}.", file=sys.stderr)
+    os.environ["ESTIBA_URL_PARA_WAHA"] = nueva
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     import uvicorn
 
@@ -317,6 +338,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 2
+    _alinear_webhook(args.port)
     engine = JobEngine(pricing=_precios(args))
     # Con el reloj congelado es una demo: no se sale a buscar mensajes reales.
     repaso = None if args.ahora else REPASO

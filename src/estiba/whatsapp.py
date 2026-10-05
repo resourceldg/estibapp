@@ -40,6 +40,8 @@ class Recuperacion:
     desde: datetime
     chats: int  # con movimiento desde entonces
     nuevos: int  # mensajes que Estiba no tenia
+    #: Los mensajes nuevos, para avisar con la misma regla que el webhook.
+    mensajes: tuple = ()
 
 
 @dataclass(frozen=True)
@@ -98,6 +100,7 @@ class WhatsApp:
         desde = max(ultimo - SOLAPE, ahora - TOPE_RECUPERACION)
         store = ConversationStore(conn)
         chats = nuevos = 0
+        traidos: list[Message] = []
         for chat in self.cliente.chats(limite_chats):
             movido = chat.get("conversationTimestamp")
             if movido and datetime.fromtimestamp(movido) < desde:
@@ -107,9 +110,29 @@ class WhatsApp:
                 continue
             chats += 1
             mensajes = [m for p in self.cliente.mensajes(jid, desde) if (m := ingresar(self.cliente, p))]
+            ya = store.mensajes.existentes([m.id for m in mensajes])
+            traidos += [m for m in mensajes if m.id not in ya]
             nuevos += store.ingest(mensajes)
             self._guardar_nombre(conn, jid, chat.get("name"))
-        return Recuperacion(desde, chats, nuevos)
+        return Recuperacion(desde, chats, nuevos, tuple(traidos))
+
+    def asegurar_webhook(self, secreto_webhook: str) -> str | None:
+        """Que WAHA le mande los mensajes a esta Estiba. Devuelve la URL vieja si la corrigio.
+
+        Paso de verdad: el webhook apuntaba al puerto 8000 y Estiba escuchaba
+        en el 8001. Desde que se apago la instancia vieja, cada mensaje iba a
+        una puerta cerrada y entraba recien con el repaso, hasta 10 minutos
+        despues, sin que nada lo dijera.
+        """
+        info = self.cliente.sesion()
+        if info is None:
+            return None  # sin sesion no hay a quien corregir: se configura al conectar
+        esperada = self.cliente.configuracion_sesion(secreto_webhook)["webhooks"][0]["url"]
+        actuales = [w.get("url") for w in ((info.get("config") or {}).get("webhooks") or [])]
+        if actuales == [esperada]:
+            return None
+        self.cliente.conectar(secreto_webhook)
+        return ", ".join(u or "" for u in actuales) or "(ninguno)"
 
     def nombres(self, conn: sqlite3.Connection, limite_chats: int = 300) -> int:
         """Trae de WhatsApp como se llama cada contacto. Sin historial ni audios.
