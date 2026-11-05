@@ -322,3 +322,40 @@ class TestFlujoWeb:
         html = web.get("/recuperacion/plantillas").text
         assert "texto nuevo" in html and 'value="10"' in html
         assert web.post("/recuperacion/plantillas", data={"s-precio-0-dias": "9999"}).status_code == 422
+
+
+class TestTablero:
+    def test_el_embudo_y_los_numeros(self):
+        gente = [
+            _persona([_perdido(1, 1, "precio"), _op(2, Stage.DONE, 20)], recontactos=[_rc(1, 10)]),
+            _persona([_perdido(1, 5, "precio")], recontactos=[_rc(1, 15)]),
+            _persona([_perdido(1, 20, "sin-lugar")]),
+        ]
+        items = R.cola(gente, HOY)
+        t = R.tablero(gente, items, HOY, Decimal(90000))
+        embudo = dict(t.embudo)
+        # El embudo cuenta personas, no oportunidades: cada paso adentro del anterior
+        assert embudo["Presupuestaron"] == 3 and embudo["Perdieron uno"] == 3
+        assert embudo["Contactados"] == 2
+        assert embudo["Contrataron"] == 1 and t.resumen.tasa == 0.5
+        assert t.resumen.facturado_recuperado == Decimal(40000)
+        assert t.rechazo_precio == 2 / 3 and t.clientes == 1 and t.vuelven == 0
+
+    def test_la_zona_sale_del_origen(self):
+        assert R.zona_de("Ostende → San Clemente") == "Ostende"
+        assert R.zona_de("mardel → pinamar") == "Mar del Plata"
+        assert R.zona_de("Alberti 2359 → Colón") == "Mar del Plata"
+        assert R.zona_de("¿? → ¿?") == "Sin dato"
+
+    def test_la_pantalla(self, web):
+        web.post("/fletes/5491155556666:job/perdido", data={"motivo": "precio"})
+        html = web.get("/numeros/recuperacion").text
+        assert "El embudo de la recuperación" in html and "Precio alto" in html and "Ver la cola" in html
+
+    def test_un_recuperado_sigue_contando_aunque_la_cola_lo_pase_a_cliente_anterior(self):
+        p = _persona([_perdido(1, 1, "precio"), _op(2, Stage.DONE, 20)], recontactos=[_rc(1, 10)])
+        assert R.item_de(p, HOY).estado == R.RECUPERADO
+        mucho_despues = HOY + timedelta(days=120)
+        item = R.item_de(p, mucho_despues)
+        assert item.secuencia == "cliente-anterior"
+        assert R.resumen([p], [item], mucho_despues).recuperados == 1

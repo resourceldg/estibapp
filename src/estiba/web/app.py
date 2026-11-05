@@ -74,6 +74,7 @@ from estiba.bandeja.avisos import merece_aviso
 from estiba.crm import personas, recuperacion
 from estiba.crm.perdida import perdida_de
 from estiba.web import economia_vista as EV
+from estiba.web import graficos_eco as G
 from estiba.formato import pesos, telefono
 from estiba.jobs import aprendido, episodios
 from estiba.jobs.engine import (
@@ -1105,7 +1106,8 @@ def create_app(
             # mezclar las de Meta con las que reconoce Estiba no da nada.
             consultas_meta=round(sum(g.resultados * g.parte(desde, hoy) for g in en_ventana))
             if (en_ventana := [g for g in gastos if g.parte(desde, hoy) > 0])
-            and all(g.resultados for g in en_ventana) else None,
+            # Un dia importado sin conversaciones dice 0: es un dato, no un faltante.
+            and all(g.resultados is not None for g in en_ventana) else None,
             cobrado=[f.cobrado for f in hechos if f.cobrado is not None and desde <= f.dia <= hoy],
         )
 
@@ -2113,6 +2115,32 @@ def create_app(
 
     FILTROS_COLA = [("hoy", "Para hacer hoy"), ("programados", "Programados"), ("enviados", "Enviados"),
                     ("recuperados", "Recuperados"), ("todos", "Todos")]
+
+    @app.get("/numeros/recuperacion", response_class=HTMLResponse, include_in_schema=False)
+    def tablero_recuperacion(request: Request):
+        """Cuanto se pierde, por que, cuanto se recupera y de donde vienen los clientes."""
+        _, secuencias = _config_recuperacion()
+        gente = list(_personas().values())
+        ahora = estado.ahora()
+        items = recuperacion.cola(gente, ahora, secuencias=secuencias)
+        _, gastos = _gastos()
+        tasa = _costos().impuestos_publicidad
+        pagado = sum((g.pagado(tasa) for g in gastos), Decimal(0)) or None
+        t = recuperacion.tablero(gente, items, ahora, pagado)
+        cuenta = lambda v: str(int(v))
+        graficos = {
+            "embudo": G.barras([(n, float(v), "g-s3" if n == "Contrataron" else "g-s1") for n, v in t.embudo],
+                               cuenta, titulo="De presupuesto perdido a cliente recuperado", izq=120),
+            "motivos": G.barras([(n[:28], float(v), "g-s2") for n, v in t.resumen.motivos[:8]], cuenta,
+                                titulo="Por qué se pierden los fletes", izq=190) if t.resumen.motivos else "",
+            "canales": G.barras([(f.nombre[:24], round((f.conversion or 0) * 100), "g-s1") for f in t.canales],
+                                lambda v: f"{int(v)}%", titulo="Cuántas consultas terminan en flete, por origen",
+                                izq=170) if t.canales else "",
+        }
+        return templates.TemplateResponse(
+            request, "numeros_recuperacion.html",
+            _contexto(request, t=t, graficos=graficos, pendientes_cola=sum(
+                1 for i in items if i.estado in recuperacion.ACCIONABLES), titulo="Recuperación"))
 
     @app.get("/recuperacion", response_class=HTMLResponse, include_in_schema=False)
     def pagina_recuperacion(request: Request, ver: str = "hoy", motivo: str = "", previo: str = "",

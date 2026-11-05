@@ -895,8 +895,9 @@ class GastoRepository:
         return cur.rowcount == 1
 
     def todos(self) -> list[sqlite3.Row]:
+        """Lo que cuenta: lo reemplazado por una importacion queda como historia (ver 031)."""
         return self.conn.execute(
-            "SELECT * FROM campaigns ORDER BY period_start DESC, period_end DESC").fetchall()
+            "SELECT * FROM campaigns WHERE vigente = 1 ORDER BY period_start DESC, period_end DESC").fetchall()
 
 
 class DecisionRepository:

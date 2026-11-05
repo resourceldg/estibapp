@@ -12,6 +12,7 @@ import argparse
 import os
 import sys
 from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 from pathlib import Path
 
 from estiba.adapters.fixtures import FIXTURES_DIR, FixtureMessageSource
@@ -460,6 +461,46 @@ def cmd_waha(args: argparse.Namespace) -> int:
     return 2
 
 
+def _centavos(monto: Decimal) -> str:
+    """Para conciliar no alcanza con redondear al peso: "$53.608,62"."""
+    entero, _, dec = f"{monto.quantize(Decimal('0.01')):,.2f}".partition(".")
+    return f"${entero.replace(',', '.')},{dec}"
+
+
+def cmd_publicidad(args: argparse.Namespace) -> int:
+    """Importar el gasto de Meta por campania y dia, y conciliarlo."""
+    from estiba.adapters.meta import ExportInvalido, leer_export
+    from estiba.finanzas.publicidad_meta import gastado_desde, importar
+
+    try:
+        export = leer_export(args.archivo)
+    except (ExportInvalido, OSError) as e:
+        print(f"No se importo nada: {e}", file=sys.stderr)
+        return 1
+    conn = connect(args.db)
+    r = importar(conn, export)
+    print(f"Meta {export.cuenta} ({export.moneda}, {export.zona_horaria}), leido {export.actualizado:%d/%m/%Y %H:%M}")
+    print(f"  {len(export.filas)} dias de campania: {r.nuevas} nuevos, {r.actualizadas} cambiaron, {r.iguales} iguales")
+    for gasto_id, desde, hasta in r.manuales_reemplazadas:
+        print(f"  la carga manual {gasto_id} ({desde:%d/%m}-{hasta:%d/%m}) queda como historia: la reemplaza lo importado")
+    if r.dias_tapados:
+        print(f"  {r.dias_tapados} dias importados no cuentan: los cubre a medias una carga manual")
+    for d in r.conciliacion:
+        marca = "ok " if d.cierra else ("NO CIERRA" if d.contra == "meta" else "distinto")
+        fmt = _centavos if d.es_monto else (lambda n: str(int(n)))
+        print(f"  {marca} {d.que}: {'Meta' if d.contra == 'meta' else 'manual'} {fmt(d.esperado)}, "
+              f"importado {fmt(d.obtenido)}")
+    if args.desde:
+        desde = date.fromisoformat(args.desde)
+        gastado = gastado_desde(conn, desde, export.cuenta)
+        print(f"  gastado desde el {desde:%d/%m}, sin impuestos: {_centavos(gastado)}")
+        if args.tope:
+            tope = Decimal(args.tope)
+            print(f"  queda del tope de {_centavos(tope)}: {_centavos(tope - gastado)}")
+    print("  impuestos: no vienen de Meta; se estiman con el % configurado hasta cargar la factura")
+    return 0 if r.todo_cierra else 2
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="estiba", description=__doc__)
     p.add_argument("--db", default=str(DEFAULT_DB), help="ruta de la base SQLite")
@@ -530,6 +571,12 @@ def build_parser() -> argparse.ArgumentParser:
     w = sub.add_parser("wer", help="tasa de error contra la transcripcion esperada")
     w.add_argument("--fixtures", default=str(FIXTURES_DIR))
     w.set_defaults(func=cmd_wer)
+
+    pu = sub.add_parser("publicidad", help="importar el gasto de Meta por campania y dia y conciliarlo")
+    pu.add_argument("archivo", help="export JSON de Meta (ver estiba/adapters/meta.py)")
+    pu.add_argument("--desde", help="dia de inicio de una prueba, para ver cuanto se gasto desde ahi")
+    pu.add_argument("--tope", help="tope de la prueba sin impuestos, para ver cuanto queda")
+    pu.set_defaults(func=cmd_publicidad)
 
     return p
 

@@ -129,10 +129,12 @@
       <span>{{ g.periodo }}</span>
       <strong class="num">{{ g.monto }}</strong>
       {% if g.detalle %}<small>{{ g.detalle }}</small>{% endif %}
+      {% if g.id %}
       <form method="post" action="/numeros/objetivos/gasto/{{ g.id }}/borrar"
             onsubmit="return confirm('¿Borrar este gasto?')">
         <button class="btn-icono" type="submit" title="Borrar" aria-label="Borrar gasto {{ g.periodo }}">{{ icono("cruz") }}</button>
       </form>
+      {% endif %}
     </li>
     {% endfor %}
   </ul>

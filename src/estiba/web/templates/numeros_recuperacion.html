@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icono %}
+{% block contenido %}
+{# El tablero de recuperacion: cuanto se pierde, por que, cuanto se recupera
+   volviendo a escribir y de donde vienen los clientes que si contratan. Al
+   centro los numeros y los graficos; a la derecha, lo que dicen. La cola
+   de mensajes esta en /recuperacion. Ver docs/recuperacion.md. #}
+<div class="encabezado">
+  <h1>Números</h1>
+  {% include "_numeros_tabs.html" %}
+</div>
+
+{% set r = t.resumen %}
+<section class="veredicto{% if r.recuperados %} tono-ok{% elif r.pendientes %} tono-aviso{% endif %}">
+  <h2 class="veredicto-pregunta">¿Cuánto se recupera volviendo a escribir?</h2>
+  <p class="veredicto-titular">
+    {% if r.enviados %}De {{ r.enviados }} {{ "persona contactada" if r.enviados == 1 else "personas contactadas" }}, {{ r.recuperados }} {{ "volvió a contratar" if r.recuperados == 1 else "volvieron a contratar" }}.
+    {% else %}Todavía no se le volvió a escribir a nadie.{% endif %}
+  </p>
+</section>
+
+<section class="kpis kpis-eco" aria-label="Indicadores">
+  <div class="kpi kpi-hero"><span class="kpi-etq">Facturación recuperada</span><span class="kpi-val num">{{ r.facturado_recuperado|int|pesos }}</span><span class="kpi-nota">de quienes contrataron después de que les escribiste</span></div>
+  <div class="kpi"><span class="kpi-etq">Perdidos este mes</span><span class="kpi-val num">{{ r.perdidos_mes }}</span><span class="kpi-nota">oportunidades</span></div>
+  <div class="kpi"><span class="kpi-etq">Recuperables</span><span class="kpi-val num">{{ r.recuperables }}</span><span class="kpi-nota">{{ pendientes_cola }} para hacer hoy</span></div>
+  <div class="kpi"><span class="kpi-etq">Tasa de recuperación</span><span class="kpi-val num">{{ "%.0f%%"|format(r.tasa * 100) if r.tasa is not none else "—" }}</span><span class="kpi-nota">recuperados sobre contactados</span></div>
+</section>
+<ul class="kpis-mini" aria-label="Más indicadores">
+  <li><span>Mensajes preparados</span> <strong class="num">{{ r.preparados }}</strong></li>
+  <li><span>Enviados</span> <strong class="num">{{ r.enviados }}</strong></li>
+  <li><span>Respondieron</span> <strong class="num">{{ r.respondieron }}</strong></li>
+  <li><span>Recuperados</span> <strong class="num">{{ r.recuperados }}</strong></li>
+  <li><span>Clientes</span> <strong class="num">{{ t.clientes }}</strong></li>
+  <li><span>Vuelven a contratar</span> <strong class="num">{{ t.vuelven }}</strong></li>
+</ul>
+
+<aside class="lateral-texto" aria-label="Lectura">
+  <p class="lateral-titulo">Lo que dice</p>
+  <div class="texto-suelto">
+    <p class="veredicto-detalle">{% if r.motivos %}El motivo que más se repite es «{{ r.motivos[0][0] }}» ({{ r.motivos[0][1] }}).{% else %}Todavía no hay motivos de pérdida anotados.{% endif %}
+      {% if t.rechazo_precio is not none %} De los perdidos con motivo anotado, el {{ "%.0f"|format(t.rechazo_precio * 100) }} % fue por precio.{% endif %}</p>
+    {% if t.costo_por_cliente %}<p>Cada cliente que llegó por un anuncio y contrató costó {{ t.costo_por_cliente|int|pesos }} de publicidad.</p>{% endif %}
+    <p>{{ t.vuelven }} de {{ t.clientes }} {{ "cliente" if t.clientes == 1 else "clientes" }} te {{ "contrató" if t.vuelven == 1 else "contrataron" }} dos veces o más.</p>
+  </div>
+  <section class="panel">
+    <h2>La cola de recuperación</h2>
+    <p class="frases-p">{{ pendientes_cola }} {{ "persona" if pendientes_cola == 1 else "personas" }} para escribirle hoy. Nada sale solo: se prepara, se revisa y se manda.</p>
+    <a class="btn primario" href="/recuperacion">Ver la cola</a>
+    <a class="btn fantasma chico" href="/recuperacion/plantillas">Plantillas y secuencias</a>
+  </section>
+  <section class="panel">
+    <h2>Cómo se cuenta</h2>
+    <ul class="frases frases-chicas">
+      <li>Un recuperado es alguien que contrató después de que le volviste a escribir.</li>
+      <li>La facturación recuperada suma los fletes que hizo después del primer mensaje de recuperación.</li>
+      <li>Los motivos salen de lo que anotaste al dar por perdido; los perdidos por silencio cuentan como «Dejó de responder».</li>
+      <li>El costo por cliente es la publicidad pagada dividida por los clientes que llegaron por un anuncio y contrataron.</li>
+    </ul>
+  </section>
+</aside>
+
+<div class="eco-grilla">
+  <section class="panel grafico-tarjeta">
+    <h2>El embudo de la recuperación</h2>
+    {{ graficos.embudo | safe }}
+  </section>
+  {% if graficos.motivos %}
+  <section class="panel grafico-tarjeta">
+    <h2>Por qué se pierden</h2>
+    {{ graficos.motivos | safe }}
+  </section>
+  {% endif %}
+  {% if graficos.canales %}
+  <section class="panel grafico-tarjeta">
+    <h2>Conversión por origen</h2>
+    {{ graficos.canales | safe }}
+    <details class="como-tabla"><summary>Ver como tabla</summary>
+      <table class="cuentas">
+        <tr><th>Origen</th><th class="d">Consultas</th><th class="d">Presupuestos</th><th class="d">Fletes</th><th class="d">Perdidos por precio</th></tr>
+        {% for f in t.canales %}<tr><th scope="row">{{ f.nombre }}</th><td class="num">{{ f.consultas }}</td><td class="num">{{ f.presupuestos }}</td><td class="num">{{ f.hechos }}</td><td class="num">{{ f.perdidos_precio }}</td></tr>{% endfor %}
+      </table>
+    </details>
+  </section>
+  {% endif %}
+  <section class="panel">
+    <h2>Por zona de origen</h2>
+    <table class="cuentas">
+      <tr><th>Zona</th><th class="d">Consultas</th><th class="d">Fletes</th><th class="d">Conversión</th></tr>
+      {% for f in t.zonas %}<tr><th scope="row">{{ f.nombre }}</th><td class="num">{{ f.consultas }}</td><td class="num">{{ f.hechos }}</td><td class="num">{{ "%.0f%%"|format(f.conversion * 100) if f.conversion is not none else "—" }}</td></tr>{% endfor %}
+    </table>
+  </section>
+</div>
+{% endblock %}

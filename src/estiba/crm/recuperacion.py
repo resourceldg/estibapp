@@ -204,6 +204,25 @@ def _recuperable(p: Persona, secuencias: dict) -> tuple[Oportunidad | None, str 
     return None, None, None
 
 
+def primer_recontacto(p: Persona) -> datetime | None:
+    salidos = [r.decidido for r in p.recontactos if r.salio and r.decidido]
+    return min(salidos) if salidos else None
+
+
+def recuperado_por_recontacto(p: Persona) -> bool:
+    """Perdio una oportunidad, le volviste a escribir y despues contrato."""
+    primero = primer_recontacto(p)
+    if primero is None:
+        return False
+    perdio_antes = any(o.perdida_ok and o.creado < primero for o in p.oportunidades)
+    contrato_despues = any(o.hecha and o.creado > primero for o in p.oportunidades)
+    return perdio_antes and contrato_despues
+
+
+#: Cuanto se lo muestra como recuperado antes de que entre a "cliente anterior".
+RECUPERADO_DIAS = 90
+
+
 def puntaje(p: Persona, item: Item, hoy: date) -> tuple[int, list[tuple[str, str]]]:
     """Recovery score: que tan probable y que tan valioso es recuperarla. 0 a 100, con sus porques."""
     v, m = 40, []
@@ -253,6 +272,13 @@ def item_de(p: Persona, hoy: datetime, reglas: Reglas = REGLAS, secuencias: dict
     secuencias = secuencias or SECUENCIAS
     if p.fuera:
         return None
+    if recuperado_por_recontacto(p) and p.ultimo_flete and (hoy - p.ultimo_flete).days < RECUPERADO_DIAS:
+        hecha = next(o for o in reversed(p.oportunidades) if o.hecha)
+        salidos = [r for r in p.recontactos if r.salio and r.decidido]
+        item = Item(p, hecha, "recuperado", RECUPERADO, primer_recontacto(p), intentos=len(salidos),
+                    ultimo_enviado=max(salidos, key=lambda r: r.decidido))
+        item.puntaje, item.motivos = puntaje(p, item, hoy.date())
+        return item
     o, clave, base = _recuperable(p, secuencias)
     if clave is None:
         return None
@@ -329,18 +355,22 @@ class Resumen:
 
 
 def resumen(gente, items: list[Item], hoy: datetime) -> Resumen:
+    """Los numeros salen de la historia de cada persona, no del estado de la cola:
+    alguien recuperado hace un año sigue contando como recuperado."""
     from collections import Counter
 
+    gente = list(gente)
     mes = hoy.date().replace(day=1)
     perdidas = [o for p in gente for o in p.oportunidades if o.perdida_ok and o.perdida]
     del_mes = [o for o in perdidas if (o.perdida.at or o.creado).date() >= mes]
-    contactados = [i for i in items if i.intentos]
-    # Recuperado por un recontacto: contrato despues de que le escribimos.
-    recuperados = [i for i in contactados if i.estado == RECUPERADO]
+    contactados = [p for p in gente if primer_recontacto(p) is not None]
+    recuperados = [p for p in contactados if recuperado_por_recontacto(p)]
+    respondieron = [p for p in contactados
+                    if p in recuperados or (p.ultimo_suyo and p.ultimo_suyo > primer_recontacto(p))]
     facturado = Decimal(0)
-    for i in recuperados:
-        primero = min(r.decidido for r in i.persona.recontactos if r.salio and r.decidido)
-        facturado += sum(((o.cobrado or o.cotizado or Decimal(0)) for o in i.persona.oportunidades
+    for p in recuperados:
+        primero = primer_recontacto(p)
+        facturado += sum(((o.cobrado or o.cotizado or Decimal(0)) for o in p.oportunidades
                           if o.hecha and o.creado > primero), Decimal(0))
     return Resumen(
         perdidos_mes=len(del_mes),
@@ -348,8 +378,110 @@ def resumen(gente, items: list[Item], hoy: datetime) -> Resumen:
         pendientes=sum(1 for i in items if i.estado == PENDIENTE),
         preparados=sum(1 for i in items if i.estado == PREPARADO),
         enviados=len(contactados),
-        respondieron=sum(1 for i in contactados if i.estado in (RESPONDIO, RECUPERADO)),
+        respondieron=len(respondieron),
         recuperados=len(recuperados),
         facturado_recuperado=facturado,
-        motivos=Counter(o.perdida.etiqueta for o in perdidas).most_common(),
+        # "No respondio" anotado a mano y "Dejo de responder" por silencio son lo mismo.
+        motivos=Counter("Dejó de responder" if o.perdida.codigo == "no-respondio" else o.perdida.etiqueta
+                        for o in perdidas).most_common(),
     )
+
+
+# --------------------------------------------------------------------------
+# Tablero: lo que hace falta para responder las preguntas del negocio
+# --------------------------------------------------------------------------
+
+#: Localidades para agrupar por zona: la primera que nombre el origen.
+ZONAS = ("Ostende", "Pinamar", "Villa Gesell", "Mar Azul", "San Clemente", "Santa Clara", "Mar de Cobo",
+         "Miramar", "Batán", "Camet", "Mar Chiquita", "Sierra de los Padres", "Chapadmalal")
+
+
+def zona_de(ruta: str | None) -> str:
+    import unicodedata
+
+    plano_ = lambda t: "".join(c for c in unicodedata.normalize("NFD", (t or "").lower())
+                               if unicodedata.category(c) != "Mn")
+    origen = plano_((ruta or "").split("→")[0])
+    if not origen.strip() or "¿?" in origen:
+        return "Sin dato"
+    for z in ZONAS:
+        if plano_(z) in origen:
+            return z
+    # Una calle sin ciudad es de Mar del Plata: es lo que resuelve el mapa
+    # para la zona de trabajo.
+    return "Mar del Plata"
+
+
+@dataclass(frozen=True)
+class FilaGrupo:
+    nombre: str
+    consultas: int
+    presupuestos: int
+    hechos: int
+    perdidos_precio: int
+
+    @property
+    def conversion(self) -> float | None:
+        return self.hechos / self.consultas if self.consultas else None
+
+
+@dataclass(frozen=True)
+class Tablero:
+    resumen: Resumen
+    embudo: list[tuple[str, int]]
+    canales: list[FilaGrupo]
+    zonas: list[FilaGrupo]
+    rechazo_precio: float | None      # de los perdidos con motivo, cuantos por precio
+    clientes: int                     # personas con al menos un flete hecho
+    vuelven: int                      # con dos o mas
+    costo_por_cliente: Decimal | None  # publicidad pagada / clientes que llegaron por anuncio
+
+
+def tablero(gente, items: list[Item], hoy: datetime, publicidad_pagada: Decimal | None = None) -> Tablero:
+    """Recuperacion y origen de los clientes, en numeros. Ver docs/recuperacion.md."""
+    gente = list(gente)
+    r = resumen(gente, items, hoy)
+    ops = [o for p in gente for o in p.oportunidades]
+    # Por personas, y cada paso adentro del anterior: quien no perdio nada no
+    # puede estar en "recuperables", ni quien no fue contactado en "respondieron".
+    por_persona = {i.persona.chat_id: i for i in items}
+    presupuestaron = [p for p in gente if any(o.presupuestada for o in p.oportunidades)]
+    perdieron = [p for p in presupuestaron if any(o.presupuestada and o.perdida_ok for o in p.oportunidades)]
+    activos = (PENDIENTE, PROGRAMADO, PREPARADO, ENVIADO, RESPONDIO, RECUPERADO)
+    recuperables = [p for p in perdieron if primer_recontacto(p) is not None
+                    or (p.chat_id in por_persona and por_persona[p.chat_id].estado in activos)]
+    contactados = [p for p in recuperables if primer_recontacto(p) is not None]
+    respondieron = [p for p in contactados if recuperado_por_recontacto(p)
+                    or (p.ultimo_suyo and p.ultimo_suyo > primer_recontacto(p))]
+    contrataron = [p for p in respondieron if recuperado_por_recontacto(p)]
+    embudo = [
+        ("Presupuestaron", len(presupuestaron)),
+        ("Perdieron uno", len(perdieron)),
+        ("Recuperables", len(recuperables)),
+        ("Contactados", len(contactados)),
+        ("Respondieron", len(respondieron)),
+        ("Contrataron", len(contrataron)),
+    ]
+
+    def agrupar(clave) -> list[FilaGrupo]:
+        grupos: dict[str, list] = {}
+        for p in gente:
+            for o in p.oportunidades:
+                grupos.setdefault(clave(p, o), []).append(o)
+        filas = [FilaGrupo(n, len(os_), sum(1 for o in os_ if o.presupuestada), sum(1 for o in os_ if o.hecha),
+                           sum(1 for o in os_ if o.perdida and o.perdida.codigo == "precio"))
+                 for n, os_ in grupos.items()]
+        return sorted(filas, key=lambda f: -f.consultas)
+
+    from estiba.economia.registro import CANALES
+
+    nombre_canal = dict(CANALES)
+    canales = agrupar(lambda p, o: nombre_canal.get("meta" if o.por_anuncio else p.origen, p.origen))
+    zonas = agrupar(lambda p, o: zona_de(o.ruta))
+    con_motivo = [o for o in ops if o.perdida and o.perdida.decidida]
+    precio = sum(1 for o in con_motivo if o.perdida.codigo == "precio")
+    clientes = [p for p in gente if p.completados]
+    por_anuncio = [p for p in clientes if any(o.por_anuncio and o.hecha for o in p.oportunidades)]
+    cac = (publicidad_pagada / len(por_anuncio)) if publicidad_pagada and por_anuncio else None
+    return Tablero(r, embudo, canales, zonas, precio / len(con_motivo) if con_motivo else None,
+                   len(clientes), sum(1 for p in clientes if p.completados >= 2), cac)

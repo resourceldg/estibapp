@@ -1067,6 +1067,37 @@ class Gasto:
     detalle: str = ""
 
 
+def _origen(fila) -> str:
+    return fila["origen"] if "origen" in fila.keys() else "manual"
+
+
+def gastos_importados(filas, tasa) -> list[Gasto]:
+    """Lo importado de Meta viene por dia: se muestra un renglon por campania.
+
+    Sin boton de borrar (id vacio): se corrige reimportando, no a mano.
+    """
+    from decimal import Decimal
+
+    por_campania: dict[tuple, list] = {}
+    for f in filas:
+        por_campania.setdefault((f["cuenta"], f["external_id"]), []).append(f)
+    salida = []
+    for (_, campania), grupo in sorted(por_campania.items(), key=lambda kv: min(f["period_start"] for f in kv[1])):
+        con_gasto = [f for f in grupo if Decimal(f["spend"])] or grupo
+        desde = min(date.fromisoformat(f["period_start"]) for f in con_gasto)
+        hasta = max(date.fromisoformat(f["period_end"]) for f in grupo)
+        convs = sum(f["resultados"] or 0 for f in grupo)
+        leido = max(f["actualizado"] or "" for f in grupo)
+        nombre = grupo[0]["nombre"] or campania
+        nota = gasto_nota(grupo[0], tasa)[0]
+        salida.append(Gasto(
+            "", f"{nombre} · {desde:%d/%m} al {hasta:%d/%m/%Y} · {convs} conversaciones",
+            pesos(sum((Decimal(f["spend"]) for f in grupo), Decimal(0))),
+            f"importado de Meta ({grupo[0]['moneda']}), leído {datetime.fromisoformat(leido):%d/%m %H:%M} · {nota}"
+            if leido else nota))
+    return salida
+
+
 def gasto_nota(fila, tasa) -> tuple[str, bool]:
     """Como se leyo una carga de gasto: (explicacion, impuestos estimados)."""
     from decimal import Decimal
@@ -1214,8 +1245,8 @@ def objetivos(c, b, mes, gastos, ahora: datetime, cierre_medido: tuple[int, int]
                        f"{date.fromisoformat(g['period_end']):%d/%m/%Y}"
                        + (f" · {g['resultados']} conversaciones" if g["resultados"] else ""),
                  pesos(Decimal(g["spend"])), gasto_nota(g, c.impuestos_publicidad)[0])
-        for g in gastos
-    ]
+        for g in gastos if _origen(g) != "importado"
+    ] + gastos_importados([g for g in gastos if _origen(g) == "importado"], c.impuestos_publicidad)
     medido = None
     if cierre_medido and cierre_medido[1]:
         hechos, consultas = cierre_medido
