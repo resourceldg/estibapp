@@ -20,6 +20,7 @@ import io
 import json
 import logging
 import re
+import sqlite3
 import threading
 from collections.abc import Callable
 from contextlib import asynccontextmanager, suppress
@@ -72,6 +73,7 @@ from estiba.economia.cuentas import cuentas as cuentas_economia
 from estiba.economia.config import Camioneta, Credito, Disponibilidad, Fondo, a_json
 from estiba.bandeja.avisos import merece_aviso
 from estiba.crm import personas, recuperacion
+from estiba.difusion import grupos as difusion
 from estiba.origen import atribucion as origen_atribucion
 from estiba.origen import pauta as origen_pauta
 from estiba.origen import piezas as origen_piezas
@@ -2168,6 +2170,87 @@ def create_app(
             request, "numeros_origen.html",
             _contexto(request, filas=filas, nuevas=nuevas, periodo=periodo, periodos=PERIODOS,
                       tasa=_costos().impuestos_publicidad, titulo="Origen"))
+
+    @app.get("/grupos", response_class=HTMLResponse, include_in_schema=False)
+    def pagina_grupos(request: Request):
+        """La cola del dia en grupos de Facebook, el catalogo y los pedidos vistos."""
+        conn = estado.conectar()
+        try:
+            hoy = estado.ahora().date()
+            ctx = dict(cola=difusion.cola(conn, hoy), grupos=difusion.todos(conn), pedidos=difusion.pedidos(conn),
+                       temas=difusion.TEMAS, dias=difusion.DIAS, por_dia=difusion.POR_DIA,
+                       espaciado=difusion.ESPACIADO_DIAS)
+        finally:
+            conn.close()
+        return templates.TemplateResponse(request, "grupos.html", _contexto(request, titulo="Grupos", **ctx))
+
+    @app.post("/grupos", include_in_schema=False)
+    async def agregar_grupo(request: Request):
+        form = await request.form()
+        conn = estado.conectar()
+        try:
+            difusion.agregar(
+                conn, str(form.get("nombre", "")), url=str(form.get("url", "")).strip() or None,
+                zona=str(form.get("zona", "")).strip() or "Mar del Plata", tema=str(form.get("tema", "general")),
+                dias=tuple(int(d) for d in form.getlist("dias") if str(d).isdigit()),
+                acepta_publicidad=bool(form.get("acepta_publicidad")),
+                reglas=str(form.get("reglas", "")).strip() or None)
+        except (ValueError, sqlite3.IntegrityError) as e:
+            raise HTTPException(422, f"no se agrego el grupo: {e}") from e
+        finally:
+            conn.close()
+        return RedirectResponse("/grupos", status_code=303)
+
+    @app.post("/grupos/{grupo_id}/vigente", include_in_schema=False)
+    async def grupo_vigente(grupo_id: int, request: Request):
+        form = await request.form()
+        conn = estado.conectar()
+        try:
+            difusion.pausar(conn, grupo_id, vigente=str(form.get("vigente")) == "1")
+        finally:
+            conn.close()
+        return RedirectResponse("/grupos", status_code=303)
+
+    @app.post("/grupos/publicado", include_in_schema=False)
+    async def grupo_publicado(request: Request):
+        form = await request.form()
+        conn = estado.conectar()
+        try:
+            hoy = estado.ahora().date()
+            posteo = next((p for p in difusion.cola(conn, hoy) if str(p.grupo.id) == str(form.get("grupo_id"))), None)
+            if posteo is None:
+                raise HTTPException(422, "ese grupo no esta en la cola de hoy")
+            difusion.publicado(conn, posteo, hoy)
+        finally:
+            conn.close()
+        return RedirectResponse("/grupos", status_code=303)
+
+    @app.post("/grupos/pedidos", include_in_schema=False)
+    async def anotar_pedido(request: Request):
+        form = await request.form()
+        grupo = str(form.get("grupo_id", ""))
+        conn = estado.conectar()
+        try:
+            difusion.anotar_pedido(conn, str(form.get("texto", "")), estado.ahora(),
+                                   int(grupo) if grupo.isdigit() else None,
+                                   str(form.get("contacto", "")).strip() or None)
+        except ValueError as e:
+            raise HTTPException(422, str(e)) from e
+        finally:
+            conn.close()
+        return RedirectResponse("/grupos", status_code=303)
+
+    @app.post("/grupos/pedidos/{pedido_id}", include_in_schema=False)
+    async def resolver_pedido(pedido_id: int, request: Request):
+        form = await request.form()
+        conn = estado.conectar()
+        try:
+            difusion.resolver_pedido(conn, pedido_id, str(form.get("estado", "")), estado.ahora())
+        except ValueError as e:
+            raise HTTPException(422, str(e)) from e
+        finally:
+            conn.close()
+        return RedirectResponse("/grupos", status_code=303)
 
     @app.get("/recuperacion", response_class=HTMLResponse, include_in_schema=False)
     def pagina_recuperacion(request: Request, ver: str = "hoy", motivo: str = "", previo: str = "",

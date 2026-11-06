@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icono %}
+{% block contenido %}
+{# Difusion en grupos de Facebook, semiautomatica: Estiba arma la cola del
+   dia y el texto; la persona copia, publica a mano y marca "Publicado".
+   Nada se publica ni se lee solo: eso arriesga la cuenta (y la publicidad).
+   Ver difusion/grupos.py y la migracion 033. #}
+<div class="encabezado">
+  <h1>Números</h1>
+  {% include "_numeros_tabs.html" %}
+</div>
+
+<section class="veredicto{% if cola %} tono-aviso{% else %} tono-ok{% endif %}">
+  <h2 class="veredicto-pregunta">¿Dónde publico hoy?</h2>
+  <p class="veredicto-titular">
+    {% if cola %}Hoy tocan {{ cola|length }} {{ "grupo" if cola|length == 1 else "grupos" }}. Copiá el texto, publicalo a mano y marcá «Publicado».
+    {% elif grupos %}Hoy no toca ningún grupo: se publica en cada uno cada {{ espaciado }} días como mínimo.
+    {% else %}Todavía no cargaste grupos. Agregá abajo los grupos de la zona donde podés publicar.{% endif %}
+  </p>
+</section>
+
+{% for p in cola %}
+<section class="panel">
+  <h2>{{ p.grupo.nombre }} <span class="ayuda">· {{ p.grupo.zona }} · {{ p.grupo.tema }}{% if p.ultimo %} · último posteo {{ p.ultimo.strftime("%d/%m") }}{% else %} · nunca{% endif %}</span></h2>
+  {% if p.grupo.reglas %}<p class="ayuda">Reglas del grupo: {{ p.grupo.reglas }}</p>{% endif %}
+  <p class="texto-suelto" style="white-space: pre-wrap">{{ p.texto }}</p>
+  <div class="acciones">
+    <button type="button" class="btn secundario" data-copiar="{{ p.texto }}">{{ icono("copiar") }}<span>Copiar texto</span></button>
+    {% if p.grupo.url %}<a class="btn fantasma" href="{{ p.grupo.url }}" target="_blank" rel="noopener">Abrir el grupo</a>{% endif %}
+    <form method="post" action="/grupos/publicado" style="display:inline">
+      <input type="hidden" name="grupo_id" value="{{ p.grupo.id }}">
+      <button class="btn primario" type="submit">Publicado</button>
+    </form>
+  </div>
+  <p class="ayuda">Código {{ p.codigo }}: las consultas que lleguen por este link se cuentan en Números → Origen.</p>
+</section>
+{% endfor %}
+
+<section class="bloque">
+  <h2>Pedidos vistos en grupos</h2>
+  <p class="ayuda">¿Viste un «busco flete»? Pegalo acá para no olvidarte de escribirle. Cuando le escribas, marcalo como contactado.</p>
+  <form method="post" action="/grupos/pedidos" class="formulario">
+    <label>Lo que publicó <textarea name="texto" rows="2" required></textarea></label>
+    <label>Contacto (nombre o teléfono) <input name="contacto"></label>
+    <label>Grupo
+      <select name="grupo_id"><option value="">—</option>{% for g in grupos %}<option value="{{ g.id }}">{{ g.nombre }}</option>{% endfor %}</select>
+    </label>
+    <button class="btn secundario" type="submit">Anotar</button>
+  </form>
+  {% if pedidos %}
+  <table class="tabla apilable">
+    <thead><tr><th>Visto</th><th>Pedido</th><th>Contacto</th><th></th></tr></thead>
+    <tbody>
+      {% for x in pedidos %}
+      <tr>
+        <td data-etq="Visto">{{ x.visto_at.strftime("%d/%m %H:%M") }}{% if x.grupo %} · {{ x.grupo }}{% endif %}</td>
+        <td data-etq="Pedido">{{ x.texto }}</td>
+        <td data-etq="Contacto">{{ x.contacto or "—" }}</td>
+        <td>
+          <form method="post" action="/grupos/pedidos/{{ x.id }}" style="display:inline">
+            <button class="btn fantasma chico" name="estado" value="contactado">Le escribí</button>
+            <button class="btn fantasma chico" name="estado" value="descartado">Descartar</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+
+<section class="bloque">
+  <h2>Grupos</h2>
+  {% if grupos %}
+  <table class="tabla apilable">
+    <thead><tr><th>Grupo</th><th>Zona</th><th>Tema</th><th>Deja publicar</th><th></th></tr></thead>
+    <tbody>
+      {% for g in grupos %}
+      <tr>
+        <td data-etq="Grupo">{% if g.url %}<a href="{{ g.url }}" target="_blank" rel="noopener">{{ g.nombre }}</a>{% else %}{{ g.nombre }}{% endif %}{% if not g.vigente %} <span class="ayuda">(pausado)</span>{% endif %}</td>
+        <td data-etq="Zona">{{ g.zona }}</td>
+        <td data-etq="Tema">{{ g.tema }}</td>
+        <td data-etq="Deja publicar">{% if g.acepta_publicidad %}{{ g.dias_texto }}{% else %}no acepta publicidad{% endif %}</td>
+        <td>
+          <form method="post" action="/grupos/{{ g.id }}/vigente" style="display:inline">
+            <button class="btn fantasma chico" name="vigente" value="{{ 0 if g.vigente else 1 }}">{{ "Pausar" if g.vigente else "Reactivar" }}</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+  <form method="post" action="/grupos" class="formulario">
+    <label>Nombre del grupo <input name="nombre" required></label>
+    <label>Link del grupo <input name="url" type="url" placeholder="https://www.facebook.com/groups/..."></label>
+    <label>Zona <input name="zona" value="Mar del Plata"></label>
+    <label>Tema
+      <select name="tema">{% for t in temas %}<option value="{{ t }}">{{ t }}</option>{% endfor %}</select>
+    </label>
+    <fieldset><legend>Días en que deja publicar (ninguno = cualquiera)</legend>
+      {% for d in dias %}<label class="en-linea"><input type="checkbox" name="dias" value="{{ loop.index0 }}"> {{ d }}</label>{% endfor %}
+    </fieldset>
+    <label class="en-linea"><input type="checkbox" name="acepta_publicidad" value="1" checked> Acepta publicidad</label>
+    <label>Reglas del grupo <input name="reglas" placeholder="Ej.: solo lunes, sin links, pedir permiso al admin"></label>
+    <button class="btn secundario" type="submit">Agregar grupo</button>
+  </form>
+</section>
+
+<aside class="lateral-texto" aria-label="Lectura">
+  <section class="panel">
+    <h2>Por qué así</h2>
+    <ul class="frases frases-chicas">
+      <li>Estiba no publica ni lee Facebook: un robot en grupos hace que bloqueen tu perfil, y con él la cuenta de publicidad.</li>
+      <li>Como mucho {{ por_dia }} grupos por día y {{ espaciado }} días entre posteos en el mismo grupo: así publica una persona.</li>
+      <li>Cada texto sale distinto del último que usaste en ese grupo.</li>
+      <li>Respetá las reglas de cada grupo: si dice «sin publicidad», marcalo y no aparece en la cola.</li>
+    </ul>
+  </section>
+</aside>
+{% endblock %}

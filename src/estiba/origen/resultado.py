@@ -74,14 +74,21 @@ def por_pieza(oportunidades, piezas: list[Pieza], atribuciones: dict[str, Atribu
                     sum(1 for o in ops if _llego(o, Stage.CONFIRMED)),
                     len(hechas), sum((o.cobrado or CERO for o in hechas), CERO), pagado, conv_meta)
 
-    filas = []
+    # Las piezas con el mismo nombre van juntas: cada posteo en un grupo es
+    # una pieza ("Grupo · X"), pero lo que importa es el grupo.
+    juntas: dict[str, list] = {}
     for p in piezas:
         ops = de_pieza.get(p.id, [])
         gasto, conv = gasto_por_anuncio.get(p.anuncio_id, (CERO, 0)) if p.anuncio_id else (CERO, None)
         pagado = gasto * (1 + tasa_impuestos / 100) + p.costo_fijo
         if not ops and not pagado:
             continue
-        filas.append(fila(p.nombre, p.medio, p.canal, ops, pagado, conv))
+        j = juntas.setdefault(p.nombre, [p.medio, p.canal, [], CERO, None])
+        j[2].extend(ops)
+        j[3] += pagado
+        if conv is not None:
+            j[4] = (j[4] or 0) + conv
+    filas = [fila(nombre, medio, canal, ops, pagado, conv) for nombre, (medio, canal, ops, pagado, conv) in juntas.items()]
     filas.sort(key=lambda f: (-f.realizados, -f.consultas, f.nombre))
     sueltas = de_pieza.get(None, [])
     if sueltas:
