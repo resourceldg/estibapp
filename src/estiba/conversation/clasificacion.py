@@ -79,6 +79,11 @@ ANUNCIOS = {
     "B2 Te lo llevamos hoy": re.compile(r"\bnecesito\s+un\s+flete\s+para\s+hoy\b"),
     "B3 Marketplace": re.compile(r"\bflete\s+para\s+algo\s+de\s+marketplace\b"),
     "B4 Reel": re.compile(r"\bvi\s+el\s+video,?\s+necesito\s+un\s+flete\b"),
+    # Campaña de noviembre 2026 (temporada): uno por anuncio.
+    "Nov Hogar": re.compile(r"\bvi\s+el\s+anuncio\s+de\s+mudanzas\s+y\s+muebles\b"),
+    "Nov Marketplace": re.compile(r"\bcompre\s+algo\s+en\s+marketplace\s+y\s+necesito\s+traerlo\b"),
+    "Nov Fin de cursada": re.compile(r"\btermine\s+de\s+cursar\s+y\s+quiero\s+llevar\s+mis\s+cosas\b"),
+    "Nov Temporada": re.compile(r"\bpreparando\s+un\s+alquiler\s+para\s+la\s+temporada\b"),
 }
 
 _DESDE_PUBLI = re.compile(

@@ -24,6 +24,10 @@ AHORA = datetime(2026, 10, 1, 12)
     ("¡Hola! Necesito un flete para hoy", "B2 Te lo llevamos hoy"),
     ("¡Hola! Necesito un flete para algo de Marketplace", "B3 Marketplace"),
     ("¡Hola! Vi el video, necesito un flete", "B4 Reel"),
+    ("¡Hola! Vi el anuncio de mudanzas y muebles, quiero cotizar", "Nov Hogar"),
+    ("¡Hola! Compré algo en Marketplace y necesito traerlo", "Nov Marketplace"),
+    ("¡Hola! Terminé de cursar y quiero llevar mis cosas a mi ciudad", "Nov Fin de cursada"),
+    ("¡Hola! Estoy preparando un alquiler para la temporada, quiero cotizar", "Nov Temporada"),
     ("¡Hola! Quiero más información", "A (anteriores)"),
     ("hola, cuánto sale un flete a Batán?", None),
 ])
@@ -43,6 +47,15 @@ def test_los_anuncios_nuevos_no_reciben_un_segundo_saludo():
     """Meta ya le pidio la foto: no se le pide lo mismo dos veces."""
     assert not sale_sola(_conv("¡Hola! Quiero cotizar un flete"), APERTURA, AHORA,
                          ya_mando=False)
+
+
+@pytest.mark.parametrize("texto", [
+    "¡Hola! Vi el anuncio de mudanzas y muebles, quiero cotizar",
+    "¡Hola! Terminé de cursar y quiero llevar mis cosas a mi ciudad",
+])
+def test_los_anuncios_de_noviembre_tampoco_reciben_un_segundo_saludo(texto):
+    """Meta ya saluda y pide foto y direcciones: Estiba no repite."""
+    assert not sale_sola(_conv(texto), APERTURA, AHORA, ya_mando=False)
 
 
 def test_por_anuncio_solo_cuenta_los_que_vinieron_de_uno():
