@@ -39,6 +39,10 @@ class Propuesta:
 
 
 def _cosas(items: list[str]) -> str:
+    # Un slot de cosas puede quedar con la lista vacia (se corrigio a mano y
+    # se borro todo): no hay nada que nombrar, y antes rompia el arranque.
+    if not items:
+        return ""
     if len(items) == 1:
         return items[0]
     return ", ".join(items[:-1]) + " y " + items[-1]

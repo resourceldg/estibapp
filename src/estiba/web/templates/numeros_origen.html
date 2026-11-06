@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block contenido %}
+{# De donde viene cada consulta y que paso con ella: cada pieza publicada,
+   paga u organica, con su embudo y su costo. Lo que no se sabe va al final
+   como "Sin atribuir": nunca se reparte. Ver origen/ y la migracion 032. #}
+<div class="encabezado">
+  <h1>Números</h1>
+  {% include "_numeros_tabs.html" %}
+  <nav class="periodos" aria-label="Período">
+    {% for clave, etiqueta in periodos.items() %}
+    <a href="?periodo={{ clave }}" {% if clave == periodo %}aria-current="true"{% endif %}>{{ etiqueta }}</a>
+    {% endfor %}
+  </nav>
+</div>
+
+{% set mejor = filas|selectattr("realizados")|selectattr("pagado")|sort(attribute="costo_por_flete")|first %}
+<section class="veredicto{% if mejor %} tono-ok{% endif %}">
+  <h2 class="veredicto-pregunta">¿Qué trae fletes, y a qué costo?</h2>
+  <p class="veredicto-titular">
+    {% if mejor %}«{{ mejor.nombre }}» es lo pago que trae fletes más baratos: {{ mejor.costo_por_flete|int|pesos }} de publicidad por flete.
+    {% elif filas %}Todavía ninguna pieza paga cerró un flete en este período.
+    {% else %}Todavía no hay consultas ni gasto en este período.{% endif %}
+  </p>
+</section>
+
+{% if filas %}
+<section class="bloque">
+  <table class="tabla apilable">
+    <thead><tr>
+      <th>De dónde</th><th class="num">Consultas</th><th class="num">Cotizados</th><th class="num">Agendados</th>
+      <th class="num">Fletes</th><th class="num">Facturado</th><th class="num">Pagado</th>
+      <th class="num">Por consulta</th><th class="num">Por flete</th><th class="num">Retorno</th>
+    </tr></thead>
+    <tbody>
+      {% for f in filas %}
+      <tr>
+        <td data-etq="De dónde">{{ f.nombre }}{% if f.medio %} <span class="ayuda">· {{ "pago" if f.medio == "pago" else "orgánico" }}</span>{% endif %}</td>
+        <td class="num" data-etq="Consultas">{{ f.consultas }}{% if f.conversaciones_meta is not none %} <span class="ayuda">(Meta: {{ f.conversaciones_meta }})</span>{% endif %}</td>
+        <td class="num" data-etq="Cotizados">{{ f.cotizados }}</td>
+        <td class="num" data-etq="Agendados">{{ f.agendados }}</td>
+        <td class="num" data-etq="Fletes">{{ f.realizados }}</td>
+        <td class="num" data-etq="Facturado">{{ f.facturado|int|pesos if f.facturado else "—" }}</td>
+        <td class="num" data-etq="Pagado">{{ f.pagado|int|pesos if f.pagado else ("gratis" if f.medio == "organico" else "—") }}</td>
+        <td class="num" data-etq="Por consulta">{{ f.costo_por_consulta|int|pesos if f.costo_por_consulta else "—" }}</td>
+        <td class="num" data-etq="Por flete">{{ f.costo_por_flete|int|pesos if f.costo_por_flete else "—" }}</td>
+        <td class="num" data-etq="Retorno">{{ "%.1f×"|format(f.retorno) if f.retorno else "—" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% else %}
+<p class="nada">Cuando lleguen consultas por un anuncio, la ficha de Google o un grupo, aparecen acá con lo que pasó con cada una.</p>
+{% endif %}
+
+<aside class="lateral-texto" aria-label="Lectura">
+  <section class="panel">
+    <h2>Cómo se cuenta</h2>
+    <ul class="frases frases-chicas">
+      <li>Cada consulta se asigna por el mensaje que trae escrito el botón del anuncio o el link (por ejemplo «Te encontré en Google»). Si el cliente lo borró o escribió a mano, queda en «Sin atribuir»: no se reparte a ojo.</li>
+      <li>«Meta: n» son las conversaciones que cuenta Meta. Si son más que las consultas, hay gente que tocó el anuncio y borró el texto.</li>
+      <li>Pagado es el gasto del anuncio en el período, con impuestos ({{ tasa }} %). Lo orgánico cuesta cero.</li>
+      <li>El gasto por anuncio se carga con <code>estiba pauta</code>; sin importarlo, los anuncios muestran consultas pero no costo.</li>
+      <li>Retorno: pesos facturados por cada peso de publicidad.</li>
+    </ul>
+  </section>
+  {% if nuevas %}<p class="ayuda">Se asignaron {{ nuevas }} consultas nuevas al abrir esta página.</p>{% endif %}
+</aside>
+{% endblock %}

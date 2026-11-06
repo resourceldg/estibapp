@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import sqlite3
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -501,6 +502,65 @@ def cmd_publicidad(args: argparse.Namespace) -> int:
     return 0 if r.todo_cierra else 2
 
 
+def cmd_pauta(args: argparse.Namespace) -> int:
+    """Importar el gasto de Meta por anuncio y por dia (origen/pauta.py)."""
+    from estiba.adapters.meta import ExportInvalido
+    from estiba.origen import pauta
+
+    try:
+        datos = pauta.leer(args.archivo)
+    except (ExportInvalido, OSError, ValueError) as e:
+        print(f"No se importo nada: {e}", file=sys.stderr)
+        return 1
+    conn = connect(args.db)
+    n = pauta.importar(conn, datos)
+    total = sum((g for g, _ in pauta.por_anuncio(conn).values()), Decimal(0))
+    print(f"Pauta {datos.cuenta}, leida {datos.actualizado:%d/%m/%Y %H:%M}: {n} dias de anuncio importados")
+    print(f"  gasto total por anuncio guardado, sin impuestos: {_centavos(total)}")
+    return 0
+
+
+def cmd_pieza(args: argparse.Namespace) -> int:
+    """Listar o agregar piezas: anuncios, posteos en grupos, flyers..."""
+    from estiba.origen import piezas
+
+    conn = connect(args.db)
+    if args.accion == "listar":
+        for p in piezas.todas(conn):
+            extra = " ".join(x for x in (p.lugar or "", f"codigo={p.codigo}" if p.codigo else "",
+                                         f"anuncio={p.anuncio_id}" if p.anuncio_id else "") if x)
+            print(f"{p.clave:18} {p.medio:8} {p.tipo:13} {p.nombre}  {extra}".rstrip())
+        return 0
+    if not (args.clave and args.nombre and args.tipo):
+        print("Para agregar hacen falta --clave, --nombre y --tipo", file=sys.stderr)
+        return 1
+    try:
+        p = piezas.agregar(
+            conn, args.clave, args.nombre, args.tipo, args.medio, args.canal, lugar=args.lugar,
+            campania=args.campania, anuncio_id=args.anuncio, marcador=args.marcador, codigo=args.codigo,
+            url=args.url, desde=date.fromisoformat(args.desde) if args.desde else None,
+            costo_fijo=Decimal(args.costo or 0), texto=args.texto)
+    except (ValueError, sqlite3.IntegrityError) as e:
+        print(f"No se agrego: {e}", file=sys.stderr)
+        return 1
+    print(f"Agregada {p.clave}: {p.nombre}")
+    return 0
+
+
+def cmd_atribuir(args: argparse.Namespace) -> int:
+    """Corregir a mano de que pieza vino un flete. La anterior queda como historia."""
+    from estiba.origen import atribucion
+
+    conn = connect(args.db)
+    try:
+        a = atribucion.asignar(conn, args.job_id, args.clave, args.metodo, args.evidencia)
+    except ValueError as e:
+        print(f"No se atribuyo: {e}", file=sys.stderr)
+        return 1
+    print(f"{a.job_id} -> pieza {args.clave} ({a.metodo})")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="estiba", description=__doc__)
     p.add_argument("--db", default=str(DEFAULT_DB), help="ruta de la base SQLite")
@@ -577,6 +637,35 @@ def build_parser() -> argparse.ArgumentParser:
     pu.add_argument("--desde", help="dia de inicio de una prueba, para ver cuanto se gasto desde ahi")
     pu.add_argument("--tope", help="tope de la prueba sin impuestos, para ver cuanto queda")
     pu.set_defaults(func=cmd_publicidad)
+
+    pa = sub.add_parser("pauta", help="importar el gasto de Meta por anuncio y dia (para Numeros > Origen)")
+    pa.add_argument("archivo", help="export JSON por anuncio (ver estiba/origen/pauta.py)")
+    pa.set_defaults(func=cmd_pauta)
+
+    pz = sub.add_parser("pieza", help="listar o agregar piezas publicadas (anuncios, grupos, flyers...)")
+    pz.add_argument("accion", choices=["listar", "agregar"])
+    pz.add_argument("--clave")
+    pz.add_argument("--nombre")
+    pz.add_argument("--tipo", help="anuncio, posteo_grupo, marketplace, pagina, ficha_google, flyer u otro")
+    pz.add_argument("--medio", default="organico", choices=["pago", "organico"])
+    pz.add_argument("--canal", default="organico", help="meta, google, marketplace, organico...")
+    pz.add_argument("--lugar", help="nombre del grupo, barrio del flyer...")
+    pz.add_argument("--campania")
+    pz.add_argument("--anuncio", help="id del anuncio de Meta, para cruzar con la pauta")
+    pz.add_argument("--marcador", help="regex sobre el primer mensaje sin tildes ni mayusculas")
+    pz.add_argument("--codigo", help="codigo corto que va en el link de WhatsApp")
+    pz.add_argument("--url")
+    pz.add_argument("--desde", help="fecha de publicacion (ISO)")
+    pz.add_argument("--costo", help="lo pagado por fuera de la pauta (imprenta, etc.)")
+    pz.add_argument("--texto")
+    pz.set_defaults(func=cmd_pieza)
+
+    at = sub.add_parser("atribuir", help="corregir a mano de que pieza vino un flete")
+    at.add_argument("job_id")
+    at.add_argument("clave", help="clave de la pieza (estiba pieza listar)")
+    at.add_argument("--metodo", default="manual", choices=["manual", "declarado", "codigo", "mensaje_precargado"])
+    at.add_argument("--evidencia", help="por ejemplo, lo que dijo el cliente")
+    at.set_defaults(func=cmd_atribuir)
 
     return p
 

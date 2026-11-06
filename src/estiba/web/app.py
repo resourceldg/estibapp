@@ -72,6 +72,10 @@ from estiba.economia.cuentas import cuentas as cuentas_economia
 from estiba.economia.config import Camioneta, Credito, Disponibilidad, Fondo, a_json
 from estiba.bandeja.avisos import merece_aviso
 from estiba.crm import personas, recuperacion
+from estiba.origen import atribucion as origen_atribucion
+from estiba.origen import pauta as origen_pauta
+from estiba.origen import piezas as origen_piezas
+from estiba.origen import resultado as origen_resultado
 from estiba.crm.perdida import perdida_de
 from estiba.web import economia_vista as EV
 from estiba.web import graficos_eco as G
@@ -2141,6 +2145,29 @@ def create_app(
             request, "numeros_recuperacion.html",
             _contexto(request, t=t, graficos=graficos, pendientes_cola=sum(
                 1 for i in items if i.estado in recuperacion.ACCIONABLES), titulo="Recuperación"))
+
+    @app.get("/numeros/origen", response_class=HTMLResponse, include_in_schema=False)
+    def tablero_origen(request: Request, periodo: str = "30d"):
+        """De donde viene cada consulta (pago u organico) y que paso con ella."""
+        periodo = _periodo(periodo)
+        desde, hasta, _ = _rango(periodo, None, None)
+        primeros = {}
+        for job_id, (_, conv) in estado.resultado.fletes.items():
+            if conv.messages:
+                primeros[job_id] = (plano(conv.text_of(conv.messages[0]) or ""), conv.messages[0].sent_at)
+        oportunidades = [o for p in _personas().values() for o in p.oportunidades]
+        conn = estado.conectar()
+        try:
+            nuevas = origen_atribucion.sincronizar(conn, primeros)
+            filas = origen_resultado.por_pieza(
+                oportunidades, origen_piezas.todas(conn), origen_atribucion.vigentes(conn),
+                origen_pauta.por_anuncio(conn, desde, hasta), _costos().impuestos_publicidad, desde, hasta)
+        finally:
+            conn.close()
+        return templates.TemplateResponse(
+            request, "numeros_origen.html",
+            _contexto(request, filas=filas, nuevas=nuevas, periodo=periodo, periodos=PERIODOS,
+                      tasa=_costos().impuestos_publicidad, titulo="Origen"))
 
     @app.get("/recuperacion", response_class=HTMLResponse, include_in_schema=False)
     def pagina_recuperacion(request: Request, ver: str = "hoy", motivo: str = "", previo: str = "",
