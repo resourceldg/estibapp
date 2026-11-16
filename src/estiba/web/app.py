@@ -3173,9 +3173,44 @@ def create_app(
             estado.sincronizar()
         _avisar_mensaje(mensaje)
 
+    def _ejecutar_desde_horizon(tipo: str, job_id: str, datos: dict) -> None:
+        """Lo mismo que los botones de la pantalla del flete, pedido desde Horizon."""
+        if tipo == "confirmar":
+            _accion(job_id, CONFIRMADO, "desde Horizon")
+        elif tipo == "realizado":
+            monto = _monto(str(datos.get("monto") or ""))
+            if monto is None:
+                raise ValueError("falta cuanto se cobro")
+            estimado = registro.desde_evaluacion(estado.resultado.evaluaciones.get(job_id))
+            _accion(job_id, REALIZADO, "desde Horizon", monto)
+            sin_cambios = {"km": None, "km_vacios": None, "horas": None, "espera_h": None,
+                           "ayudante_pagado": None, "otros_gastos": None, "canal": None}
+            conn = estado.conectar()
+            try:
+                FleteRealRepository(conn).guardar(job_id, registro.cerrar(estimado, visto=False, cambios=sin_cambios),
+                                                  estado.ahora())
+            finally:
+                conn.close()
+        elif tipo == "perdido":
+            _accion(job_id, PERDIDO, _nota_perdida(str(datos.get("motivo") or ""), str(datos.get("nota") or ""), ""))
+        elif tipo == "reabrir":
+            _accion(job_id, ANULADO, None)
+        else:
+            raise ValueError(f"cambio desconocido: {tipo}")
+
     def _sincronizar_horizon() -> dict:
-        """Manda a Horizon los fletes que cambiaron y el resumen del mes."""
+        """Aplica los cambios pedidos desde Horizon y manda los fletes que cambiaron y el resumen del mes."""
+        acks: list[dict] = []
         try:
+            try:
+                comandos = horizon.comandos()
+            except Exception as e:
+                log.warning("Horizon: no se pudieron traer los cambios pendientes: %s", e)
+                comandos = []
+            if comandos:
+                acks = vinculo.aplicar_comandos(comandos, _ejecutar_desde_horizon)
+                log.info("Horizon: %d cambios pedidos desde Horizon (%d aplicados)", len(acks),
+                         sum(1 for a in acks if a["ok"]))
             fletes = _fletes()
             conn = estado.conectar()
             try:
@@ -3191,7 +3226,9 @@ def create_app(
             payload = [vinculo.flete_para_horizon(f, montos.get(j), creados.get(j)) for j, f in fletes.items()]
             conn = estado.conectar()
             try:
-                r = vinculo.sincronizar(conn, horizon, payload, mes, estado.ahora())
+                r = vinculo.sincronizar(conn, horizon, payload, mes, estado.ahora(), acks=acks,
+                                        catalogos={"motivos_perdida": [list(m) for m in MOTIVOS_PERDIDA]},
+                                        forzar={c["flete"] for c in comandos if c.get("flete")})
             finally:
                 conn.close()
         except Exception as e:

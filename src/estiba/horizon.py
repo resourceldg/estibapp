@@ -95,16 +95,43 @@ def _huella(payload: dict) -> str:
     return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:16]
 
 
+TIPOS = ("confirmar", "realizado", "perdido", "reabrir")
+
+
+def aplicar_comandos(comandos: list[dict], ejecutar) -> list[dict]:
+    """Aplica los cambios pedidos desde Horizon, uno por uno, con las reglas de Estiba.
+
+    `ejecutar(tipo, job_id, datos)` hace lo mismo que el boton de la pantalla
+    del flete; si Estiba no lo permite (por ejemplo, confirmar algo que nunca
+    se cotizo) levanta y el motivo vuelve a Horizon para que se vea alla.
+    """
+    acks = []
+    for c in comandos:
+        tipo, job_id, datos = c.get("tipo"), c.get("flete"), c.get("datos") or {}
+        if tipo not in TIPOS or not job_id:
+            acks.append({"id": c.get("id"), "ok": False, "error": "cambio desconocido"})
+            continue
+        try:
+            ejecutar(tipo, job_id, datos)
+            acks.append({"id": c.get("id"), "ok": True})
+        except Exception as e:  # la regla de Estiba dijo que no: se informa, no se cae
+            acks.append({"id": c.get("id"), "ok": False, "error": (getattr(e, "detail", None) or str(e) or type(e).__name__)[:300]})
+    return acks
+
+
 def sincronizar(conn: sqlite3.Connection, cliente: HorizonClient, fletes: list[dict], mes: dict | None,
-                ahora: datetime) -> dict:
+                ahora: datetime, acks: list[dict] | None = None, catalogos: dict | None = None,
+                forzar: set[str] | None = None) -> dict:
     """Manda lo que cambio y anota el resultado. Nunca levanta: un Horizon
     caido no es motivo para que Estiba deje de andar."""
     ajustes = SettingsRepository(conn)
     previas = ajustes.json(HUELLAS) or {}
     huellas = {f["id"]: _huella(f) for f in fletes}
-    cambiados = [f for f in fletes if previas.get(f["id"]) != huellas[f["id"]]]
+    # Los que recibieron un pedido de cambio van siempre: si Estiba lo rechazo, Horizon tiene que volver al estado real.
+    forzar = forzar or set()
+    cambiados = [f for f in fletes if f["id"] in forzar or previas.get(f["id"]) != huellas[f["id"]]]
     try:
-        r = cliente.enviar(cambiados, mes, ahora.astimezone().isoformat())
+        r = cliente.enviar(cambiados, mes, ahora.astimezone().isoformat(), acks=acks, catalogos=catalogos)
     except ErrorHorizon as e:
         estado = {"cuando": ahora.isoformat(), "ok": False, "error": str(e), "pendientes": len(cambiados)}
         ajustes.guardar_json(ULTIMO, estado)
@@ -113,6 +140,7 @@ def sincronizar(conn: sqlite3.Connection, cliente: HorizonClient, fletes: list[d
     previas.update({f["id"]: huellas[f["id"]] for f in cambiados if f["id"] not in fallidos})
     ajustes.guardar_json(HUELLAS, previas)
     estado = {"cuando": ahora.isoformat(), "ok": not fallidos, "enviados": len(cambiados) - len(fallidos),
-              "creados": r["creados"], "precios": r["precios"], "fallidos": len(fallidos)}
+              "creados": r["creados"], "precios": r["precios"], "fallidos": len(fallidos),
+              "cambios_desde_horizon": len(acks or [])}
     ajustes.guardar_json(ULTIMO, estado)
     return estado

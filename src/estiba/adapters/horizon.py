@@ -58,7 +58,18 @@ class HorizonClient:
             raise ErrorHorizon(f"Horizon respondio {r.status_code}: {detalle or r.text[:200]}")
         return r.json()
 
-    def enviar(self, fletes: list[dict], mes: dict | None, enviado: str) -> dict:
+    def comandos(self) -> list[dict]:
+        """Los cambios de estado que el usuario pidio desde Horizon y esperan a Estiba."""
+        try:
+            r = self._http.get("/api/estiba", params={"comandos": "1"})
+        except httpx.HTTPError as e:
+            raise ErrorHorizon(f"no se pudo hablar con Horizon en {self.config.url}: {e}") from e
+        if r.status_code >= 400:
+            raise ErrorHorizon(f"Horizon respondio {r.status_code} al pedir los cambios pendientes")
+        return list(r.json().get("comandos") or [])
+
+    def enviar(self, fletes: list[dict], mes: dict | None, enviado: str,
+               acks: list[dict] | None = None, catalogos: dict | None = None) -> dict:
         """Manda los fletes de a tandas y el resumen del mes con la ultima.
 
         Devuelve el total de creados, actualizados y precios nuevos, y los
@@ -68,8 +79,13 @@ class HorizonClient:
         tandas = [fletes[i:i + TANDA] for i in range(0, len(fletes), TANDA)] or [[]]
         for n, tanda in enumerate(tandas):
             cuerpo = {"version": 1, "enviado": enviado, "fletes": tanda}
+            # Las respuestas a los cambios van en la primera tanda: Horizon las procesa antes que los fletes.
+            if n == 0 and acks:
+                cuerpo["acks"] = acks
             if n == len(tandas) - 1 and mes is not None:
                 cuerpo["mes"] = mes
+            if n == len(tandas) - 1 and catalogos is not None:
+                cuerpo["catalogos"] = catalogos
             r = self._post(cuerpo)
             for clave in ("creados", "actualizados", "precios"):
                 total[clave] += int(r.get(clave) or 0)

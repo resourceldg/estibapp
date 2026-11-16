@@ -127,3 +127,48 @@ class TestSincronizar:
         monkeypatch.delenv("ESTIBA_HORIZON_URL", raising=False)
         monkeypatch.delenv("ESTIBA_HORIZON_TOKEN", raising=False)
         assert ConfigHorizon.desde_entorno() is None
+
+
+class TestCambiosDesdeHorizon:
+    """El usuario cambia el estado de un flete desde Horizon; Estiba lo aplica con sus reglas."""
+
+    def test_se_aplica_y_se_avisa(self):
+        from estiba.horizon import aplicar_comandos
+
+        hechos = []
+        acks = aplicar_comandos([{"id": "c1", "tipo": "realizado", "flete": "x:job1", "datos": {"monto": 45000}}],
+                                lambda tipo, job, datos: hechos.append((tipo, job, datos["monto"])))
+        assert hechos == [("realizado", "x:job1", 45000)]
+        assert acks == [{"id": "c1", "ok": True}]
+
+    def test_si_la_regla_de_estiba_dice_que_no_vuelve_el_motivo(self):
+        from fastapi import HTTPException
+
+        from estiba.horizon import aplicar_comandos
+
+        def ejecutar(tipo, job, datos):
+            raise HTTPException(409, "un flete borrador no se puede marcar confirmado")
+
+        acks = aplicar_comandos([{"id": "c1", "tipo": "confirmar", "flete": "x:job1"}], ejecutar)
+        assert acks[0]["ok"] is False and "borrador" in acks[0]["error"]
+
+    def test_un_cambio_desconocido_no_se_ejecuta(self):
+        from estiba.horizon import aplicar_comandos
+
+        llamado = []
+        acks = aplicar_comandos([{"id": "c1", "tipo": "borrar-todo", "flete": "x"}], lambda *a: llamado.append(a))
+        assert not llamado and acks[0]["ok"] is False
+
+    def test_el_flete_con_pedido_de_cambio_viaja_aunque_no_haya_cambiado(self, tmp_path):
+        conn, falso = connect(tmp_path / "e.db"), HorizonFalso()
+        fletes = [flete_para_horizon(flete("c1:job1"))]
+        sincronizar(conn, cliente(falso), fletes, None, AHORA)
+        sincronizar(conn, cliente(falso), fletes, None, AHORA, acks=[{"id": "x", "ok": False, "error": "no"}],
+                    forzar={"c1:job1"})
+        assert [f["id"] for f in falso.pedidos[1]["fletes"]] == ["c1:job1"]
+        assert falso.pedidos[1]["acks"] == [{"id": "x", "ok": False, "error": "no"}]
+
+    def test_los_motivos_de_perdida_viajan_como_catalogo(self, tmp_path):
+        conn, falso = connect(tmp_path / "e.db"), HorizonFalso()
+        sincronizar(conn, cliente(falso), [], {"fletes": 0}, AHORA, catalogos={"motivos_perdida": [["precio", "Precio alto"]]})
+        assert falso.pedidos[-1]["catalogos"]["motivos_perdida"] == [["precio", "Precio alto"]]
