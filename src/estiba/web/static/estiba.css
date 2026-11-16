@@ -1,4 +1,4 @@
-/* Estiba — hoja de estilos unica.
+/* Estiba — hoja de estilos unica. (Desde 11/2026, claro y neumorfico como Horizon.)
    Celular primero: todo se disena para una mano y un pulgar, y desde 900px
    se abre en columnas.
 
@@ -12,47 +12,50 @@
    deja de significar. */
 
 :root {
-  --fondo: #17161a;           /* grafito calido: la base */
-  --superficie: #1f1e23;      /* tarjetas y filas */
-  --superficie-2: #27262c;    /* lo que se apoya sobre una tarjeta */
-  --superficie-3: #302e36;    /* la propuesta de Estiba, un escalon mas */
-  --tinta: #ece9e4;           /* blanco roto */
-  --tinta-2: #a9a4a0;
-  /* Aclarado de #78736f: daba 3.2:1 sobre las superficies y se usa justo
-     en el texto de 12-13px (los contadores de las pestañas, el "por que"
-     de una clase, las notas al pie). Ahora pasa AA sobre las cuatro. */
-  --tenue: #9a938e;
-  --linea: #302e36;
-  --linea-2: #3d3a43;
+  /* Tema claro, el mismo sistema que Horizon: marfil, relieve suave y
+     una sola superficie de la que los elementos emergen o se hunden.
+     El color se gana: el salvia marca lo elegido y la accion que pide tu
+     decision; el cobre es la marca de Estiba; el resto es tinta. */
+  --fondo: #eeede8;           /* marfil: la base */
+  --superficie: #f5f4f0;      /* tarjetas y filas (en relieve) */
+  --superficie-2: #eeede8;    /* lo que se hunde: campos, pistas */
+  --superficie-3: #fbfaf7;    /* la propuesta de Estiba, un escalon mas alto */
+  --tinta: #2f3a41;
+  --tinta-2: #4f5b63;
+  /* AA sobre las cuatro superficies tambien en 12-13 px. */
+  --tenue: #56626a;
+  --linea: #dfded7;
+  --linea-2: #d0cfc8;
 
-  --acento: #e0662a;          /* naranja de carga: la marca */
-  --primario: #3fae6a;        /* la accion que pide tu decision */
-  --primario-hover: #4cc27a;
-  --primario-tinta: #0d1f14;
+  --acento: #8a5230;          /* cobre: la marca de Estiba */
+  --primario: #3f6a53;        /* salvia: la accion que pide tu decision */
+  --primario-hover: #365c48;
+  --primario-tinta: #ffffff;
 
-  --ok: #5cc485;      --ok-fondo: #1a2b21;
-  /* Un flete hecho tiene tono propio. Compartia `neutro` con "Nuevo", asi
-     que lo que todavia no empezo y lo que ya se cobro se veian igual. */
-  --hecho: #6fb9c4;   --hecho-fondo: #1b272b;
-  --info: #86a8ff;    --info-fondo: #1c2236;
-  --aviso: #d9a15c;   --aviso-fondo: #2b2419;
-  --mal: #e0857e;     --mal-fondo: #2e1f1e;
-  --neutro: #a9a4a0;  --neutro-fondo: #2a292f;
+  --ok: #2f7350;      --ok-fondo: #e2eee6;
+  --hecho: #2f6d77;   --hecho-fondo: #e0edef;
+  --info: #42628f;    --info-fondo: #e4eaf4;
+  --aviso: #8a5a1f;   --aviso-fondo: #f3eadc;
+  --mal: #973f36;     --mal-fondo: #f4e2de;
+  --neutro: #55626a;  --neutro-fondo: #e6e5df;
 
-  --burbuja-cliente: #27262c;
-  --burbuja-vos: #23302a;
+  --burbuja-cliente: #fbfaf7;
+  --burbuja-vos: #e4eee7;
 
-  --grafico: #e0662a;
-  --grafico-tenue: #78736f;
-  --grafico-pista: #2a292f;
+  --grafico: #7fa28c;          /* solo rellenos: no lleva texto encima */
+  --grafico-tenue: #a7aea6;
+  --grafico-pista: #e4e3dd;
 
-  --radio: 14px;
-  --radio-chico: 9px;
-  --sombra: 0 1px 2px rgb(0 0 0 / .35);
-  --sombra-alta: 0 10px 34px rgb(0 0 0 / .5);
-  --tabbar: 64px;
+  --radio: 20px;
+  --radio-chico: 13px;
+  /* Relieve: luz arriba a la izquierda, sombra abajo a la derecha. */
+  --sombra: 5px 5px 12px #c9c8c0a6, -5px -5px 12px #ffffffd9;
+  --sombra-alta: 12px 12px 28px #b9b8b0b3, -10px -10px 24px #ffffffe6;
+  --hundido: inset 3px 3px 7px #cbcac3, inset -3px -3px 7px #ffffff;
+  --raso: linear-gradient(118deg, #f6f5f1 0%, #ebeae4 18%, #fbfaf7 34%, #e9e8e2 52%, #f8f7f3 70%, #e7e6e0 86%, #f5f4f0 100%);
+  --tabbar: 68px;
   --fuente: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 /* ---------------------------------------------------------------- base */
@@ -1262,10 +1265,10 @@ summary::-webkit-details-marker { display: none; }
 /* Cada parte del precio tiene un color fijo, el mismo en la tarjeta y en el
    informe: camioneta, tu trabajo, publicidad, ayudantes. */
 :root {
-  --parte-1: #86a8ff;
-  --parte-2: #e0662a;
-  --parte-3: #c08bd9;
-  --parte-4: #6fb9c4;
+  --parte-1: #5b7fa8;
+  --parte-2: #a8693c;
+  --parte-3: #8f6fa8;
+  --parte-4: #4f8f99;
 }
 .p1 { background: var(--parte-1); }
 .p2 { background: var(--parte-2); }
@@ -1455,7 +1458,7 @@ summary::-webkit-details-marker { display: none; }
 }
 .slider-precio::-webkit-slider-thumb {
   -webkit-appearance: none; width: 26px; height: 26px; border-radius: 50%;
-  background: var(--tinta); border: 3px solid var(--superficie); box-shadow: 0 1px 4px rgb(0 0 0 / .5);
+  background: var(--tinta); border: 3px solid var(--superficie); box-shadow: 0 1px 4px rgb(0 0 0 / .18);
 }
 .slider-precio::-moz-range-thumb { width: 22px; height: 22px; border-radius: 50%; background: var(--tinta); border: 3px solid var(--superficie); }
 .slider-precio:focus-visible { outline: 2px solid var(--primario); outline-offset: 4px; }
@@ -1506,13 +1509,13 @@ details > summary { cursor: pointer; margin-top: 10px; color: var(--tinta-2); fo
 .grafico .g-grilla { stroke: var(--linea); stroke-width: 1; }
 .grafico .g-cero { stroke: var(--linea-2); stroke-width: 1.2; }
 .grafico .g-ref { stroke: var(--tinta-2); stroke-width: 1; }
-.grafico .g-s1 { fill: #3d8bff; stroke: #3d8bff; }
-.grafico .g-s2 { fill: #ec5f1a; stroke: #ec5f1a; }
-.grafico .g-s3 { fill: #10ab76; stroke: #10ab76; }
-.grafico .g-s4 { fill: #c98500; stroke: #c98500; }
-.grafico .g-s5 { fill: #e5528f; stroke: #e5528f; }
-.grafico .g-apagado { fill: #6b6873; stroke: #6b6873; }
-.grafico .g-contexto { fill: #4a4852; stroke: #4a4852; }
+.grafico .g-s1 { fill: #5b7fa8; stroke: #5b7fa8; }
+.grafico .g-s2 { fill: #a8693c; stroke: #a8693c; }
+.grafico .g-s3 { fill: #4f7a62; stroke: #4f7a62; }
+.grafico .g-s4 { fill: #b58a3a; stroke: #b58a3a; }
+.grafico .g-s5 { fill: #a8607e; stroke: #a8607e; }
+.grafico .g-apagado { fill: #b7bcb6; stroke: #b7bcb6; }
+.grafico .g-contexto { fill: #d0cfc8; stroke: #d0cfc8; }
 .grafico .g-pista { fill: var(--superficie-3); }
 .grafico .g-banda { fill-opacity: .35; stroke-width: 0; }
 .grafico .g-linea { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
@@ -1521,7 +1524,7 @@ details > summary { cursor: pointer; margin-top: 10px; color: var(--tinta-2); fo
 .grafico .g-marca { fill: var(--tinta); }
 .grafico .g-marca-linea { stroke: var(--tinta); stroke-width: 2; }
 .grafico .g-toque { fill: transparent; stroke: none; }
-.grafico .g-toque:hover { fill: rgb(255 255 255 / .04); }
+.grafico .g-toque:hover { fill: rgb(0 0 0 / .03); }
 .leyenda-escalera { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; font-size: 13px; }
 .leyenda-escalera li { display: flex; gap: 8px; align-items: baseline; color: var(--tinta-2); }
 .leyenda-escalera li.alcanzado { color: var(--tinta); }
@@ -1529,12 +1532,12 @@ details > summary { cursor: pointer; margin-top: 10px; color: var(--tinta-2); fo
 .leyenda-escalera .monto { margin-left: auto; font-variant-numeric: tabular-nums; }
 .pips { display: inline-flex; gap: 3px; vertical-align: middle; margin-right: 6px; }
 .pips i { width: 9px; height: 9px; border-radius: 50%; background: var(--superficie-3); }
-.pips i.on { background: #3d8bff; }
+.pips i.on { background: var(--primario); }
 .firmeza { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
 .firmeza li { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; font-size: 14px; }
 .firmeza li small { grid-column: 1 / -1; color: var(--tenue); font-size: 12px; }
 .medidor { height: 8px; border-radius: 4px; background: var(--superficie-3); overflow: hidden; margin: 6px 0; }
-.medidor span { display: block; height: 100%; background: #3d8bff; border-radius: 4px; }
+.medidor span { display: block; height: 100%; background: var(--primario); border-radius: 4px; }
 .como-tabla > summary { font-size: 12px; }
 
 /* ------------------------------------------- numeros: jerarquia y escritorio
@@ -1702,7 +1705,7 @@ details.leer > p { margin: 6px 0 0; font-size: 13px; line-height: 1.5; color: va
 
 .grafico-tarjeta:not(.ancho) { cursor: zoom-in; transition: border-color .15s, box-shadow .15s; }
 .grafico-tarjeta:not(.ancho):hover { border-color: var(--linea-2); }
-.con-lateral .expandida { cursor: zoom-out; border-color: color-mix(in srgb, #3d8bff 45%, var(--linea)); }
+.con-lateral .expandida { cursor: zoom-out; border-color: color-mix(in srgb, var(--primario) 45%, var(--linea)); }
 
 @media (min-width: 1100px) {
   .con-lateral .subtabs a { position: relative; }
@@ -2004,3 +2007,98 @@ details.leer > p { margin: 6px 0 0; font-size: 13px; line-height: 1.5; color: va
 .plantilla { display: grid; gap: 6px; margin-top: 12px; }
 .plantilla label { display: grid; gap: 3px; font-size: 13px; color: var(--tinta-2); }
 .plantilla textarea { width: 100%; resize: vertical; }
+
+/* ===================================================== capa Horizon
+   El mismo lenguaje que Horizon: una superficie de marfil con brillo de
+   raso, de la que las cosas emergen (tarjetas, botones) o se hunden
+   (campos, pistas, lo elegido). Sin bordes duros: la forma la da la luz.
+   Va al final para que gane sobre lo de arriba sin tocar cada regla. */
+
+body {
+  background:
+    radial-gradient(70% 45% at 12% 8%, #fffefb 0%, #fffefb00 60%),
+    radial-gradient(60% 40% at 92% 30%, #ffffffb3 0%, #ffffff00 65%),
+    linear-gradient(112deg, #e9e8e2 0%, #f7f6f2 16%, #e6e5df 31%, #f9f8f5 47%, #e8e7e1 63%, #f6f5f1 79%, #e5e4de 100%);
+  background-attachment: fixed;
+}
+
+/* Lo que emerge */
+.tarjeta, .panel, .kpi, .burbuja, .conv-cab {
+  background: var(--raso);
+  border: 1px solid #ffffffb3;
+  box-shadow: var(--sombra);
+}
+.panel.plegado > summary { border-radius: var(--radio); }
+.panel.plegado[open] > summary { border-bottom-color: var(--linea); border-radius: var(--radio) var(--radio) 0 0; }
+
+/* Barras: la de arriba se funde con el fondo; la de abajo flota como una pieza */
+.barra { background: color-mix(in srgb, #f4f3ef 86%, transparent); border-bottom: 0; box-shadow: 0 6px 18px #c9c8c040; }
+.tabbar, .barra-accion {
+  background: color-mix(in srgb, #f6f5f1 92%, transparent);
+  border-top: 1px solid #ffffffcc;
+  box-shadow: 0 -8px 22px #c9c8c066;
+}
+.tabbar a { color: var(--tenue); }
+.tabbar a[aria-current="page"] { color: var(--primario); }
+.tabbar a[aria-current="page"] .tab-ico {
+  background: var(--superficie-2); box-shadow: var(--hundido); border-radius: 14px;
+}
+.tab-ico { padding: 4px 14px; border-radius: 14px; }
+
+/* Botones de porcelana: el primario se distingue por la tinta salvia y un punto, no por un bloque de color */
+.btn { border-radius: 16px; transition: box-shadow .15s, transform .08s, color .15s; }
+.btn.primario {
+  background: linear-gradient(145deg, #fbfaf7, #e6e5df); color: var(--primario);
+  border: 1px solid #ffffffd9; box-shadow: var(--sombra);
+}
+.btn.primario::before {
+  content: ""; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--primario); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primario) 22%, transparent);
+}
+.btn.primario:hover { background: linear-gradient(145deg, #fdfcf9, #e9e8e2); color: var(--primario-hover); }
+.btn.secundario {
+  background: linear-gradient(145deg, #f9f8f4, #ebeae4); border: 1px solid #ffffffc0;
+  box-shadow: var(--sombra); color: var(--tinta);
+}
+.btn.fantasma { color: var(--tinta-2); }
+.btn:active, .btn.primario:active, .btn.secundario:active { box-shadow: var(--hundido); transform: translateY(1px); }
+.btn.peligro, .btn.destructivo { box-shadow: var(--sombra); }
+.btn-icono {
+  border: 1px solid #ffffffc0; background: linear-gradient(145deg, #faf9f5, #ecebe5);
+  box-shadow: 4px 4px 9px #c9c8c099, -4px -4px 9px #ffffffd9;
+}
+.btn-icono:active { box-shadow: var(--hundido); }
+
+/* Lo que se hunde */
+input:not([type=range]):not([type=checkbox]):not([type=radio]):not([type=hidden]), select, textarea {
+  background: var(--superficie-2); color: var(--tinta);
+  border: 1px solid #ffffff99; border-radius: var(--radio-chico);
+  box-shadow: var(--hundido);
+}
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--primario) 55%, transparent); outline-offset: 2px;
+}
+input[type=range] { accent-color: var(--primario); }
+
+/* Chips y filtros: lo elegido queda hundido, con tinta salvia */
+.chip { box-shadow: inset 1px 1px 3px #cfcec780, inset -1px -1px 3px #ffffffcc; }
+.filtro {
+  border: 1px solid #ffffffc0; background: linear-gradient(145deg, #f9f8f4, #ebeae4);
+  box-shadow: 3px 3px 8px #c9c8c099, -3px -3px 8px #ffffffd9; color: var(--tinta-2);
+}
+.filtro.activo {
+  background: var(--superficie-2); border-color: #ffffff99; color: var(--primario);
+  box-shadow: var(--hundido);
+}
+.filtro.activo span { color: inherit; }
+.panel-tab.activo { background: var(--superficie-2); border-color: #ffffff99; color: var(--primario); box-shadow: var(--hundido); }
+
+/* Conversaciones: el hilo vive en una cavidad, las burbujas emergen */
+.burbuja { border-radius: 18px; }
+.conv { border-radius: var(--radio); }
+.conv:hover { background: #ffffff66; }
+
+/* Marca: el cubo de Estiba en cobre suave */
+.marca-ico { filter: saturate(.7); }
+
+@media (prefers-reduced-motion: reduce) { .btn { transition: none; } }
