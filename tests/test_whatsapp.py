@@ -650,6 +650,49 @@ class TestPonerseAlDia:
         assert r.nuevos == 1 and r.chats == 1
         assert len(ConversationStore(conn).get(CLIENTE).messages) == 2
 
+    def _contestaste_a_otro(self, conn, falso, cuando: datetime) -> None:
+        """Le escribiste a otra persona y ese mensaje si entro a Estiba."""
+        otro = "5491177778888"
+        tuyo = mensaje(id=f"true_{otro}@c.us_TUYO{int(cuando.timestamp())}", timestamp=int(cuando.timestamp()),
+                       fromMe=True, to=f"{otro}@c.us", body="dale, ahora te paso el precio",
+                       **{"from": "5491100000000@c.us"})
+        falso.historial.setdefault(f"{otro}@c.us", []).append(tuyo)
+        ConversationStore(conn).ingest([normalizar(tuyo)])
+
+    def test_un_mensaje_tuyo_posterior_no_esconde_la_consulta_que_no_llego(self, cliente_waha, falso, conn):
+        """Paso de verdad (11/2026): la marca era el ultimo mensaje guardado,
+        tambien los tuyos. Contestarle a otro corria la marca y la consulta
+        que no habia entrado por webhook quedaba afuera durante horas."""
+        self._con_uno_viejo(conn)
+        self._llego_con_la_app_cerrada(falso)  # 14:00, no entro
+        self._contestaste_a_otro(conn, falso, datetime(2026, 9, 18, 16, 0))
+        r = WhatsApp(cliente_waha).ponerse_al_dia(conn, self.AHORA)
+        assert r.nuevos == 1
+        assert len(ConversationStore(conn).get(CLIENTE).messages) == 2
+
+    def test_la_marca_es_el_ultimo_repaso_y_no_el_ultimo_mensaje(self, cliente_waha, falso, conn):
+        self._con_uno_viejo(conn)
+        w = WhatsApp(cliente_waha)
+        w.ponerse_al_dia(conn, self.AHORA)  # repaso de las 18:00 sin novedades
+        falso.historial[f"{CLIENTE}@c.us"].append(mensaje(
+            id="false_5491144445555@c.us_1802", body="sigue en pie?",
+            timestamp=int(datetime(2026, 9, 18, 18, 2).timestamp())))
+        self._contestaste_a_otro(conn, falso, datetime(2026, 9, 18, 18, 20))
+        r = w.ponerse_al_dia(conn, self.AHORA + timedelta(minutes=30))
+        assert r.nuevos == 1
+
+    def test_si_el_repaso_falla_a_mitad_el_siguiente_vuelve_a_mirar_lo_mismo(self, cliente_waha, falso, conn):
+        """La marca se mueve solo cuando el repaso termino bien."""
+        self._con_uno_viejo(conn)
+        self._llego_con_la_app_cerrada(falso)
+        w = WhatsApp(cliente_waha)
+        original = w.cliente.mensajes
+        w.cliente.mensajes = lambda *a, **k: (_ for _ in ()).throw(ErrorWaha("se corto"))
+        with pytest.raises(ErrorWaha):
+            w.ponerse_al_dia(conn, self.AHORA)
+        w.cliente.mensajes = original
+        assert w.ponerse_al_dia(conn, self.AHORA + timedelta(minutes=10)).nuevos == 1
+
     def test_dos_veces_seguidas_no_duplica(self, cliente_waha, falso, conn):
         self._con_uno_viejo(conn)
         self._llego_con_la_app_cerrada(falso)
@@ -731,3 +774,50 @@ class TestPonerseAlDia:
                 time.sleep(0.02)
             assert falso.enviados == []
             assert any(i["borrador"]["chat_id"] == "5491188889999" for i in tc.get("/api/bandeja").json())
+
+
+class TestPuertaDocker:
+    """La puerta de los webhooks espera a que exista la red de Docker."""
+
+    def test_espera_a_que_docker_cree_la_ip(self, monkeypatch):
+        import errno
+
+        import estiba.cli as cli
+
+        intentos = []
+
+        def escuchar(ip, puerto):
+            intentos.append(ip)
+            if len(intentos) < 3:
+                raise OSError(errno.EADDRNOTAVAIL, "Cannot assign requested address")
+            return "socket"
+
+        monkeypatch.setattr(cli, "_escuchar", escuchar)
+        assert cli._puerta_docker("172.17.0.1", 8001, espera=10, dormir=lambda s: None) == "socket"
+        assert len(intentos) == 3
+
+    def test_si_docker_nunca_aparece_sigue_sin_esa_puerta(self, monkeypatch):
+        import errno
+
+        import estiba.cli as cli
+
+        def escuchar(ip, puerto):
+            raise OSError(errno.EADDRNOTAVAIL, "Cannot assign requested address")
+
+        monkeypatch.setattr(cli, "_escuchar", escuchar)
+        assert cli._puerta_docker("172.17.0.1", 8001, espera=4, dormir=lambda s: None) is None
+
+    def test_otro_error_no_se_reintenta(self, monkeypatch):
+        import errno
+
+        import estiba.cli as cli
+
+        intentos = []
+
+        def escuchar(ip, puerto):
+            intentos.append(ip)
+            raise OSError(errno.EADDRINUSE, "Address already in use")
+
+        monkeypatch.setattr(cli, "_escuchar", escuchar)
+        assert cli._puerta_docker("172.17.0.1", 8001, espera=10, dormir=lambda s: None) is None
+        assert len(intentos) == 1

@@ -356,17 +356,47 @@ def cmd_serve(args: argparse.Namespace) -> int:
     # 127.0.0.1. Ahi se abre una segunda puerta que solo atiende webhooks.
     ip_docker = os.environ.get("ESTIBA_IP_DOCKER", "172.17.0.1")
     if os.environ.get("ESTIBA_WAHA_URL") and args.host in _LOCALES:
-        try:
-            sockets.append(_escuchar(ip_docker, args.port))
+        puerta = _puerta_docker(ip_docker, args.port)
+        if puerta is not None:
+            sockets.append(puerta)
             app.state.puertas_webhook = {ip_docker}
             print(f"Webhooks de WhatsApp en http://{ip_docker}:{args.port}/webhooks/ (solo desde Docker)")
-        except OSError as e:
-            print(f"No se pudo escuchar en {ip_docker} para los webhooks ({e}). "
-                  "Revisa ESTIBA_IP_DOCKER.", file=sys.stderr)
 
     servidor = uvicorn.Server(uvicorn.Config(app, log_level="warning"))
     servidor.run(sockets=sockets)
     return 0
+
+
+#: Cuanto se espera a que Docker cree su red al arrancar la compu.
+ESPERA_DOCKER = 60
+
+
+def _puerta_docker(ip: str, puerto: int, espera: float = ESPERA_DOCKER, dormir=None):
+    """La puerta por donde entran los webhooks de WAHA, esperando a Docker.
+
+    Paso de verdad (11/2026): Estiba arranca como servicio al iniciar sesion
+    y Docker unos segundos despues. La IP de Docker todavia no existia
+    ("Cannot assign requested address"), Estiba seguia sin esa puerta y
+    durante dias los mensajes entraron solo por el repaso de cada 10 minutos.
+    Ahora reintenta un rato antes de rendirse.
+    """
+    import errno
+    import time as reloj
+
+    dormir = dormir or reloj.sleep
+    intentos = max(1, int(espera // 2) + 1)
+    for intento in range(intentos):
+        try:
+            return _escuchar(ip, puerto)
+        except OSError as e:
+            if e.errno != errno.EADDRNOTAVAIL or intento == intentos - 1:
+                print(f"No se pudo escuchar en {ip} para los webhooks ({e}). "
+                      "Revisa ESTIBA_IP_DOCKER.", file=sys.stderr)
+                return None
+            if intento == 0:
+                print(f"Esperando a que Docker cree {ip} para recibir los webhooks…", file=sys.stderr)
+            dormir(2)
+    return None
 
 
 def _escuchar(host: str, puerto: int):

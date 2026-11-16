@@ -33,6 +33,12 @@ EVENTOS_DE_MENSAJE = ("message", "message.any")
 SOLAPE = timedelta(minutes=15)
 #: Mas atras que esto no se recupera solo: para eso esta importar a mano.
 TOPE_RECUPERACION = timedelta(days=30)
+#: La primera vez que no hay marca de repaso (o tras actualizar) se mira
+#: este tanto para atras: alcanza para traer lo que la marca vieja dejo afuera.
+PRIMER_REPASO = timedelta(days=3)
+#: Donde se guarda cuando empezo el ultimo repaso que termino bien.
+MARCA_REPASO = "whatsapp.ultimo_repaso"
+
 
 
 @dataclass(frozen=True)
@@ -99,16 +105,26 @@ class WhatsApp:
         Los mensajes entran por webhook: si la app no esta escuchando, WAHA
         reintenta un rato y despues los da por entregados, y en Estiba no
         existen. WhatsApp si los tiene. Esto los busca desde el ultimo
-        mensaje que se guardo de WAHA, chat por chat, del mas reciente al
-        mas viejo, y corta en el primero que no se movio desde entonces.
+        repaso que termino bien, chat por chat, del mas reciente al mas
+        viejo, y corta en el primero que no se movio desde entonces.
+
+        Paso de verdad (11/2026): la marca era el ultimo mensaje guardado,
+        incluidos los que manda el fletero. Contestarle a otro la corria
+        hacia adelante y una consulta que no habia entrado por webhook
+        quedaba afuera durante horas. Ahora la marca es el repaso: se
+        guarda solo si termino bien, asi un corte a mitad no pierde nada.
 
         None si nunca entro nada de WAHA: sin un ultimo mensaje no hay un
         "desde donde", y traer todo el historial es importar, que se pide.
         """
-        ultimo = ConversationStore(conn).ultimo_de("waha")
-        if ultimo is None:
+        from estiba.storage.repositories import SettingsRepository
+
+        if ConversationStore(conn).ultimo_de("waha") is None:
             return None
-        desde = max(ultimo - SOLAPE, ahora - TOPE_RECUPERACION)
+        ajustes = SettingsRepository(conn)
+        marca = (ajustes.json(MARCA_REPASO) or {}).get("inicio")
+        base = datetime.fromisoformat(marca) - SOLAPE if marca else ahora - PRIMER_REPASO
+        desde = max(base, ahora - TOPE_RECUPERACION)
         store = ConversationStore(conn)
         chats = nuevos = 0
         traidos: list[Message] = []
@@ -128,6 +144,7 @@ class WhatsApp:
             traidos += [m for m in mensajes if m.id not in ya]
             nuevos += store.ingest(mensajes)
             self._guardar_nombre(conn, jid, chat.get("name"))
+        ajustes.guardar_json(MARCA_REPASO, {"inicio": ahora.isoformat()})
         return Recuperacion(desde, chats, nuevos, tuple(traidos))
 
     def asegurar_webhook(self, secreto_webhook: str) -> str | None:
