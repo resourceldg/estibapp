@@ -43,7 +43,9 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
+from estiba.adapters.horizon import ConfigHorizon, HorizonClient
 from estiba.adapters.waha import MEDIA_DIR, ConfigWaha, ErrorWaha, WahaClient, firma_valida
+from estiba import horizon as vinculo
 from estiba.agenda.caldav import ConfigCalDAV, EspejoCalDAV
 from estiba.agenda.evento import calendario
 from estiba.agenda.local import LocalCalendar
@@ -253,6 +255,7 @@ def create_app(
     whatsapp: WhatsApp | None = None,
     repaso: timedelta | None = None,
     avisos=None,
+    horizon: HorizonClient | None = None,
 ) -> FastAPI:
     """`repaso`: cada cuanto buscar en WAHA mensajes que no llegaron por
     webhook. La primera vez es al arrancar. None no busca nunca solo: los
@@ -263,6 +266,11 @@ def create_app(
         whatsapp = WhatsApp(WahaClient(config_waha))
     estado = Estado(str(db), engine or JobEngine(), ahora, espejo, whatsapp)
     estado.avisos = avisos
+    # Horizon (tablero en la nube) solo con la app de verdad: los tests no
+    # tienen que salir a internet por su cuenta.
+    if horizon is None and repaso and (config_horizon := ConfigHorizon.desde_entorno()):
+        horizon = HorizonClient(config_horizon)
+    estado.horizon = {"configurado": horizon is not None}
 
     @asynccontextmanager
     async def ciclo(_app: FastAPI):
@@ -276,6 +284,8 @@ def create_app(
             tareas.append(asyncio.create_task(_repasar()))
         if estado.avisos is not None:
             tareas.append(asyncio.create_task(_recordar()))
+        if horizon is not None:
+            tareas.append(asyncio.create_task(_vincular()))
         yield
         for tarea in tareas:
             tarea.cancel()
@@ -286,6 +296,13 @@ def create_app(
         while True:
             await run_in_threadpool(_recordatorios)
             await asyncio.sleep(300)
+
+    async def _vincular() -> None:
+        # Despues del primer repaso, para mandar ya con lo recuperado.
+        await asyncio.sleep(20)
+        while True:
+            await run_in_threadpool(_sincronizar_horizon)
+            await asyncio.sleep(600)
 
     async def _repasar() -> None:
         while True:
@@ -3155,6 +3172,45 @@ def create_app(
         if _aperturas_automaticas():
             estado.sincronizar()
         _avisar_mensaje(mensaje)
+
+    def _sincronizar_horizon() -> dict:
+        """Manda a Horizon los fletes que cambiaron y el resumen del mes."""
+        try:
+            fletes = _fletes()
+            conn = estado.conectar()
+            try:
+                montos = {f["job_id"]: f for f in PanelRepository(conn).estimado_vs_real()}
+                creados = {f["id"]: f["created_at"] for f in conn.execute("SELECT id, created_at FROM jobs")}
+            finally:
+                conn.close()
+            try:
+                mes = vinculo.mes_para_horizon(_mes_actual()[0])
+            except Exception as e:  # sin economia configurada todavia
+                log.warning("Horizon: no se pudo armar el resumen del mes: %s", e)
+                mes = None
+            payload = [vinculo.flete_para_horizon(f, montos.get(j), creados.get(j)) for j, f in fletes.items()]
+            conn = estado.conectar()
+            try:
+                r = vinculo.sincronizar(conn, horizon, payload, mes, estado.ahora())
+            finally:
+                conn.close()
+        except Exception as e:
+            log.warning("Horizon: fallo la sincronizacion: %s", e)
+            r = {"cuando": estado.ahora().isoformat(), "ok": False, "error": str(e) or type(e).__name__}
+        if not r.get("ok"):
+            log.warning("Horizon: %s", r.get("error") or f"{r.get('fallidos')} fletes no se guardaron")
+        estado.horizon = {"configurado": True, **r}
+        return r
+
+    @app.get("/horizon/estado", include_in_schema=False)
+    def horizon_estado():
+        return estado.horizon
+
+    @app.post("/horizon/sincronizar", include_in_schema=False)
+    def horizon_sincronizar():
+        if horizon is None:
+            raise HTTPException(409, "Horizon no esta configurado: defini ESTIBA_HORIZON_URL y ESTIBA_HORIZON_TOKEN")
+        return _sincronizar_horizon()
 
     def _ponerse_al_dia() -> None:
         """Traer lo que llego con la app cerrada, y procesarlo como si
