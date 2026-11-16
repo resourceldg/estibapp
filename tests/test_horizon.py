@@ -172,3 +172,20 @@ class TestCambiosDesdeHorizon:
         conn, falso = connect(tmp_path / "e.db"), HorizonFalso()
         sincronizar(conn, cliente(falso), [], {"fletes": 0}, AHORA, catalogos={"motivos_perdida": [["precio", "Precio alto"]]})
         assert falso.pedidos[-1]["catalogos"]["motivos_perdida"] == [["precio", "Precio alto"]]
+
+
+class TestMigracionPendiente:
+    def test_si_horizon_pide_preparar_la_base_estiba_la_prepara_y_reintenta(self, tmp_path):
+        pedidos = []
+
+        def falso(request: httpx.Request) -> httpx.Response:
+            pedidos.append((request.method, str(request.url.params)))
+            if request.url.params.get("migrar"):
+                return httpx.Response(200, json={"ok": True})
+            if len([p for p in pedidos if p[0] == "POST" and not p[1]]) == 1:
+                return httpx.Response(503, json={"error": "falta", "code": "migration_required"})
+            return httpx.Response(200, json={"ok": True, "creados": 1, "actualizados": 0, "precios": 0, "errores": []})
+
+        r = sincronizar(connect(tmp_path / "e.db"), cliente(falso), [flete_para_horizon(flete())], None, AHORA)
+        assert r["ok"] and r["creados"] == 1
+        assert ("POST", "migrar=1") in pedidos

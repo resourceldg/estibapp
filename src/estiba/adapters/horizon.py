@@ -43,9 +43,28 @@ class HorizonClient:
         self._http = httpx.Client(base_url=config.url, transport=transport, timeout=45,
                                   headers={"Authorization": f"Bearer {config.token}"})
 
+    def _falta_migracion(self, r: httpx.Response) -> bool:
+        if r.status_code != 503:
+            return False
+        try:
+            return r.json().get("code") == "migration_required"
+        except ValueError:
+            return False
+
+    def _migrar(self) -> None:
+        """Horizon tiene migraciones nuevas sin aplicar: se le pide que las aplique.
+        Son fijas, aditivas y se pueden repetir; el token de Estiba alcanza."""
+        try:
+            self._http.post("/api/estiba", params={"migrar": "1"})
+        except httpx.HTTPError:
+            pass
+
     def _post(self, cuerpo: dict) -> dict:
         try:
             r = self._http.post("/api/estiba", json=cuerpo)
+            if self._falta_migracion(r):
+                self._migrar()
+                r = self._http.post("/api/estiba", json=cuerpo)
         except httpx.HTTPError as e:
             raise ErrorHorizon(f"no se pudo hablar con Horizon en {self.config.url}: {e}") from e
         if r.status_code == 401:
@@ -62,6 +81,9 @@ class HorizonClient:
         """Los cambios de estado que el usuario pidio desde Horizon y esperan a Estiba."""
         try:
             r = self._http.get("/api/estiba", params={"comandos": "1"})
+            if self._falta_migracion(r):
+                self._migrar()
+                r = self._http.get("/api/estiba", params={"comandos": "1"})
         except httpx.HTTPError as e:
             raise ErrorHorizon(f"no se pudo hablar con Horizon en {self.config.url}: {e}") from e
         if r.status_code >= 400:
