@@ -733,3 +733,22 @@ class TestFechasDeChatsPrivados:
         assert cal.cancelar_del_chat("549111") == ["549111:job"]
         activos = [e.job_id for e, cancelado in cal.eventos() if not cancelado]
         assert activos == ["549111_9:job"]   # el guion bajo no es comodin
+
+
+class TestVolverALaLista:
+    """Cerrar un flete desde su ficha vuelve a la lista de donde se vino."""
+
+    def test_perdido_desde_la_ficha_vuelve_a_la_bandeja_con_su_filtro(self, cliente):
+        r = cliente.post("/fletes/5491155556666:job/perdido", data={"motivo": "precio"},
+                         headers={"HX-Request": "true", "HX-Current-URL": "http://x/fletes/5491155556666:job?f=cotizar"})
+        assert r.headers["HX-Redirect"] == "/?f=cotizar"
+
+    def test_hecho_desde_la_ficha_sin_filtro_vuelve_a_hoy(self, cliente):
+        r = cliente.post("/fletes/5491155556666:job/realizado",
+                         headers={"HX-Request": "true", "HX-Current-URL": "http://x/fletes/5491155556666:job"})
+        assert r.headers["HX-Redirect"] == "/"
+
+    def test_desde_la_agenda_se_queda_en_la_agenda(self, cliente):
+        r = cliente.post("/fletes/5491155556666:job/realizado",
+                         headers={"HX-Request": "true", "HX-Current-URL": "http://x/agenda"})
+        assert r.headers["HX-Refresh"] == "true"

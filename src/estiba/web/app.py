@@ -2667,6 +2667,24 @@ def create_app(
             return Response(headers={"HX-Refresh": "true"})
         return RedirectResponse(request.headers.get("referer", a), status_code=303)
 
+    def _a_la_lista(request: Request) -> Response:
+        """Despues de cerrar un flete (perdido, hecho) se vuelve a la lista de donde se vino.
+
+        Quedarse en la ficha de algo ya cerrado obligaba a volver a mano. La
+        ficha recuerda el filtro de la bandeja en `?f=`, igual que su "Hoy".
+        """
+        from urllib.parse import parse_qs, urlencode, urlsplit
+
+        origen = request.headers.get("HX-Current-URL") or request.headers.get("referer") or ""
+        # Desde otra pantalla (la agenda cierra fletes en linea) se queda donde estaba.
+        if not urlsplit(origen).path.startswith("/fletes/"):
+            return _volver(request, "/")
+        filtro = (parse_qs(urlsplit(origen).query).get("f") or [""])[0]
+        destino = "/" + (("?" + urlencode({"f": filtro})) if filtro and filtro != "todos" else "")
+        if request.headers.get("HX-Request"):
+            return Response(headers={"HX-Redirect": destino})
+        return RedirectResponse(destino, status_code=303)
+
     def _aprobar(draft_id: int, texto: str | None) -> P.Borrador:
         b = _decidir(draft_id, True, texto)
         return _enviar(draft_id) if estado.whatsapp is not None else b
@@ -2724,7 +2742,7 @@ def create_app(
                                               estado.ahora())
         finally:
             conn.close()
-        return _volver(request, f"/fletes/{job_id}")
+        return _a_la_lista(request)
 
     def _horas(texto: str) -> Decimal | None:
         """"2:30", "2,5", "2 h 30": horas como las escribe cualquiera."""
@@ -2770,7 +2788,7 @@ def create_app(
         """El motivo se elige de la lista: sirve para los numeros y para saber si
         vale la pena volver a escribirle."""
         _accion(job_id, PERDIDO, _nota_perdida(motivo, nota, competencia))
-        return _volver(request, f"/fletes/{job_id}")
+        return _a_la_lista(request)
 
     @app.post("/fletes/{job_id}/motivo", include_in_schema=False)
     def motivo_form(request: Request, job_id: str, motivo: str = Form(...), nota: str = Form(""),
