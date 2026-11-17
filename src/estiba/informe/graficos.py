@@ -45,10 +45,10 @@ PAPEL = Tema(
 )
 #: El de la app: los tokens de estiba.css.
 PANTALLA = Tema(
-    tinta="#2f3a41", tenue="#56626a", linea="#dfded7", pista="#e9e8e2", ok="#2f7350", mal="#973f36",
-    aviso="#8a5a1f", acento="#a8693c", borde_punto="#f5f4f0",
-    partes={"Camioneta": "#5b7fa8", "Tu trabajo": "#a8693c", "Publicidad": "#8f6fa8",
-            "Ayudantes": "#4f8f99", "Fijos": "#8a8f98"},
+    tinta="#2f3a41", tenue="#56626a", linea="#dfded7", pista="#e9e8e2", ok="#3f6a53", mal="#2f3a41",
+    aviso="#5f6b73", acento="#3f6a53", borde_punto="#f5f4f0",
+    partes={"Camioneta": "#2f3a41", "Tu trabajo": "#7fa28c", "Publicidad": "#8a948e",
+            "Ayudantes": "#b9c0ba", "Fijos": "#d4d8d3"},
     fuente="ui-sans-serif, system-ui, sans-serif",
     ancho=440,
     texto=1.3,

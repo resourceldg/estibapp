@@ -27,20 +27,20 @@
   --linea: #dfded7;
   --linea-2: #d0cfc8;
 
-  --acento: #8a5230;          /* cobre: la marca de Estiba */
+  --acento: #3f4b52;          /* tinta: la marca, sin color (11/2026: nada de color fuera del salvia) */
   --primario: #3f6a53;        /* salvia: la accion que pide tu decision */
   --primario-hover: #365c48;
   --primario-tinta: #ffffff;
 
-  --ok: #2f7350;      --ok-fondo: #e2eee6;
-  --hecho: #2f6d77;   --hecho-fondo: #e0edef;
-  --info: #42628f;    --info-fondo: #e4eaf4;
-  --aviso: #8a5a1f;   --aviso-fondo: #f3eadc;
-  --mal: #973f36;     --mal-fondo: #f4e2de;
+  --ok: #2f5f47;      --ok-fondo: #e6ebe7;
+  --hecho: #3f4b52;   --hecho-fondo: #e7e7e2;
+  --info: #3f4b52;    --info-fondo: #e9e9e4;
+  --aviso: #2f3a41;   --aviso-fondo: #e4e3dd;
+  --mal: #2f3a41;     --mal-fondo: #dcdbd4;
   --neutro: #55626a;  --neutro-fondo: #e6e5df;
 
   --burbuja-cliente: #fbfaf7;
-  --burbuja-vos: #e4eee7;
+  --burbuja-vos: #eaeae5;
 
   --grafico: #7fa28c;          /* solo rellenos: no lleva texto encima */
   --grafico-tenue: #a7aea6;
@@ -1265,10 +1265,10 @@ summary::-webkit-details-marker { display: none; }
 /* Cada parte del precio tiene un color fijo, el mismo en la tarjeta y en el
    informe: camioneta, tu trabajo, publicidad, ayudantes. */
 :root {
-  --parte-1: #5b7fa8;
-  --parte-2: #a8693c;
-  --parte-3: #8f6fa8;
-  --parte-4: #4f8f99;
+  --parte-1: #2f3a41;
+  --parte-2: #7fa28c;
+  --parte-3: #8a948e;
+  --parte-4: #b9c0ba;
 }
 .p1 { background: var(--parte-1); }
 .p2 { background: var(--parte-2); }
@@ -1471,7 +1471,7 @@ summary::-webkit-details-marker { display: none; }
 .ajustar-fecha { display: grid; grid-template-columns: 1.4fr 1fr; gap: 10px; margin-top: 14px; }
 .ajustar-fecha label { display: grid; gap: 4px; font-size: 13px; color: var(--tinta-2); }
 .ajustar-fecha input { min-height: 44px; padding: 0 10px; border: 1.5px solid var(--linea-2); border-radius: 10px;
-                       background: var(--superficie); color: var(--tinta); font: inherit; color-scheme: dark; }
+                       background: var(--superficie); color: var(--tinta); font: inherit; color-scheme: light; }
 .ajustar .btn { margin-top: 12px; }
 
 /* Motor economico: frases que responden primero, detalle despues. */
@@ -1509,11 +1509,11 @@ details > summary { cursor: pointer; margin-top: 10px; color: var(--tinta-2); fo
 .grafico .g-grilla { stroke: var(--linea); stroke-width: 1; }
 .grafico .g-cero { stroke: var(--linea-2); stroke-width: 1.2; }
 .grafico .g-ref { stroke: var(--tinta-2); stroke-width: 1; }
-.grafico .g-s1 { fill: #5b7fa8; stroke: #5b7fa8; }
-.grafico .g-s2 { fill: #a8693c; stroke: #a8693c; }
-.grafico .g-s3 { fill: #4f7a62; stroke: #4f7a62; }
-.grafico .g-s4 { fill: #b58a3a; stroke: #b58a3a; }
-.grafico .g-s5 { fill: #a8607e; stroke: #a8607e; }
+.grafico .g-s1 { fill: #2f3a41; stroke: #2f3a41; }
+.grafico .g-s2 { fill: #7fa28c; stroke: #7fa28c; }
+.grafico .g-s3 { fill: #8a948e; stroke: #8a948e; }
+.grafico .g-s4 { fill: #b9c0ba; stroke: #b9c0ba; }
+.grafico .g-s5 { fill: #5f6b73; stroke: #5f6b73; }
 .grafico .g-apagado { fill: #b7bcb6; stroke: #b7bcb6; }
 .grafico .g-contexto { fill: #d0cfc8; stroke: #d0cfc8; }
 .grafico .g-pista { fill: var(--superficie-3); }
@@ -2102,3 +2102,16 @@ input[type=range] { accent-color: var(--primario); }
 .marca-ico { filter: saturate(.7); }
 
 @media (prefers-reduced-motion: reduce) { .btn { transition: none; } }
+
+/* Sobriedad (11/2026): los estados se leen por palabra e ícono; el color no carga significado. */
+.chip::before { background: currentColor; opacity: .55; }
+.evaluacion, .decision { border-left-color: #c9c8c0 !important; }
+.btn.peligro, .btn.destructivo { color: var(--tinta); }
+/* Zonas del precio por tono, no por color: pierde (gris) → gana menos (gris verdoso) → llega a la meta (salvia claro). */
+.slider-precio {
+  background: linear-gradient(90deg, #d2d1ca 0 var(--pos-min), #c3cbc5 var(--pos-min) var(--pos-sug), #9fb8a8 var(--pos-sug) 100%);
+  box-shadow: inset 2px 2px 4px #b9b8b099, inset -2px -2px 4px #ffffffcc;
+}
+.m-minimo, .regla-marca.minimo { color: var(--tinta-2); }
+.m-sugerido, .regla-marca.sugerido { color: var(--primario); }
+.regla-pierde { background: #d2d1ca; }
