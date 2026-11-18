@@ -256,6 +256,9 @@ informe = [
 ]
 
 [package.dev-dependencies]
+audio = [
+    { name = "faster-whisper" },
+]
 dev = [
     { name = "httpx2" },
     { name = "pytest" },
@@ -275,6 +278,7 @@ requires-dist = [
 provides-extras = ["audio", "calendario", "informe"]
 
 [package.metadata.requires-dev]
+audio = [{ name = "faster-whisper", specifier = ">=1.1" }]
 dev = [
     { name = "httpx2", specifier = ">=2.13.0" },
     { name = "pytest", specifier = ">=8.0" },

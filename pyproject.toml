@@ -26,6 +26,13 @@ dev = [
     "httpx2>=2.13.0",
     "pytest>=8.0",
 ]
+# Transcribir audios no es opcional en la compu de Estiba: si falta, Estiba queda sorda a los audios.
+# Como grupo por defecto, `uv run` / `uv sync` lo instalan siempre (como extra, cada `uv run` lo borraba:
+# del 7-oct al 18-nov no se transcribió ningún audio). El extra «audio» sigue para instalar con pip.
+audio = ["faster-whisper>=1.1"]
+
+[tool.uv]
+default-groups = ["dev", "audio"]
 
 [build-system]
 requires = ["hatchling"]
