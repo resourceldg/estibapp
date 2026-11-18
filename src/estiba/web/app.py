@@ -47,6 +47,7 @@ from estiba.adapters.horizon import ConfigHorizon, HorizonClient
 from estiba.adapters.waha import MEDIA_DIR, ConfigWaha, ErrorWaha, WahaClient, firma_valida
 from estiba import horizon as vinculo
 from estiba.actividad import Rafaga, armar_reporte
+from estiba import charlas as charlas_negocio
 from estiba.agenda.caldav import ConfigCalDAV, EspejoCalDAV
 from estiba.agenda.evento import calendario
 from estiba.agenda.local import LocalCalendar
@@ -3261,13 +3262,20 @@ def create_app(
                     for f in sorted(fletes.values(), key=lambda f: f.ultimo_at or ""):
                         por_chat[f.chat_id] = f
                     actividad = armar_reporte(conn, estado.ahora(), por_chat)
+                    actividad["audios_sin_transcribir"] = charlas_negocio.audios_sin_transcribir(conn)
                 except Exception as e:  # el reporte nunca frena la sincronizacion
                     log.warning("Horizon: no se pudo armar el reporte de actividad: %s", e)
                     actividad = None
+                try:
+                    msgs, marca = charlas_negocio.pendientes(conn, estado.ahora(), SettingsRepository(conn).json(vinculo.MARCA_CHARLAS))
+                    charlas = {"mensajes": msgs, "fuera": charlas_negocio.fuera(conn), "marca": marca}
+                except Exception as e:  # el texto nunca frena la sincronizacion
+                    log.warning("Horizon: no se pudieron preparar las charlas: %s", e)
+                    charlas = None
                 r = vinculo.sincronizar(conn, horizon, payload, mes, estado.ahora(), acks=acks,
                                         catalogos={"motivos_perdida": [list(m) for m in MOTIVOS_PERDIDA]},
                                         forzar={c["flete"] for c in comandos if c.get("flete")},
-                                        actividad=actividad)
+                                        actividad=actividad, charlas=charlas)
             finally:
                 conn.close()
         except Exception as e:

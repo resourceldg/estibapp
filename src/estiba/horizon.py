@@ -3,8 +3,9 @@
 Se manda lo que sirve para mirar de un vistazo: cada flete con su etapa,
 ruta, fecha, km y plata (sugerido, cotizado, cobrado), el resumen de
 "¿Como estoy este mes?" y el reporte de actividad de WhatsApp (contadores
-y quien hablo ultimo; ver estiba.actividad). No se mandan mensajes, audios
-ni transcripciones: son datos de los clientes y su lugar es esta compu.
+y quien hablo ultimo; ver estiba.actividad) y, desde el 18-nov-2026 por decision
+de Lucas, el texto de las charlas DE NEGOCIO con sus transcripciones (ver
+estiba.charlas). Las charlas privadas y el spam nunca salen de esta compu.
 
 Solo viajan los fletes que cambiaron desde el ultimo envio (se recuerda una
 huella de cada uno). El resumen del mes va siempre, asi Horizon sabe cuando
@@ -24,6 +25,7 @@ from estiba.storage.repositories import SettingsRepository
 
 HUELLAS = "horizon.enviados"
 ULTIMO = "horizon.ultimo"
+MARCA_CHARLAS = "horizon.charlas"
 
 
 def _numero(valor) -> float | None:
@@ -122,7 +124,7 @@ def aplicar_comandos(comandos: list[dict], ejecutar) -> list[dict]:
 
 def sincronizar(conn: sqlite3.Connection, cliente: HorizonClient, fletes: list[dict], mes: dict | None,
                 ahora: datetime, acks: list[dict] | None = None, catalogos: dict | None = None,
-                forzar: set[str] | None = None, actividad: dict | None = None) -> dict:
+                forzar: set[str] | None = None, actividad: dict | None = None, charlas: dict | None = None) -> dict:
     """Manda lo que cambio y anota el resultado. Nunca levanta: un Horizon
     caido no es motivo para que Estiba deje de andar."""
     ajustes = SettingsRepository(conn)
@@ -133,11 +135,14 @@ def sincronizar(conn: sqlite3.Connection, cliente: HorizonClient, fletes: list[d
     cambiados = [f for f in fletes if f["id"] in forzar or previas.get(f["id"]) != huellas[f["id"]]]
     try:
         r = cliente.enviar(cambiados, mes, ahora.astimezone().isoformat(), acks=acks, catalogos=catalogos,
-                           actividad=actividad)
+                           actividad=actividad, charlas=charlas)
     except ErrorHorizon as e:
         estado = {"cuando": ahora.isoformat(), "ok": False, "error": str(e), "pendientes": len(cambiados)}
         ajustes.guardar_json(ULTIMO, estado)
         return estado
+    if charlas and charlas.get("marca") is not None:
+        # Horizon recibio los mensajes: la proxima vez se manda desde aca.
+        ajustes.guardar_json(MARCA_CHARLAS, charlas["marca"])
     fallidos = set(r["fallidos"])
     previas.update({f["id"]: huellas[f["id"]] for f in cambiados if f["id"] not in fallidos})
     ajustes.guardar_json(HUELLAS, previas)

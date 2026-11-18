@@ -118,6 +118,7 @@ def armar_reporte(conn: sqlite3.Connection, ahora: datetime, fletes_por_chat: di
             estado = "esperando al cliente"
         conversaciones.append({
             "nombre": nombres.get(chat_id) or getattr(f, "nombre", None) or "Sin nombre",
+            "chat": chat_id,
             "final": _final(chat_id),
             "clase": clases.get(chat_id, "nueva"),
             "flete": getattr(f, "job_id", None),
