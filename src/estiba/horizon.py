@@ -1,9 +1,10 @@
 """Vinculo con Horizon: que se manda, cuando y que se recuerda.
 
 Se manda lo que sirve para mirar de un vistazo: cada flete con su etapa,
-ruta, fecha, km y plata (sugerido, cotizado, cobrado), y el resumen de
-"¿Como estoy este mes?". No se mandan mensajes, audios ni transcripciones:
-son datos de los clientes y su lugar es esta compu.
+ruta, fecha, km y plata (sugerido, cotizado, cobrado), el resumen de
+"¿Como estoy este mes?" y el reporte de actividad de WhatsApp (contadores
+y quien hablo ultimo; ver estiba.actividad). No se mandan mensajes, audios
+ni transcripciones: son datos de los clientes y su lugar es esta compu.
 
 Solo viajan los fletes que cambiaron desde el ultimo envio (se recuerda una
 huella de cada uno). El resumen del mes va siempre, asi Horizon sabe cuando
@@ -121,7 +122,7 @@ def aplicar_comandos(comandos: list[dict], ejecutar) -> list[dict]:
 
 def sincronizar(conn: sqlite3.Connection, cliente: HorizonClient, fletes: list[dict], mes: dict | None,
                 ahora: datetime, acks: list[dict] | None = None, catalogos: dict | None = None,
-                forzar: set[str] | None = None) -> dict:
+                forzar: set[str] | None = None, actividad: dict | None = None) -> dict:
     """Manda lo que cambio y anota el resultado. Nunca levanta: un Horizon
     caido no es motivo para que Estiba deje de andar."""
     ajustes = SettingsRepository(conn)
@@ -131,7 +132,8 @@ def sincronizar(conn: sqlite3.Connection, cliente: HorizonClient, fletes: list[d
     forzar = forzar or set()
     cambiados = [f for f in fletes if f["id"] in forzar or previas.get(f["id"]) != huellas[f["id"]]]
     try:
-        r = cliente.enviar(cambiados, mes, ahora.astimezone().isoformat(), acks=acks, catalogos=catalogos)
+        r = cliente.enviar(cambiados, mes, ahora.astimezone().isoformat(), acks=acks, catalogos=catalogos,
+                           actividad=actividad)
     except ErrorHorizon as e:
         estado = {"cuando": ahora.isoformat(), "ok": False, "error": str(e), "pendientes": len(cambiados)}
         ajustes.guardar_json(ULTIMO, estado)

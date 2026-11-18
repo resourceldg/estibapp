@@ -46,6 +46,7 @@ from pydantic import BaseModel
 from estiba.adapters.horizon import ConfigHorizon, HorizonClient
 from estiba.adapters.waha import MEDIA_DIR, ConfigWaha, ErrorWaha, WahaClient, firma_valida
 from estiba import horizon as vinculo
+from estiba.actividad import Rafaga, armar_reporte
 from estiba.agenda.caldav import ConfigCalDAV, EspejoCalDAV
 from estiba.agenda.evento import calendario
 from estiba.agenda.local import LocalCalendar
@@ -188,6 +189,8 @@ class Estado:
     candado: threading.RLock = field(default_factory=threading.RLock, repr=False)
     #: Cuando llego el ultimo webhook de WAHA, y desde cuando corre la app.
     ultimo_webhook: datetime | None = None
+    #: Mensajes que entraron o salieron y todavia no se mandaron a Horizon (reporte inmediato).
+    rafaga: Rafaga = field(default_factory=Rafaga)
     arranque: datetime = field(default_factory=datetime.now)
 
     def conectar(self):
@@ -298,11 +301,17 @@ def create_app(
             await asyncio.sleep(300)
 
     async def _vincular() -> None:
-        # Despues del primer repaso, para mandar ya con lo recuperado.
+        # Despues del primer repaso, para mandar ya con lo recuperado. Cada 10 minutos como red de seguridad
+        # (y para que Horizon sepa que Estiba esta prendida); entre medio, apenas haya mensajes (rafaga).
         await asyncio.sleep(20)
+        proximo = estado.ahora()
         while True:
-            await run_in_threadpool(_sincronizar_horizon)
-            await asyncio.sleep(600)
+            ahora = estado.ahora()
+            if ahora >= proximo or estado.rafaga.lista(ahora):
+                estado.rafaga.mandada()
+                await run_in_threadpool(_sincronizar_horizon)
+                proximo = estado.ahora() + timedelta(seconds=600)
+            await asyncio.sleep(5)
 
     async def _repasar() -> None:
         while True:
@@ -3190,6 +3199,8 @@ def create_app(
         if _aperturas_automaticas():
             estado.sincronizar()
         _avisar_mensaje(mensaje)
+        # Reporte inmediato: Horizon se entera de esta rafaga de mensajes en segundos (ver estiba.actividad.Rafaga).
+        estado.rafaga.marcar(estado.ahora())
 
     def _ejecutar_desde_horizon(tipo: str, job_id: str, datos: dict) -> None:
         """Lo mismo que los botones de la pantalla del flete, pedido desde Horizon."""
@@ -3244,9 +3255,19 @@ def create_app(
             payload = [vinculo.flete_para_horizon(f, montos.get(j), creados.get(j)) for j, f in fletes.items()]
             conn = estado.conectar()
             try:
+                try:
+                    # El flete mas reciente de cada charla, para el «tema» del reporte (sin texto de la charla).
+                    por_chat = {}
+                    for f in sorted(fletes.values(), key=lambda f: f.ultimo_at or ""):
+                        por_chat[f.chat_id] = f
+                    actividad = armar_reporte(conn, estado.ahora(), por_chat)
+                except Exception as e:  # el reporte nunca frena la sincronizacion
+                    log.warning("Horizon: no se pudo armar el reporte de actividad: %s", e)
+                    actividad = None
                 r = vinculo.sincronizar(conn, horizon, payload, mes, estado.ahora(), acks=acks,
                                         catalogos={"motivos_perdida": [list(m) for m in MOTIVOS_PERDIDA]},
-                                        forzar={c["flete"] for c in comandos if c.get("flete")})
+                                        forzar={c["flete"] for c in comandos if c.get("flete")},
+                                        actividad=actividad)
             finally:
                 conn.close()
         except Exception as e:

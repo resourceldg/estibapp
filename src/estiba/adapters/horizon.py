@@ -91,7 +91,8 @@ class HorizonClient:
         return list(r.json().get("comandos") or [])
 
     def enviar(self, fletes: list[dict], mes: dict | None, enviado: str,
-               acks: list[dict] | None = None, catalogos: dict | None = None) -> dict:
+               acks: list[dict] | None = None, catalogos: dict | None = None,
+               actividad: dict | None = None) -> dict:
         """Manda los fletes de a tandas y el resumen del mes con la ultima.
 
         Devuelve el total de creados, actualizados y precios nuevos, y los
@@ -108,6 +109,9 @@ class HorizonClient:
                 cuerpo["mes"] = mes
             if n == len(tandas) - 1 and catalogos is not None:
                 cuerpo["catalogos"] = catalogos
+            # El reporte de actividad de WhatsApp (sin mensajes: ver estiba.actividad) va con la ultima.
+            if n == len(tandas) - 1 and actividad is not None:
+                cuerpo["actividad"] = actividad
             r = self._post(cuerpo)
             for clave in ("creados", "actualizados", "precios"):
                 total[clave] += int(r.get(clave) or 0)
