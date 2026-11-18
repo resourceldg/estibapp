@@ -101,6 +101,10 @@ class TestReporte:
         marce = next(c for c in cs if c["nombre"] == "Marce")
         assert marce["estado"] == "cotizado, esperando al cliente" and marce["tema"].startswith("Flete Mogotes → Batán")
         assert marce["final"] == "2222" and "telefono" not in marce
+        # Las horas viajan con zona (Horizon está en UTC): nada de horas locales peladas.
+        assert all(c["ultimo_at"][-6] in "+-" for c in cs)
+        juan = next(c for c in cs if c["nombre"] == "Juan")
+        assert juan["fecha_flete"][-6] in "+-"
 
     def test_sin_actividad_el_reporte_sale_vacio_pero_sale(self):
         r = armar_reporte(connect(":memory:"), AHORA, {})

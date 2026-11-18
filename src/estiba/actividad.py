@@ -34,6 +34,11 @@ def _fecha(texto: str | None) -> datetime | None:
         return None
 
 
+def _con_zona(texto: str | None) -> str | None:
+    d = _fecha(texto)
+    return d.astimezone().isoformat(timespec="seconds") if d else None
+
+
 def _final(chat_id: str) -> str | None:
     digitos = "".join(c for c in chat_id if c.isdigit())
     return digitos[-4:] if len(digitos) >= 6 else None
@@ -118,8 +123,9 @@ def armar_reporte(conn: sqlite3.Connection, ahora: datetime, fletes_por_chat: di
             "flete": getattr(f, "job_id", None),
             "etapa": etapa,
             "tema": _tema(f),
-            "fecha_flete": getattr(f, "fecha_iso", None),
-            "ultimo_at": ultimo_at.isoformat(timespec="seconds"),
+            # Con zona: Horizon esta en UTC y una hora local pelada se leeria 3 h corrida.
+            "fecha_flete": _con_zona(getattr(f, "fecha_iso", None)),
+            "ultimo_at": ultimo_at.astimezone().isoformat(timespec="seconds"),
             "ultimo_de": "cliente" if ultimo_del_cliente else "vos",
             "mensajes_hoy": sum(1 for _, c in msgs if c.date() == hoy),
             "espera_horas": _horas(ultimo_at, ahora) if ultimo_del_cliente else None,
