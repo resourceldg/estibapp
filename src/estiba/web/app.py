@@ -1061,13 +1061,34 @@ def create_app(
             filas = GastoRepository(conn).todos()
         finally:
             conn.close()
-        return filas, [
+        gastos = [
             F.GastoPublicidad(date.fromisoformat(g["period_start"]), date.fromisoformat(g["period_end"]),
                               Decimal(g["spend"]), g["resultados"],
                               Decimal(g["impuestos"]) if g["impuestos"] is not None else None,
                               bool(g["incluye_impuestos"]))
             for g in filas
         ]
+        # La pauta por anuncio (`estiba pauta`, desde noviembre 2026) también es gasto: los días que no están en
+        # `campaigns` salen de ahí, neto (los impuestos se estiman como al resto). Antes noviembre figuraba en $0.
+        cubiertos = set()
+        for g in gastos:
+            d = g.desde
+            while d <= g.hasta:
+                cubiertos.add(d)
+                d += timedelta(days=1)
+        conn = estado.conectar()
+        try:
+            dias = conn.execute("SELECT dia, SUM(CAST(gasto AS REAL)), SUM(COALESCE(conversaciones, 0)) "
+                                "FROM pauta_diaria GROUP BY dia").fetchall()
+        except sqlite3.OperationalError:
+            dias = []
+        finally:
+            conn.close()
+        for dia, gasto, conv in dias:
+            d = date.fromisoformat(dia)
+            if d not in cubiertos and gasto:
+                gastos.append(F.GastoPublicidad(d, d, Decimal(str(round(gasto, 2))), int(conv or 0), None, False))
+        return filas, gastos
 
     @app.get("/numeros/objetivos", response_class=HTMLResponse, include_in_schema=False)
     def pagina_objetivos(request: Request, periodo: str = "30d"):
@@ -1225,6 +1246,41 @@ def create_app(
                             elasticidad=elasticidad, saturacion=saturacion, tope_dia=tope_dia)
         ctx["pronostico_crudo"] = p
         return ctx
+
+    def _inteligencia() -> dict:
+        """Las cuatro preguntas para decidir, del mes en curso (pedido de Lucas, 19-nov-2026): ¿gano y cuánto me falta
+        para no perder?, ¿la publicidad rinde?, ¿mi precio alcanza?, ¿dónde se caen las ventas? Más la semana a semana.
+        Solo números: ni nombres ni teléfonos (viaja a Horizon)."""
+        from estiba.finanzas.decision import equilibrio
+        hoy = estado.ahora().date()
+        desde = hoy.replace(day=1)
+        c = _costos()
+        hechos = _fletes_hechos()
+        _, gastos = _gastos()
+        b = F.balance(c, hechos, gastos, desde, hoy)
+        ritmo = b.fletes * 30 / b.dias if b.dias else 0.0
+        p = pronostico.pronosticar(c, _historia(hechos, gastos, hoy))
+        precio = float(b.ticket) if b.ticket else float(p.ticket.valor)
+        gasto_dia = float(b.publicidad) / b.dias if b.dias else 0.0
+        eq = equilibrio(c, precio, gasto_dia)
+        minimo = F.precio_minimo(c, max(1, round(ritmo)))
+        e = embudo.calcular(estado.resultado.leads, hasta=datetime.combine(hoy, datetime.max.time()),
+                            desde=datetime.combine(desde, datetime.min.time()))
+        n = lambda v: None if v is None else round(float(v), 2)
+        return {
+            "desde": desde.isoformat(), "hasta": hoy.isoformat(), "dias": b.dias,
+            "ingresos": n(b.ingresos), "ganancia": n(b.ganancia), "margen": n(b.margen),
+            "costos": {"camioneta": n(b.camioneta), "publicidad": n(b.publicidad), "fijos": n(b.fijos)},
+            "fletes": b.fletes, "ritmo_mes": round(ritmo, 1), "equilibrio_fletes": None if eq is None else round(eq, 1),
+            "ticket": n(b.ticket), "precio_minimo": n(minimo), "meta_ganancia": n(c.ganancia_objetivo),
+            "publicidad": n(b.publicidad), "retorno_publicidad": n(b.retorno_publicidad),
+            "costo_conversacion": {"valor": n(p.costo_consulta.valor), "medido": bool(p.costo_consulta.medido)},
+            "cierre": {"valor": n(p.cierre.valor), "medido": bool(p.cierre.medido)},
+            "embudo": [{"etapa": x.etiqueta, "cantidad": x.cantidad, "del_total": round(x.del_total, 3)} for x in e.pasos],
+            "motivos": [[m, k] for m, k in e.motivos[:3]],
+            "semanas": [{"semana": s_, "ingresos": round(i), "costos": round(k), "ganancia": round(g)}
+                        for s_, i, k, g in informe._semanas(c, hechos, gastos, desde, hoy)],
+        }
 
     ORIGENES = {"todos": "Todos", "publicidad": "Por publicidad", "vuelven": "Sin publicidad"}
     PERIODOS_TABLERO = {**PERIODOS, "fechas": "Fechas"}
@@ -3283,10 +3339,15 @@ def create_app(
                 except Exception as e:  # el texto nunca frena la sincronizacion
                     log.warning("Horizon: no se pudieron preparar las charlas: %s", e)
                     charlas = None
+                try:
+                    inteligencia = _inteligencia()
+                except Exception as e:  # las métricas nunca frenan la sincronizacion
+                    log.warning("Horizon: no se pudieron calcular las métricas: %s", e)
+                    inteligencia = None
                 r = vinculo.sincronizar(conn, horizon, payload, mes, estado.ahora(), acks=acks,
                                         catalogos={"motivos_perdida": [list(m) for m in MOTIVOS_PERDIDA]},
                                         forzar={c["flete"] for c in comandos if c.get("flete")},
-                                        actividad=actividad, charlas=charlas)
+                                        actividad=actividad, charlas=charlas, inteligencia=inteligencia)
             finally:
                 conn.close()
         except Exception as e:

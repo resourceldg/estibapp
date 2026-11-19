@@ -132,7 +132,8 @@ def aplicar_comandos(comandos: list[dict], ejecutar) -> list[dict]:
 
 def sincronizar(conn: sqlite3.Connection, cliente: HorizonClient, fletes: list[dict], mes: dict | None,
                 ahora: datetime, acks: list[dict] | None = None, catalogos: dict | None = None,
-                forzar: set[str] | None = None, actividad: dict | None = None, charlas: dict | None = None) -> dict:
+                forzar: set[str] | None = None, actividad: dict | None = None, charlas: dict | None = None,
+                inteligencia: dict | None = None) -> dict:
     """Manda lo que cambio y anota el resultado. Nunca levanta: un Horizon
     caido no es motivo para que Estiba deje de andar."""
     ajustes = SettingsRepository(conn)
@@ -143,7 +144,7 @@ def sincronizar(conn: sqlite3.Connection, cliente: HorizonClient, fletes: list[d
     cambiados = [f for f in fletes if f["id"] in forzar or previas.get(f["id"]) != huellas[f["id"]]]
     try:
         r = cliente.enviar(cambiados, mes, ahora.astimezone().isoformat(), acks=acks, catalogos=catalogos,
-                           actividad=actividad, charlas=charlas)
+                           actividad=actividad, charlas=charlas, inteligencia=inteligencia)
     except ErrorHorizon as e:
         estado = {"cuando": ahora.isoformat(), "ok": False, "error": str(e), "pendientes": len(cambiados)}
         ajustes.guardar_json(ULTIMO, estado)

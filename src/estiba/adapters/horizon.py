@@ -92,7 +92,8 @@ class HorizonClient:
 
     def enviar(self, fletes: list[dict], mes: dict | None, enviado: str,
                acks: list[dict] | None = None, catalogos: dict | None = None,
-               actividad: dict | None = None, charlas: dict | None = None) -> dict:
+               actividad: dict | None = None, charlas: dict | None = None,
+               inteligencia: dict | None = None) -> dict:
         """Manda los fletes de a tandas y el resumen del mes con la ultima.
 
         Devuelve el total de creados, actualizados y precios nuevos, y los
@@ -112,6 +113,9 @@ class HorizonClient:
             # El reporte de actividad de WhatsApp (sin mensajes: ver estiba.actividad) va con la ultima.
             if n == len(tandas) - 1 and actividad is not None:
                 cuerpo["actividad"] = actividad
+            # Las métricas para decidir (panel «Inteligencia» de Horizon, 19-nov): números, sin datos de clientes.
+            if n == len(tandas) - 1 and inteligencia is not None:
+                cuerpo["inteligencia"] = inteligencia
             # El texto de las charlas de negocio (ver estiba.charlas): mensajes nuevos y charlas que salieron del negocio.
             if n == len(tandas) - 1 and charlas is not None:
                 cuerpo["mensajes"] = charlas.get("mensajes") or []
