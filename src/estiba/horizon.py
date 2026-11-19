@@ -76,6 +76,8 @@ def flete_para_horizon(f, montos: dict | None = None, creado: str | None = None)
         "cobrado": _numero(m.get("cobrado")),
         "ultimo_at": _con_zona(f.ultimo_at),
         "ultimo_del_cliente": f.ultimo_del_cliente,
+        # El cliente aceptó y falta que el fletero lo confirme (19-nov-2026): Horizon lo muestra arriba de todo.
+        "acepto": any("aceptó" in a for a in (getattr(f, "alertas", None) or [])),
         "creado": _con_zona(creado),
     }
 

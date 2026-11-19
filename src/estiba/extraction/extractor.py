@@ -15,6 +15,8 @@ De quien sale cada dato:
 
 from __future__ import annotations
 
+import re
+
 from dataclasses import dataclass, field
 from decimal import Decimal
 
@@ -26,6 +28,7 @@ from estiba.core.models import (
     Message,
     Slot,
 )
+from estiba.extraction.texto import plano
 from estiba.extraction import fechas, reglas
 from estiba.extraction.texto import sin_conversacion_pegada
 from estiba.extraction.intencion import Intencion, IntencionDetectada, intencion
@@ -33,6 +36,8 @@ from estiba.extraction.texto import Hallazgo
 
 _REGLAS_CLIENTE = (reglas.lugares, reglas.items, reglas.pisos, reglas.ayudantes, fechas.horarios)
 _PROPONIBLES = {"when", "hour", "daypart"}
+#: Pedirle al cliente que confirme o diga si le sirve, aunque no lleve signo de pregunta.
+_PROPUESTA = re.compile(r"\b(?:me\s+confirm\w*|confirmame|te\s+(?:parece|sirve|viene\s+bien|va)|le\s+(?:parece|sirve)|puede\s+ser)\b")
 
 
 @dataclass(frozen=True)
@@ -93,6 +98,7 @@ class SlotExtractor:
                 intenciones[m.id] = hallada[0]
                 ex.intenciones.append(IntencionDetectada(m.id, hallada[0], hallada[1]))
 
+        del_fletero: list = []
         for i, m in enumerate(conv.messages):
             texto = textos[m.id]
             if not texto:
@@ -106,12 +112,25 @@ class SlotExtractor:
 
             for h in reglas.precio(texto):
                 self._anotar(ex, h, m, valor=Decimal(h.valor))
-            if texto.rstrip().endswith("?") and self._acepta_lo_siguiente(conv, i, intenciones):
+            # El recorrido repetido por el fletero al cotizar («Desde Talcahuano y Mario Bravo hasta Camet Norte, por
+            # la heladera…: $50.000», 19-nov-2026) es el que quedó acordado; antes se perdía y el flete aceptado
+            # quedaba «falta origen, falta destino».
+            # Solo si el cliente no dio ninguno: el suyo manda (y el del fletero puede venir abreviado).
+            if reglas.precio(texto):
+                del_fletero.extend((h, m) for h in reglas.lugares(texto))
+            # Una propuesta de día u hora que el cliente acepta: con «?» o con una pregunta sin signo («sábado a la
+            # mañana me confirmás 11 hs aprox» → «Sí perfecto»).
+            propone = texto.rstrip().endswith("?") or _PROPUESTA.search(plano(texto))
+            if propone and self._acepta_lo_siguiente(conv, i, intenciones):
                 propuestos = fechas.horarios(texto) + fechas.fechas(texto, m.sent_at)
                 for h in propuestos:
                     if h.campo in _PROPONIBLES:
                         self._anotar(ex, h, m)
 
+        dichos = {c.campo for c in ex.candidatos}
+        if not dichos & {"origin", "destination"}:
+            for h, m in del_fletero:
+                self._anotar(ex, h, m)
         self._resolver(ex)
         return ex
 

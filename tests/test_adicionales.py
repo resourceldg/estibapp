@@ -116,3 +116,30 @@ class TestLecturas:
     def test_la_hora_acordada_viaja_a_horizon(self):
         assert _con_zona("2026-11-22", "11 h").startswith("2026-11-22T11:00")
         assert _con_zona("2026-11-22", None).startswith("2026-11-22T12:00")
+
+
+class TestLoQueDiceElFletero:
+    """19-nov-2026: el recorrido y la hora que propone el fletero, cuando el cliente no los dio o los acepta."""
+
+    def _job(self, *lineas):
+        return JobEngine().evaluar(_conv(list(lineas)), AHORA).job
+
+    def test_el_recorrido_repetido_al_cotizar_cuenta_si_el_cliente_no_dio_uno(self):
+        j = self._job(("c", "Hola, necesito llevar una heladera, un lavarropas y una cama"),
+                      ("v", "Desde Talcahuano y Mario Bravo hasta Camet Norte, por la heladera, el lavarropas y la cama: $50.000"))
+        assert (j.origin.value, j.destination.value) == ("Talcahuano y Mario Bravo", "Camet Norte")
+
+    def test_si_el_cliente_dio_el_recorrido_manda_el_suyo(self):
+        j = self._job(("c", "Necesito llevar un sillón de Rioja 2100 a Falucho 1500"),
+                      ("v", "Desde Rioja hasta Falucho te sale $30.000"))
+        assert (j.origin.value, j.destination.value) == ("Rioja 2100", "Falucho 1500")
+
+    def test_la_hora_propuesta_sin_signo_cuenta_si_el_cliente_acepta(self):
+        j = self._job(("c", "Hola, quiero llevar una heladera el sábado"), ("v", "te sale $40.000"),
+                      ("v", "sabado a la mañana me confirmas 11 hs aprox"), ("c", "Si perfecto"))
+        assert j.hour.value.hour == 11
+
+    def test_una_hora_que_el_fletero_cuenta_sin_proponer_no_cuenta(self):
+        j = self._job(("c", "Hola, quiero llevar una heladera"), ("v", "te sale $40.000"),
+                      ("v", "a las 10 tengo otro flete, después te escribo"), ("c", "dale"))
+        assert j.hour is None
