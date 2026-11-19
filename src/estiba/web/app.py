@@ -3304,6 +3304,13 @@ def create_app(
             try:
                 montos = {f["job_id"]: f for f in PanelRepository(conn).estimado_vs_real()}
                 creados = {f["id"]: f["created_at"] for f in conn.execute("SELECT id, created_at FROM jobs")}
+                # Lo cobrado sale del historial que queda en pie: un «realizado» anulado (reabrir) ya no cuenta.
+                # Antes viajaba el último «realizado» aunque estuviera anulado (Marta, 19-nov: reabierto y con
+                # $40.000 cobrados en Horizon).
+                acciones_rep = ActionRepository(conn)
+                for j_, m_ in montos.items():
+                    cierres = [a for a in sin_anuladas(acciones_rep.for_job(j_)) if a.tipo == REALIZADO]
+                    m_["cobrado"] = cierres[-1].monto if cierres and cierres[-1].monto else None
             finally:
                 conn.close()
             try:
