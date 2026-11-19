@@ -400,6 +400,13 @@ class TestLoEmpezasteVos:
                    ("c", "Sí, es una heladera de Alberti y Santa Fe a Rufino Inda"))
         assert r.clase is Clase.LEAD
 
+    def test_si_vos_ofreces_carpinteria_o_una_venta_es_negocio(self):
+        """19-nov-2026: por el número entran carpintería y ventas; si los empezás vos, no son privados."""
+        for dicho in ("Hola, te paso el presupuesto de la mesa de cedro", "Hola! Ya está lista la mesa que me encargaste",
+                      "Hola, el banco a medida sale 60 mil", "Hola, te lo vendo a 80 mil si querés"):
+            r = _clase(("f", dicho), ("c", "Buenísimo, gracias"))
+            assert r.clase is not Clase.PRIVADO, dicho
+
     def test_si_te_escribe_el_cliente_primero_no_cambia_nada(self):
         r = _clase(("c", "Hola, necesito llevar una cama de Olazábal a Mario Bravo"),
                    ("f", "Hola! Sí, te paso el precio"))

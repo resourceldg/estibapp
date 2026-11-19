@@ -41,6 +41,14 @@ _OFICIO = re.compile(
     r"trasladar|transportar)\b"
 )
 
+#: Lo que dice el fletero cuando VENDE algo de sus otros rubros (carpintería, ventas): «te paso el presupuesto»,
+#: «la mesa a medida», «lo que me encargaste», «te lo vendo». Del lado del que compra («te pido una garrafa»,
+#: «quiero info del traje») no aparece.
+_VENDES = re.compile(
+    r"\b(?:presupuesto|te\s+cotizo|cotizacion|te\s+paso\s+(?:el\s+)?precio|a\s+medida|carpinter\w*|"
+    r"(?:me\s+)?encarg(?:aste|o|aron)|te\s+(?:lo|la|los|las)\s+vendo|lo\s+vendo|la\s+vendo|esta\s+a\s+la\s+venta)\b"
+)
+
 #: Promociones y cadenas: casi siempre llegan de numeros que nunca contestan.
 _PROMO = re.compile(
     r"\b(?:promo|promocion|descuento|descuentos|gratis|sorteo|sorteamos|"
@@ -287,8 +295,11 @@ def clasificar(conv: Conversation, ex: Extraccion, nombre: str | None = None) ->
     # para venderle un flete sin nombrarlo. Va antes que la ruta porque la
     # ruta salia de su propio pedido ("una garrafa para Ganoto 423") y asi
     # el proveedor terminaba en la bandeja como lead (noviembre 2026).
-    if nuestros and not conv.messages[0].from_customer and not _OFICIO.search(
-            _texto_del_fletero(conv)) and not _DESDE_PUBLI.search(texto):
+    # Excepción (19-nov-2026, rubros): si vos ofrecés o vendés lo tuyo (carpintería, una venta, un presupuesto),
+    # es negocio aunque no nombres el flete. Solo cuenta lo que dice el fletero del lado del que vende.
+    fletero = _texto_del_fletero(conv)
+    if nuestros and not conv.messages[0].from_customer and not _OFICIO.search(fletero) \
+            and not _VENDES.search(fletero) and not _DESDE_PUBLI.search(texto):
         return Clasificacion(Clase.PRIVADO, "la charla la empezaste vos y no es de fletes")
 
     # Una ruta gana sobre todo lo demas: es lo unico que solo dice alguien
