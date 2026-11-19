@@ -48,6 +48,7 @@ from estiba.adapters.waha import MEDIA_DIR, ConfigWaha, ErrorWaha, WahaClient, f
 from estiba import horizon as vinculo
 from estiba.actividad import Rafaga, armar_reporte
 from estiba import charlas as charlas_negocio
+from estiba import rubros as rubros_charla
 from estiba.agenda.caldav import ConfigCalDAV, EspejoCalDAV
 from estiba.agenda.evento import calendario
 from estiba.agenda.local import LocalCalendar
@@ -440,8 +441,9 @@ def create_app(
             }
         finally:
             conn.close()
+        # Sin nombre en el contacto: el que el cliente dijo en la charla («me llamo…»), si lo dijo.
         return {
-            job_id: P.flete(job_id, ev, conv, ahora, nombres.get(conv.chat_id),
+            job_id: P.flete(job_id, ev, conv, ahora, nombres.get(conv.chat_id) or rubros_charla.nombre_declarado(conv),
                             numeros.get(job_id))
             for job_id, (ev, conv) in estado.resultado.fletes.items()
         }
@@ -3253,7 +3255,16 @@ def create_app(
             except Exception as e:  # sin economia configurada todavia
                 log.warning("Horizon: no se pudo armar el resumen del mes: %s", e)
                 mes = None
-            payload = [vinculo.flete_para_horizon(f, montos.get(j), creados.get(j)) for j, f in fletes.items()]
+            payload = []
+            for j, f in fletes.items():
+                fila = vinculo.flete_para_horizon(f, montos.get(j), creados.get(j))
+                ev_conv = estado.resultado.fletes.get(j)
+                if ev_conv:
+                    ev, conv = ev_conv
+                    # Rubro de ESTE trabajo (una charla puede tener trabajos de rubros distintos) y nombre declarado.
+                    fila["rubro"] = rubros_charla.rubro(conv, ev.job)
+                    fila["nombre_declarado"] = rubros_charla.nombre_declarado(conv)
+                payload.append(fila)
             conn = estado.conectar()
             try:
                 try:
