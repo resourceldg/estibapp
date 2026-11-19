@@ -92,6 +92,9 @@ ANUNCIOS = {
     "Nov Marketplace": re.compile(r"\bcompre\s+algo\s+en\s+marketplace\s+y\s+necesito\s+traerlo\b"),
     "Nov Fin de cursada": re.compile(r"\btermine\s+de\s+cursar\s+y\s+quiero\s+llevar\s+mis\s+cosas\b"),
     "Nov Temporada": re.compile(r"\bpreparando\s+un\s+alquiler\s+para\s+la\s+temporada\b"),
+    # Prueba B vs C (20 al 23-nov-2026): el mensaje precargado de cada anuncio.
+    "Prueba B Heladera-Sillón": re.compile(r"\bquiero\s+consultar\s+por\s+el\s+traslado\s+de\s+un\s+mueble\b"),
+    "Prueba C Con cuidado": re.compile(r"\bhola,?\s+quiero\s+consultar\s+por\s+un\s+flete\.?\s*$"),
 }
 
 _DESDE_PUBLI = re.compile(
