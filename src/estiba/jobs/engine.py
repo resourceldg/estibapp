@@ -27,7 +27,7 @@ from estiba.core.models import (
     can_transition,
 )
 from estiba.extraction.extractor import Extraccion, SlotExtractor
-from estiba.extraction.intencion import Intencion
+from estiba.extraction.intencion import Intencion, es_cortesia
 from estiba.jobs.preguntas import ETIQUETAS, preguntas
 from estiba.jobs.pricing import PricingEngine, Presupuesto
 
@@ -292,9 +292,17 @@ class JobEngine:
         pospuso = ultima_suya is Intencion.POSPONE or estado is JobState.WAITING_CUSTOMER
         plazo = self.politica.espera_pospuesto if pospuso else self.politica.abandono
         if estado in (*_ABIERTOS, JobState.DRAFT):
-            if ultimo.from_customer and estado is not JobState.WAITING_CUSTOMER:
+            # Un "Genial gracias!!" o un 👍 no pide respuesta (noviembre 2026: Estiba decia "espera respuesta" por
+            # un "Genial Buenisimo!" de hacia 8 dias). Cuenta como silencio del cliente para el seguimiento.
+            # Solo despues de cotizar: antes de un precio, un "Ok" a tus condiciones sigue esperando que le pases precio.
+            cortesia = ultimo.from_customer and estado in _ABIERTOS and es_cortesia(conv.text_of(ultimo))
+            if ultimo.from_customer and estado is not JobState.WAITING_CUSTOMER and not cortesia:
                 cuando = "recién" if silencio < timedelta(minutes=1) else f"hace {_hace(silencio)}"
                 alertas.append(f"te escribió {cuando} y espera respuesta")
+            elif aceptacion_trabada and estado in _ABIERTOS:
+                # El cliente acepto pero faltan datos para confirmar: no se da por perdido por silencio (lo mas
+                # probable es que se haya hecho o este por hacerse). Se pregunta.
+                alertas.append(f"el cliente aceptó hace {_hace(silencio)} y falta confirmarlo: ¿se hizo o se hace?")
             elif silencio >= plazo:
                 por_silencio = True
                 # La causa dice el plazo que se cumplio, no los dias de hoy:
@@ -314,6 +322,10 @@ class JobEngine:
         precio_confirmado = _aplicar_ajuste(job, sin_anuladas(a for a in acciones if a.at <= ahora), mensajes[-1].id)
         if estado in (JobState.CONFIRMED, JobState.SCHEDULED) and job.when and job.when.value < ahora.date():
             alertas.append(f"la fecha ({job.when.value:%d/%m}) ya pasó: ¿se hizo el flete?")
+        elif estado in _ABIERTOS and job.when and job.when.value <= ahora.date() and ultimo.sent_at.date() >= job.when.value:
+            # Cotizado con la fecha cumplida y charla ese dia o despues ("ahi estoy adentro del edificio"): lo mas
+            # probable es que se haya hecho y falte marcarlo. Estiba no lo marca sola: hace falta el monto.
+            alertas.append(f"la fecha ({job.when.value:%d/%m}) llegó y sigue sin confirmar: ¿se hizo el flete? ¿cuánto cobraste?")
         job.state = estado
         job.created_at = mensajes[0].sent_at
         return Evaluacion(

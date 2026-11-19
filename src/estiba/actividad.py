@@ -14,10 +14,14 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
+from estiba.extraction.intencion import es_cortesia
+
 FUERA = ("privado", "spam")
 MAX_CONVERSACIONES = 30
 #: Pasado este tiempo sin respuesta del cliente, una cotizacion "quedo en el aire".
 COTIZADO_SIN_RESPUESTA = timedelta(hours=24)
+#: Hasta cuándo un «aceptó» o «¿se hizo?» con la charla quieta sigue siendo un pendiente.
+PENDIENTE_VIEJO = timedelta(days=30)
 
 
 def _local(dt: datetime) -> datetime:
@@ -75,16 +79,19 @@ def armar_reporte(conn: sqlite3.Connection, ahora: datetime, fletes_por_chat: di
     primeros = dict(conn.execute("SELECT chat_id, first_seen FROM contacts"))
 
     filas = conn.execute(
-        "SELECT chat_id, from_customer, sent_at FROM messages WHERE sent_at >= ? ORDER BY chat_id, sent_at",
+        """SELECT m.chat_id, m.from_customer, m.sent_at, coalesce(m.text, t.text) FROM messages m
+           LEFT JOIN transcripts t ON t.message_id = m.id WHERE m.sent_at >= ? ORDER BY m.chat_id, m.sent_at""",
         (desde_semana.isoformat(timespec="seconds"),)).fetchall()
     por_chat: dict[str, list[tuple[bool, datetime]]] = {}
-    for chat_id, del_cliente, sent_at in filas:
+    ultimo_texto: dict[str, str | None] = {}
+    for chat_id, del_cliente, sent_at, texto in filas:
         if chat_id in fuera or chat_id in ("0", ""):
             continue
         cuando = _fecha(sent_at)
         if cuando is None or cuando > ahora + timedelta(minutes=5):
             continue
         por_chat.setdefault(chat_id, []).append((bool(del_cliente), cuando))
+        ultimo_texto[chat_id] = texto
 
     def totales(dia_desde: date) -> dict:
         personas, recibidos, enviados = set(), 0, 0
@@ -106,7 +113,17 @@ def armar_reporte(conn: sqlite3.Connection, ahora: datetime, fletes_por_chat: di
         ultimo_del_cliente, ultimo_at = msgs[-1]
         f = fletes_por_chat.get(chat_id)
         etapa = getattr(f, "etapa", None)
-        if ultimo_del_cliente:
+        # Los avisos de Estiba sobre el flete (antes se quedaban adentro de Estiba): «aceptó y falta confirmarlo»,
+        # «¿se hizo el flete?». Sin el texto de la charla: son frases de Estiba.
+        alertas = [str(x)[:140] for x in (getattr(f, "alertas", None) or [])][:4]
+        # Un «Genial gracias!!» despues de cotizar no pide respuesta (misma regla que el JobEngine).
+        cortesia = ultimo_del_cliente and etapa == "cotizado" and es_cortesia(ultimo_texto.get(chat_id))
+        espera = ultimo_del_cliente and not cortesia
+        if any("¿se hizo el flete?" in a for a in alertas):
+            estado = "¿se hizo el flete?"
+        elif any("aceptó" in a and "falta confirmarlo" in a for a in alertas):
+            estado = "aceptó: falta confirmar"
+        elif espera:
             estado = "esperando tu respuesta"
         elif etapa == "cotizado":
             estado = "cotizado, esperando al cliente"
@@ -128,9 +145,35 @@ def armar_reporte(conn: sqlite3.Connection, ahora: datetime, fletes_por_chat: di
             "fecha_flete": _con_zona(getattr(f, "fecha_iso", None)),
             "ultimo_at": ultimo_at.astimezone().isoformat(timespec="seconds"),
             "ultimo_de": "cliente" if ultimo_del_cliente else "vos",
+            "espera_respuesta": espera,
+            "alertas": alertas,
             "mensajes_hoy": sum(1 for _, c in msgs if c.date() == hoy),
-            "espera_horas": _horas(ultimo_at, ahora) if ultimo_del_cliente else None,
+            "espera_horas": _horas(ultimo_at, ahora) if espera else None,
             "estado": estado,
+        })
+
+    # Pendientes viejos: un flete que aceptó o con la fecha cumplida entra aunque la charla tenga más de una semana
+    # (justo esos son los que se olvidan: noviembre 2026, «aceptó hace 8 días» no aparecía).
+    for chat_id, f in fletes_por_chat.items():
+        if chat_id in por_chat or chat_id in fuera:
+            continue
+        alertas = [str(x)[:140] for x in (getattr(f, "alertas", None) or [])][:4]
+        if any("¿se hizo el flete?" in a for a in alertas):
+            estado = "¿se hizo el flete?"
+        elif any("aceptó" in a and "falta confirmarlo" in a for a in alertas):
+            estado = "aceptó: falta confirmar"
+        else:
+            continue
+        ult = _fecha(getattr(f, "ultimo_at", None))
+        if ult is None or ahora - ult > PENDIENTE_VIEJO:
+            continue          # de hace meses: ya se resolvió y quedó mal anotado; no es un pendiente
+        conversaciones.append({
+            "nombre": nombres.get(chat_id) or getattr(f, "nombre", None) or "Sin nombre", "chat": chat_id,
+            "final": _final(chat_id), "clase": clases.get(chat_id, "nueva"), "flete": getattr(f, "job_id", None),
+            "etapa": getattr(f, "etapa", None), "tema": _tema(f), "fecha_flete": _con_zona(getattr(f, "fecha_iso", None)),
+            "ultimo_at": ult.astimezone().isoformat(timespec="seconds") if ult else None,
+            "ultimo_de": "cliente" if getattr(f, "ultimo_del_cliente", False) else "vos", "espera_respuesta": False,
+            "alertas": alertas, "mensajes_hoy": 0, "espera_horas": None, "estado": estado,
         })
 
     manana = hoy + timedelta(days=1)
@@ -140,18 +183,22 @@ def armar_reporte(conn: sqlite3.Connection, ahora: datetime, fletes_por_chat: di
         return bool(d and d.date() == manana)
 
     atencion = {
-        "sin_responder": sum(1 for c in conversaciones if c["ultimo_de"] == "cliente" and c["etapa"] not in ("vendido", "perdido")),
+        "sin_responder": sum(1 for c in conversaciones if c["espera_respuesta"] and c["etapa"] not in ("vendido", "perdido")),
         "cotizados_sin_respuesta": sum(1 for c in conversaciones if c["etapa"] == "cotizado" and c["ultimo_de"] == "vos"
                                        and (u := _fecha(c["ultimo_at"])) and ahora - u >= COTIZADO_SIN_RESPUESTA),
         "manana_sin_confirmar": sum(1 for c in conversaciones if c["etapa"] in ("cotizado", "sin-cotizar") and es_manana(c)),
         "para_decidir": sum(1 for c in conversaciones if c["clase"] == "dudosa"),
+        "aceptaron_sin_confirmar": sum(1 for c in conversaciones if c["estado"] == "aceptó: falta confirmar"),
+        "fecha_cumplida": sum(1 for c in conversaciones if c["estado"] == "¿se hizo el flete?"),
     }
     # Primero lo que espera respuesta (lo mas viejo arriba), despues lo mas reciente.
     conversaciones.sort(key=lambda c: (c["ultimo_de"] != "cliente" or c["etapa"] in ("vendido", "perdido"),
                                        -(c["espera_horas"] or 0) if c["ultimo_de"] == "cliente" else 0,
-                                       c["ultimo_at"]), reverse=False)
-    pendientes = [c for c in conversaciones if c["ultimo_de"] == "cliente" and c["etapa"] not in ("vendido", "perdido")]
-    resto = sorted([c for c in conversaciones if c not in pendientes], key=lambda c: c["ultimo_at"], reverse=True)
+                                       c["ultimo_at"] or ""), reverse=False)
+    # Primero lo que pide algo de vos: ¿se hizo?, aceptó sin confirmar, espera respuesta.
+    pendientes = [c for c in conversaciones if (c["espera_respuesta"] or c["estado"] in ("¿se hizo el flete?", "aceptó: falta confirmar"))
+                  and c["etapa"] not in ("vendido", "perdido")]
+    resto = sorted([c for c in conversaciones if c not in pendientes], key=lambda c: c["ultimo_at"] or "", reverse=True)
     conversaciones = (pendientes + resto)[:MAX_CONVERSACIONES]
 
     return {

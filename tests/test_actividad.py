@@ -92,7 +92,8 @@ class TestReporte:
     def test_lo_que_necesita_atencion(self):
         conn, fletes = escenario()
         a = armar_reporte(conn, AHORA, fletes)["atencion"]
-        assert a == {"sin_responder": 1, "cotizados_sin_respuesta": 1, "manana_sin_confirmar": 1, "para_decidir": 0}
+        assert a == {"sin_responder": 1, "cotizados_sin_respuesta": 1, "manana_sin_confirmar": 1, "para_decidir": 0,
+                     "aceptaron_sin_confirmar": 0, "fecha_cumplida": 0}
 
     def test_primero_lo_que_espera_respuesta_y_el_tema_sale_del_flete(self):
         conn, fletes = escenario()
@@ -143,3 +144,16 @@ class TestEnvio:
         sincronizar(conn, cli, [], None, AHORA, actividad=rep)
         assert recibidos[-1]["actividad"]["atencion"]["sin_responder"] == 1
         assert SECRETO not in json.dumps(recibidos[-1], ensure_ascii=False)
+
+
+class TestAvisosDeEstiba:
+    def test_un_gracias_despues_de_cotizar_no_es_sin_responder_y_los_avisos_viajan(self):
+        conn, fletes = escenario()
+        _msg(conn, "5492232222222", True, AHORA - timedelta(hours=1), "Genial gracias!!")
+        fletes["5492232222222"].alertas = ["el cliente aceptó hace 1 hora y falta confirmarlo: ¿se hizo o se hace?"]
+        r = armar_reporte(conn, AHORA, fletes)
+        marce = next(c for c in r["conversaciones"] if c["nombre"] == "Marce")
+        assert marce["espera_respuesta"] is False and marce["estado"] == "aceptó: falta confirmar"
+        assert marce["alertas"] and r["atencion"]["aceptaron_sin_confirmar"] == 1
+        assert r["atencion"]["sin_responder"] == 1          # solo Silvia, que sí preguntó
+        assert "Genial gracias!!" not in json.dumps(r, ensure_ascii=False)

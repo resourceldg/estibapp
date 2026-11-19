@@ -54,7 +54,14 @@ _PATRONES: list[tuple[Intencion, re.Pattern]] = [
         # escribo". "Te escribo de nuevo, ahora necesito..." es una consulta.
         r"|(?:apenas|a\s+penas|cuando)\b[^.?!]{0,40}?\bte\s+(?:escribo|llamo)"
         r"|(?:le|les)\s+digo\s+a\s+\w+(?:\s+\w+)?\s+y\s+te"
-        r"|(?:estoy|ando)\s+averiguando|lo\s+coordino)\b"
+        r"|(?:estoy|ando)\s+averiguando|lo\s+coordino"
+        # El "no por ahora" amable (noviembre 2026, charlas reales): "Te agendo por si necesito",
+        # "estoy buscando presupuestos .. si lo necesito le aviso", "cualquier cosa le aviso".
+        # No es un no rotundo (eso es CANCELA): queda esperando, con mas plazo antes de darlo por perdido.
+        r"|te\s+agendo|(?:te|lo)\s+tengo\s+agendado|por\s+si\s+(?:lo\s+)?necesito"
+        r"|si\s+(?:lo\s+)?necesito\s+(?:te|le)\s+(?:aviso|escribo|llamo)"
+        r"|(?:cualquier\s+cosa\s+)?le\s+(?:aviso|escribo)"
+        r"|(?:estoy|ando)\s+(?:buscando|pidiendo|juntando|comparando)\s+(?:presupuestos?|precios?|opciones))\b"
     )),
     (Intencion.CORRIGE, re.compile(
         r"\b(?:cambio\s+de\s+planes|no\s+es\s+mas|en\s+realidad|me\s+equivoque"
@@ -101,3 +108,28 @@ def intencion(texto: str) -> tuple[Intencion, str] | None:
         if m := patron.search(p):
             return tipo, cita(texto, m)
     return None
+
+
+#: Cortesia o cierre: el cliente agradece o asiente y no pregunta nada. No pide respuesta.
+#: "Genial gracias!!", "Genial Buenisimo!", "Dale gracias", "👍", "Ok perfecto". Corto y sin pregunta:
+#: "gracias, ¿y el sabado?" si pide respuesta, igual que un mensaje largo.
+_CORTESIA = re.compile(
+    r"^\W*(?:(?:muchas\s+)?gracias|genial|buenisimo|perfecto|dale|ok|oka|okey|listo|joya|barbaro|de\s+nada"
+    r"|excelente|buenas\s+noches|buen\s+dia|hasta\s+luego|saludos|abrazo|tranqui|se\s+entiende|ja+|je+|si)"
+    r"(?:\W+(?:(?:muchas\s+)?gracias|genial|buenisimo|perfecto|dale|ok|listo|joya|barbaro|excelente|igualmente"
+    r"|se\s+entiende|tranqui|saludos|abrazo|ja+|je+))*\W*$"
+)
+
+
+def es_cortesia(texto: str | None) -> bool:
+    """El mensaje no pide respuesta: agradece, saluda o asiente, corto y sin pregunta (o es solo emojis)."""
+    if texto is None:
+        return False
+    if not texto.strip():
+        return False
+    if "?" in texto:
+        return False
+    p = plano(texto)
+    if not re.search(r"[a-z0-9]", p):          # solo emojis o signos: un 👍, un ❤️
+        return True
+    return len(p.split()) <= 6 and bool(_CORTESIA.match(p))
