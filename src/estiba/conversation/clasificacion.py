@@ -136,7 +136,9 @@ _DEL_GRUPO = re.compile(r"\b(?:al\s+grupo|del\s+grupo|grupo\s+de\s+wh?ats)\b")
 #: Auxilios La Costa! Brindamos soluciones rapidas") nombra el oficio, y por
 #: eso entraba como lead. Un competidor no es un cliente.
 _AUTOMATICO = re.compile(
-    r"\bgracias\s+por\s+(?:comunicarte|comunicarse|contactarnos|escribirnos)\b"
+    r"\bgracias\s+por\s+(?:comunicarte|comunicarse|contactarnos|escribirnos|escribir\s+a)\b"
+    r"|\ben\s+este\s+momento\s+no\s+podemos\s+responder\b"
+    r"|\bfuera\s+de\s+horario\b"
     r"|\bbienvenid[oa]s?\s+a\b"
     r"|\bhorario\s+de\s+atenci[oó]n\b"
     r"|\bdepartamento\s+de\s+(?:cobranzas|atenci[oó]n|ventas)\b"
@@ -278,6 +280,16 @@ def clasificar(conv: Conversation, ex: Extraccion, nombre: str | None = None) ->
     texto = _texto_del_cliente(conv)
     nuestros = [m for m in conv.messages if not m.from_customer]
     de_ellos = [m for m in conv.messages if m.from_customer]
+
+    # El que empezo la charla fue el fletero: el que compra es el. Pidio una
+    # garrafa, consulto un traje de neoprene, le escribio al kiosco. Los
+    # clientes escriben primero; el fletero no le escribe a un desconocido
+    # para venderle un flete sin nombrarlo. Va antes que la ruta porque la
+    # ruta salia de su propio pedido ("una garrafa para Ganoto 423") y asi
+    # el proveedor terminaba en la bandeja como lead (noviembre 2026).
+    if nuestros and not conv.messages[0].from_customer and not _OFICIO.search(
+            _texto_del_fletero(conv)) and not _DESDE_PUBLI.search(texto):
+        return Clasificacion(Clase.PRIVADO, "la charla la empezaste vos y no es de fletes")
 
     # Una ruta gana sobre todo lo demas: es lo unico que solo dice alguien
     # que quiere mover algo de un lado a otro.

@@ -357,7 +357,10 @@ class TestNiClienteNiSpam:
         """
         r = _clase(("v", "te la puedo arreglar si querés"),
                    ("c", "Te la puedo comprar en cuotas"))
-        assert r.clase is not Clase.PRIVADO
+        # No es un flete, asi que sale de la bandeja; pero la razon no
+        # inventa un taller.
+        assert r.clase is Clase.PRIVADO
+        assert "vehículo" not in r.porque
 
 
 class TestContestadores:
@@ -374,6 +377,33 @@ class TestContestadores:
                          "cobranzas. Nuestro horario de atención es de lunes a viernes"),
                    ("c", "¿Podés brindarme tu número de DNI?"))
         assert r.clase is Clase.SPAM
+
+
+class TestLoEmpezasteVos:
+    """Chats reales de noviembre 2026 que entraban a la bandeja como leads."""
+
+    def test_pedir_una_garrafa_no_es_un_flete(self):
+        r = _clase(("f", "Hola te pido una garrafa para ganoto 423"),
+                   ("c", "Hola, buen día ! Gracias por comunicarte."),
+                   ("c", "Santa Elena ?"), ("f", "Si"),
+                   ("c", "El precio de la carga de la garrafa de 10 kg. con entrega en domicilio es de $ 37.000"))
+        assert r.clase is Clase.PRIVADO
+
+    def test_consultar_un_traje_tampoco(self):
+        r = _clase(("f", "¡Hola! quiero recibir más información sobre el traje de Neoprene"),
+                   ("c", "¡Buenas! Somos el equipo de Santa Tabla. Sí, tenemos disponible el fullsuit 3/2 mm"),
+                   ("c", "Si me pasás tu altura y peso te digo qué talle te va mejor"))
+        assert r.clase is Clase.PRIVADO
+
+    def test_si_vos_nombras_el_flete_sigue_siendo_negocio(self):
+        r = _clase(("f", "Hola, te escribo por el flete que hablamos por teléfono"),
+                   ("c", "Sí, es una heladera de Alberti y Santa Fe a Rufino Inda"))
+        assert r.clase is Clase.LEAD
+
+    def test_si_te_escribe_el_cliente_primero_no_cambia_nada(self):
+        r = _clase(("c", "Hola, necesito llevar una cama de Olazábal a Mario Bravo"),
+                   ("f", "Hola! Sí, te paso el precio"))
+        assert r.clase is Clase.LEAD
 
 
 class TestUnaPreguntaNoEsUnaConsulta:
