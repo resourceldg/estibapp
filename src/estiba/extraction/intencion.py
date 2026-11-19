@@ -36,7 +36,9 @@ _PATRONES: list[tuple[Intencion, re.Pattern]] = [
     # el "te confirmo" tiene que ir seguido de cuando o de que.
     (Intencion.ACEPTA, re.compile(
         r"(?<!manana\s)(?<!despues\s)(?<!luego\s)(?<!tarde\s)\bte\s+confirmo\s+"
-        r"(?:(?:para\s+)?hoy|a\s+las\s+\d|el\s+flete|que\s+si)\b"
+        # «Te confirmo para el flete el domingo!!» (Andrés, 18-nov-2026): confirma, no pospone.
+        r"(?:(?:para\s+)?(?:hoy|el\s+flete|el\s+(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo))"
+        r"|a\s+las\s+\d|que\s+si)\b"
     )),
     (Intencion.POSPONE, re.compile(
         r"\b(?:(?:manana|despues|luego|mas\s+tarde|en\s+un\s+rato)\s+te\s+"
@@ -44,7 +46,8 @@ _PATRONES: list[tuple[Intencion, re.Pattern]] = [
         r"|(?:manana|despues|luego|mas\s+tarde)\s+(?:hablamos|seguimos|vemos|charlamos)"
         r"|estamos\s+en\s+contacto|seguimos\s+en\s+contacto"
         r"|cualquier\s+cosa\s+te\s+(?:aviso|escribo|hablo)"
-        r"|tengo\s+que\s+(?:ver|consultar|hablar|pensar)"
+        # «Tema mesas tengo que confirmarte aún! Pero el precio está perfecto» (18-nov-2026): queda pendiente.
+        r"|tengo\s+que\s+(?:ver|consultar|hablar|pensar|confirmar\w*)"
         r"|lo\s+(?:pienso|veo|charlo)|te\s+confirmo"
         # "Ok..te aviso en la semana", "Dale gracias, te contacto luego",
         # "apenas tenga la fecha te escribo": el "ok" del principio no es un

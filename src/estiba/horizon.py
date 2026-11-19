@@ -13,6 +13,8 @@ fue la ultima vez que Estiba estuvo prendida.
 """
 from __future__ import annotations
 
+import re
+
 import hashlib
 import json
 import sqlite3
@@ -44,8 +46,10 @@ def _con_zona(texto: str | None, hora: str | None = None) -> str | None:
         return None
     try:
         if len(texto) == 10:
-            hh = hora if hora and len(hora) >= 4 and ":" in hora else "12:00"
-            texto = f"{texto}T{hh.zfill(5)}"
+            # «11 h», «11:30», «9 hs»: la hora acordada; sin hora, el mediodía (Andrés, 18-nov: «11 h» viajaba como 12:00).
+            m = re.match(r"\s*(\d{1,2})(?:[:.](\d{2}))?", hora or "")
+            hh = f"{int(m.group(1)):02d}:{m.group(2) or '00'}" if m and int(m.group(1)) < 24 else "12:00"
+            texto = f"{texto}T{hh}"
         return datetime.fromisoformat(texto).astimezone().isoformat()
     except ValueError:
         return None

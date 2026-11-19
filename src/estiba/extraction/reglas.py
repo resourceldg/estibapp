@@ -127,7 +127,12 @@ def _parece_lugar(texto: str) -> bool:
     return any(len(t) >= 3 and t.isalpha() for t in re.split(r"[^\wáéíóúñ]+", limpio))
 
 
+#: «Moreno 2234 (e/ Entre Ríos y Corrientes)»: las entrecalles entre paréntesis cortaban el «desde … hasta …».
+_ENTRECALLES = re.compile(r"\s*\((?:e/|/e|entre\b)[^)]{0,80}\)", re.IGNORECASE)
+
+
 def lugares(texto: str) -> list[Hallazgo]:
+    texto = _ENTRECALLES.sub("", texto)
     p = plano(texto)
     if m := _DE_A.search(p):
         c = cita(texto, m)
@@ -150,14 +155,20 @@ def lugares(texto: str) -> list[Hallazgo]:
         ]
     # Ultimo recurso: direcciones y esquinas escritas como se escriben, en
     # minuscula. Confianza baja y con duda: hay que mirarlo.
-    if m := _DE_A_SUELTO.search(texto):
+    # Se sigue buscando si el primer «de … a …» no es un lugar: en «de la escalera … a ver si … desde Moreno 2234
+    # hasta Misiones 1179» (18-nov-2026) el recorrido es el segundo y antes se perdía. Más allá del primero solo
+    # cuentan calles con altura en las dos puntas: «de aluminio hasta el barrio» no es un recorrido.
+    inicio = 0
+    while m := _DE_A_SUELTO.search(texto, inicio):
         origen, destino = m.group(1).strip(), m.group(2).strip()
-        if _parece_lugar(origen) and _parece_lugar(destino):
+        con_altura = inicio == 0 or all(re.search(r"[A-Za-zÁÉÍÓÚáéíóúñÑ]\s+\d{2,5}\b", x) for x in (origen, destino))
+        if con_altura and _parece_lugar(origen) and _parece_lugar(destino):
             duda = "dirección escrita a mano: conviene confirmarla"
             return [
                 Hallazgo("origin", origen, 0.55, m.group(0), duda),
                 Hallazgo("destination", destino, 0.55, m.group(0), duda),
             ]
+        inicio = m.start() + 1
     return _direccion_sola(texto) or _direcciones_sueltas(texto)
 
 

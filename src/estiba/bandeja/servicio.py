@@ -30,6 +30,7 @@ from estiba.extraction import REGLAS_VERSION
 from estiba.extraction.texto import plano
 from estiba.crm.leads import LeadInfo, lead_de
 from estiba.jobs.engine import AGENDADO, Evaluacion, JobEngine
+from estiba.jobs.adicionales import con_adicional
 from estiba.jobs.episodios import episodios
 from estiba.storage.repositories import (
     InterpretacionRepository,
@@ -136,6 +137,9 @@ def sincronizar(conn: sqlite3.Connection, engine: JobEngine, ahora: datetime, es
                 r.agenda.append((job_id, "cancelado"))
             continue
         todos = episodios(conv, engine, acciones.for_job, cortes.de(chat_id))
+        # Un trabajo adicional pedido en medio de otro («también tendríamos que traer desde Miramar…») va aparte:
+        # el original conserva su id; el adicional es `<id>-b`. Sin esto se mezclaban carga, recorrido y precio.
+        todos = [x for ep in todos for x in con_adicional(ep, engine.extractor)]
         primero = conv.text_of(conv.messages[0]) if conv.messages else ""
         por_anuncio = bool(_DESDE_PUBLI.search(plano(primero or "")))
         hechos_antes = 0
