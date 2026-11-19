@@ -9,7 +9,7 @@ from estiba.extraction.intencion import Intencion, intencion
 from estiba.extraction.reglas import lugares
 from estiba.horizon import _con_zona
 from estiba.jobs.adicionales import ID_ADICIONAL, con_adicional, separar
-from estiba.jobs.engine import CONFIRMADO, Accion, JobEngine
+from estiba.jobs.engine import CONFIRMADO, Accion, JobEngine, Politica
 from estiba.jobs.episodios import Episodio
 from estiba.core.models import JobState
 
@@ -71,11 +71,10 @@ class TestSeparacion:
         s, eng = separar(_conv()), JobEngine()
         b = eng.evaluar(s.adicional, AHORA)
         assert b.job.state is JobState.WAITING_CUSTOMER  # «tengo que confirmarte aún»
-        a = eng.evaluar(s.principal, AHORA)
-        # Aceptó, pero las direcciones escritas a mano piden que el fletero lo confirme (política de siempre).
-        assert a.job.state is JobState.QUOTED and any("aceptó" in x for x in a.alertas)
-        confirmado = eng.evaluar(s.principal, AHORA, [Accion(AHORA - timedelta(minutes=5), CONFIRMADO)])
-        assert confirmado.job.state is JobState.CONFIRMED and confirmado.job.quoted_price.value == 50000
+        # Decisión de Lucas (19-nov): aceptó y hay fecha → confirmado solo, aunque las direcciones sean a mano.
+        # (La charla es del 18-nov, anterior a la regla: acá se prueba con la regla ya vigente.)
+        a = JobEngine(politica=Politica(confirma_solo_desde=datetime(2026, 1, 1))).evaluar(s.principal, AHORA)
+        assert a.job.state is JobState.CONFIRMED and a.job.quoted_price.value == 50000
 
     def test_ids_estables_y_releer_da_lo_mismo(self):
         ep = Episodio("549000:job", _conv())

@@ -100,7 +100,8 @@ class TestFixtures:
         # Confirma "si, ese" (009), despues de que el fletero propuso el jueves 24.
         assert ev.eventos[-1].message_id == "5491177778888:009"
         assert ev.job.when.value == date(2026, 9, 24)
-        assert ev.alertas == []
+        # Confirmado sin hora: se agenda igual y se pide completarla (decisión de Lucas, 19-nov-2026).
+        assert ev.alertas == ["agendado, pero falta la hora: completalo"]
 
     def test_reprocesar_da_la_misma_historia(self):
         conv = _fixture("03-cambio-de-destino.json")

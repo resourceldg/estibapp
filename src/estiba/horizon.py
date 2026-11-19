@@ -78,6 +78,8 @@ def flete_para_horizon(f, montos: dict | None = None, creado: str | None = None)
         "ultimo_del_cliente": f.ultimo_del_cliente,
         # El cliente aceptó y falta que el fletero lo confirme (19-nov-2026): Horizon lo muestra arriba de todo.
         "acepto": any("aceptó" in a for a in (getattr(f, "alertas", None) or [])),
+        # Lo que falta para agendar o para completar un flete agendado (19-nov): Horizon te lo pregunta.
+        "falta": next((a for a in (getattr(f, "alertas", None) or []) if a.startswith(("agendado, pero", "aceptó, pero falta fecha", "aceptó, pero fecha con duda"))), None),
         "creado": _con_zona(creado),
     }
 

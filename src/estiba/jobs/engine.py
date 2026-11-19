@@ -52,6 +52,8 @@ class Politica:
     espera_pospuesto: timedelta = timedelta(days=14)
     #: Por debajo de esta confianza, un dato obligatorio no alcanza para confirmar.
     confianza_minima: float = 0.6
+    #: Desde cuándo una aceptación con fecha confirma sola (decisión de Lucas, 19-nov-2026).
+    confirma_solo_desde: datetime = datetime(2026, 11, 19)
 
 
 @dataclass(frozen=True)
@@ -270,7 +272,8 @@ class JobEngine:
             elif intencion is Intencion.POSPONE and estado is JobState.QUOTED:
                 mover(JobState.WAITING_CUSTOMER, m.sent_at, "el cliente pospuso la decisión", m.id)
             elif intencion is Intencion.ACEPTA and estado in _ABIERTOS:
-                impide = self._impide_confirmar(ex)
+                # La regla de «aceptó + fecha = agendado» rige desde que Lucas la pidió; lo anterior no se reescribe.
+                impide = self._impide_confirmar(ex) if m.sent_at >= self.politica.confirma_solo_desde else self._faltan(ex)
                 if impide:
                     aceptacion_trabada = f"aceptó, pero {', '.join(impide)}"
                 else:
@@ -326,6 +329,13 @@ class JobEngine:
             # Cotizado con la fecha cumplida y charla ese dia o despues ("ahi estoy adentro del edificio"): lo mas
             # probable es que se haya hecho y falte marcarlo. Estiba no lo marca sola: hace falta el monto.
             alertas.append(f"la fecha ({job.when.value:%d/%m}) llegó y sigue sin confirmar: ¿se hizo el flete? ¿cuánto cobraste?")
+        # Confirmado por el cliente con datos incompletos: se agenda igual y se pide completar.
+        if estado in (JobState.CONFIRMED, JobState.SCHEDULED) and any(e.causa == "el cliente aceptó" for e in eventos):
+            faltan = [m for m in self._faltan(final) if m.startswith("falta") and "fecha" not in m]
+            if not job.hour:
+                faltan.append("falta la hora")
+            if faltan:
+                alertas.append("agendado, pero " + ", ".join(faltan) + ": completalo")
         job.state = estado
         job.created_at = mensajes[0].sent_at
         return Evaluacion(
@@ -341,7 +351,21 @@ class JobEngine:
         )
 
     def _impide_confirmar(self, ex: Extraccion) -> list[str]:
-        """Por que no se puede confirmar todavia. Vacio = se puede."""
+        """Por que no se puede confirmar todavia. Vacio = se puede.
+
+        Decision de Lucas (19-nov-2026): el cliente acepto y hay fecha = confirmado y agendado. Lo que falte (direccion,
+        hora, que llevar) no frena: se agenda igual y se le avisa que lo complete. Sin fecha no hay que agendar: se le
+        pide que pregunte el dia.
+        """
+        fecha = ex.ganadores.get("when")
+        if fecha is None:
+            return ["falta fecha"]
+        if fecha.duda or fecha.slot.confidence < self.politica.confianza_minima:
+            return ["fecha con duda"]  # «el jueves que viene»: puede ser este o el otro; se pregunta antes de agendar
+        return []
+
+    def _faltan(self, ex: Extraccion) -> list[str]:
+        """Lo que falta o esta en duda en un flete ya confirmado, para avisarle al fletero."""
         motivos = []
         for campo in REQUIRED_FOR_CONFIRMATION:
             ganador = ex.ganadores.get(campo)
